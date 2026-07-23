@@ -1,0 +1,36 @@
+"""ChaosHelper Messenger — User preferences (theme, language)."""
+
+from fastapi import APIRouter, Depends
+from helpers import get_current_user
+from database import get_db
+
+router = APIRouter(prefix="/api", tags=["preferences"])
+
+
+@router.get("/preferences")
+async def get_preferences(username: str = Depends(get_current_user)):
+    db = await get_db()
+    cursor = await db.execute("SELECT theme, language FROM preferences WHERE username = ?", (username,))
+    row = await cursor.fetchone()
+    return {
+        "theme": row["theme"] if row else "dark",
+        "language": row["language"] if row else "ru",
+    }
+
+
+@router.put("/preferences")
+async def update_preferences(data: dict, username: str = Depends(get_current_user)):
+    theme = data.get("theme", "dark")
+    if theme not in ("dark", "light"):
+        theme = "dark"
+    language = data.get("language", "ru")
+    if language not in ("ru", "en"):
+        language = "ru"
+
+    db = await get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO preferences (username, theme, language) VALUES (?, ?, ?)",
+        (username, theme, language),
+    )
+    await db.commit()
+    return {"theme": theme, "language": language}

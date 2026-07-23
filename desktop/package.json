@@ -1,0 +1,16 @@
+{
+  "name": "nebenan-desktop",
+  "version": "1.0.0",
+  "description": "Nebenan Desktop — the web client wrapped as a native Windows app",
+  "main": "main.js",
+  "author": "Nebenan",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-packager . Nebenan --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --extra-resource=../frontend --app-version=1.0.0 --win32metadata.FileDescription=Nebenan --win32metadata.ProductName=Nebenan"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "@electron/packager": "^18.3.5"
+  }
+}

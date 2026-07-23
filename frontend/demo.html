@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nebenan — превью чата</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=39">
+    <!-- Demo-only: theme toggle button -->
+    <style>
+        #theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 999;
+            background: var(--accent); color: var(--on-accent); border: none;
+            border-radius: 20px; padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 12px; }
+    </style>
+</head>
+<body>
+<button id="theme-toggle" onclick="document.documentElement.toggleAttribute('data-theme-light'); document.documentElement.setAttribute('data-theme', document.documentElement.hasAttribute('data-theme-light') ? 'light' : 'dark');">Тема</button>
+
+<div id="app-screen" class="screen active">
+    <div class="app-layout">
+
+        <!-- ── SIDEBAR ── -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-header-top">
+                    <span class="material-icons-round sidebar-logo">forum</span>
+                    <span class="sidebar-title">Nebenan</span>
+                </div>
+                <div class="sidebar-header-btns">
+                    <button class="btn-icon sidebar-files-btn" title="Files"><span class="material-icons-round">folder</span></button>
+                    <button class="btn-icon" title="Feedback"><span class="material-icons-round">feedback</span></button>
+                </div>
+            </div>
+
+            <div class="sidebar-search">
+                <span class="material-icons-round sidebar-search-icon">search</span>
+                <input type="text" class="sidebar-search-input" placeholder="Поиск...">
+            </div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-header">
+                    <span>Чаты</span>
+                    <div class="sidebar-header-actions">
+                        <button class="btn-icon-xs" title="New category"><span class="material-icons-round">folder_open</span></button>
+                        <button class="btn-icon-xs" title="New chat"><span class="material-icons-round">add</span></button>
+                    </div>
+                </div>
+                <div class="sidebar-list">
+                    <div class="sidebar-item active">
+                        <span class="sidebar-item-icon">#</span>
+                        <span class="sidebar-item-name">двор-и-парковка</span>
+                        <button class="sidebar-item-menu btn-icon-xs"><span class="material-icons-round">more_vert</span></button>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-item-icon">#</span>
+                        <span class="sidebar-item-name">объявления</span>
+                        <span class="sidebar-item-badge">3</span>
+                        <button class="sidebar-item-menu btn-icon-xs"><span class="material-icons-round">more_vert</span></button>
+                    </div>
+                    <div class="sidebar-item">
+                        <span class="sidebar-item-icon">🔒</span>
+                        <span class="sidebar-item-name">правление-дома</span>
+                        <button class="sidebar-item-menu btn-icon-xs"><span class="material-icons-round">more_vert</span></button>
+                    </div>
+                    <div class="sidebar-item">
+                        <div class="sidebar-dm-avatar">А</div>
+                        <span class="sidebar-item-name">Анна Ковач</span>
+                        <span class="sidebar-dm-status online"></span>
+                        <span class="sidebar-item-badge">2</span>
+                        <button class="sidebar-item-menu btn-icon-xs"><span class="material-icons-round">more_vert</span></button>
+                    </div>
+                    <div class="sidebar-item">
+                        <div class="sidebar-dm-avatar">М</div>
+                        <span class="sidebar-item-name">Марк Вебер</span>
+                        <span class="sidebar-dm-status offline"></span>
+                        <button class="sidebar-item-menu btn-icon-xs"><span class="material-icons-round">more_vert</span></button>
+                    </div>
+                </div>
+                <button class="sidebar-browse-btn">Обзор каналов</button>
+            </div>
+
+            <div class="sidebar-user">
+                <div class="sidebar-user-avatar">К</div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name">Клаудио</div>
+                    <div class="sidebar-user-status">В сети</div>
+                </div>
+                <button class="btn-icon-xs"><span class="material-icons-round">settings</span></button>
+            </div>
+        </aside>
+
+        <!-- ── MAIN AREA ── -->
+        <main class="main-area">
+            <header class="topbar">
+                <button class="btn-icon topbar-menu-btn"><span class="material-icons-round">menu</span></button>
+                <div class="topbar-channel-info">
+                    <span class="topbar-channel-icon">#</span>
+                    <span class="topbar-channel-name">двор-и-парковка</span>
+                    <span class="topbar-channel-desc">Соседи · 14 участников</span>
+                </div>
+                <div class="topbar-actions">
+                    <button class="btn-icon" title="Call"><span class="material-icons-round">call</span></button>
+                    <button class="btn-icon" title="Search"><span class="material-icons-round">search</span></button>
+                    <button class="btn-icon" title="Members"><span class="material-icons-round">group</span></button>
+                </div>
+            </header>
+
+            <div class="page active">
+                <div class="msg-messages" style="display:flex">
+
+                    <div class="msg-row">
+                        <div class="msg-avatar">А</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Анна Ковач</span><span class="msg-time">10:24</span></div>
+                            <div class="msg-text">Всем привет! Кто-нибудь видел, чью машину эвакуировали вчера с гостевой парковки? 🚗</div>
+                        </div>
+                    </div>
+
+                    <div class="msg-row">
+                        <div class="msg-avatar">М</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Марк Вебер</span><span class="msg-time">10:26</span></div>
+                            <div class="msg-text">Это была серая Октавия. Стояла там три дня, номера залеплены.</div>
+                            <div class="msg-reactions">
+                                <button class="msg-reaction-chip own">👍 4</button>
+                                <button class="msg-reaction-chip">😮 2</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="msg-row">
+                        <div class="msg-avatar">Л</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Лена</span><span class="msg-time">10:31</span></div>
+                            <div class="msg-reply-quote"><span class="msg-reply-sender">Анна Ковач</span><span class="msg-reply-text">Кто-нибудь видел, чью машину…</span></div>
+                            <div class="msg-text">Да, управляющая компания повесила объявление у лифта. Можно оспорить до пятницы.</div>
+                        </div>
+                    </div>
+
+                    <div class="msg-row msg-own">
+                        <div class="msg-avatar">К</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Клаудио</span><span class="msg-time">10:34</span></div>
+                            <div class="msg-text">Спасибо! Я как раз ищу, где повесить велопарковку — предлагаю обсудить на встрече в субботу.<span class="msg-checkmark read"><span class="material-icons-round">done_all</span></span></div>
+                        </div>
+                    </div>
+
+                    <div class="msg-row msg-own">
+                        <div class="msg-avatar">К</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Клаудио</span><span class="msg-time">10:34</span></div>
+                            <div class="msg-text">Скинул план во вложении 📎<span class="msg-checkmark read"><span class="material-icons-round">done_all</span></span></div>
+                        </div>
+                    </div>
+
+                    <div class="msg-row">
+                        <div class="msg-avatar">А</div>
+                        <div class="msg-body">
+                            <div class="msg-header"><span class="msg-sender">Анна Ковач</span><span class="msg-time">10:36</span></div>
+                            <div class="msg-text">Отлично, я приду 🌳 <span class="mention">@Клаудио</span> добавь, пожалуйста, в календарь.</div>
+                            <div class="msg-thread-indicator">2 ответа</div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="msg-typing" style="display:flex">
+                    <div class="typing-dots"><span></span><span></span><span></span></div>
+                    <span>Марк печатает…</span>
+                </div>
+
+                <div class="msg-input-area" style="display:flex">
+                    <button class="btn-icon" title="Attach file"><span class="material-icons-round">attach_file</span></button>
+                    <button class="btn-icon" title="Emoji"><span class="material-icons-round">mood</span></button>
+                    <div class="msg-input-wrapper">
+                        <textarea class="msg-input" placeholder="Напишите сообщение..." rows="1"></textarea>
+                    </div>
+                    <button class="btn-icon btn-accent msg-send-btn"><span class="material-icons-round">send</span></button>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+</body>
+</html>

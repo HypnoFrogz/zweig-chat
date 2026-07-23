@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nebenan</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nebenan">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <meta name="theme-color" content="#3a5a48">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=44">
+</head>
+<body>
+
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div id="login-screen" class="screen active">
+    <div class="login-container">
+        <div class="login-logo">
+            <svg class="login-logo-mark" viewBox="0 0 64 64" width="60" height="60" aria-hidden="true">
+                <!-- back bubble (Forest) — the neighbour -->
+                <path fill="var(--online)"
+                      d="M17 9h22a9 9 0 0 1 9 9v9a9 9 0 0 1-9 9H26l-8 7 1-7h-2a9 9 0 0 1-9-9v-9a9 9 0 0 1 9-9z"/>
+                <!-- front bubble (Terracotta) — you -->
+                <path fill="var(--accent)" stroke="var(--bg2)" stroke-width="2.5"
+                      d="M27 27h22a9 9 0 0 1 9 9v9a9 9 0 0 1-9 9h-2l1 7-8-7H27a9 9 0 0 1-9-9v-9a9 9 0 0 1 9-9z"/>
+                <!-- message dots -->
+                <circle cx="31" cy="41" r="2.4" fill="#fff"/>
+                <circle cx="39" cy="41" r="2.4" fill="#fff"/>
+                <circle cx="47" cy="41" r="2.4" fill="#fff"/>
+            </svg>
+            <h1>Nebenan</h1>
+            <p class="login-subtitle" data-i18n="login.subtitle">Messenger</p>
+        </div>
+
+        <!-- Step 1: server address -->
+        <div id="login-step-server" class="login-step">
+            <h2 class="login-step-title" data-i18n="login.serverTitle">Connect to server</h2>
+            <p class="login-step-hint" data-i18n="login.serverHint">Enter the address or IP of your Nebenan server</p>
+            <form onsubmit="event.preventDefault(); connectServer();" autocomplete="off">
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">dns</span>
+                    <input type="text" id="server-input" placeholder="e.g. chat.example.com or 192.168.1.10"
+                           data-i18n-placeholder="login.serverPlaceholder" autocomplete="off" autocapitalize="none" spellcheck="false">
+                </div>
+                <button type="submit" id="server-connect-btn" class="btn-login" data-i18n="login.serverConnect">Continue</button>
+                <div id="server-error" class="login-error"></div>
+            </form>
+        </div>
+
+        <!-- Step 2: credentials -->
+        <div id="login-step-credentials" class="login-step" style="display:none">
+            <div class="login-server-bar">
+                <span class="login-server-info">
+                    <span class="material-icons-round">dns</span>
+                    <span id="login-server-label"></span>
+                </span>
+                <button type="button" class="login-change-server" onclick="changeServer()" data-i18n="login.changeServer">Change server</button>
+            </div>
+            <form id="login-form" autocomplete="off">
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">person</span>
+                    <input type="text" id="login-user" placeholder="Username" required autocomplete="username" data-i18n-placeholder="login.username">
+                </div>
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">lock</span>
+                    <input type="password" id="login-pass" placeholder="Password" required autocomplete="current-password" data-i18n-placeholder="login.password">
+                </div>
+                <button type="submit" class="btn-login" data-i18n="login.submit">Sign In</button>
+                <div id="login-error" class="login-error"></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ MAIN APP ═══ -->
+<div id="app-screen" class="screen">
+    <div class="app-layout">
+
+        <!-- ── SIDEBAR ── -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-header-top">
+                    <span class="material-icons-round sidebar-logo">forum</span>
+                    <span class="sidebar-title">Nebenan</span>
+                </div>
+                <div class="sidebar-header-btns">
+                    <button class="btn-icon sidebar-files-btn" onclick="navigateToFiles()" title="Files">
+                        <span class="material-icons-round">folder</span>
+                    </button>
+                    <!-- ChaosTracker (модуль задач) временно скрыт — вернуться позже -->
+                    <button class="btn-icon sidebar-tasks-btn" onclick="navigateToTasks()" title="ChaosTracker" style="display:none">
+                        <span class="material-icons-round">assignment</span>
+                    </button>
+                    <button class="btn-icon" onclick="showFeedbackModal()" title="Feedback">
+                        <span class="material-icons-round">feedback</span>
+                    </button>
+                    <button class="btn-icon sidebar-admin-btn" id="sidebar-admin-btn" onclick="navigateToAdmin()" title="Admin" style="display:none">
+                        <span class="material-icons-round">admin_panel_settings</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="sidebar-search">
+                <span class="material-icons-round sidebar-search-icon">search</span>
+                <input type="text" id="sidebar-search-input" class="sidebar-search-input"
+                       placeholder="Поиск..." data-i18n-placeholder="sidebar.searchPlaceholder" oninput="filterSidebarSearch(this.value)"
+                       onfocus="filterSidebarSearch(this.value)" autocomplete="off">
+                <div id="sidebar-search-dropdown" class="sidebar-search-dropdown" style="display:none"></div>
+            </div>
+
+            <!-- Unified chat list -->
+            <div class="sidebar-section" id="sidebar-chats-section">
+                <div class="sidebar-section-header">
+                    <span data-i18n="sidebar.chats">Chats</span>
+                    <div class="sidebar-header-actions">
+                        <button class="btn-icon-xs" onclick="showCategoryPrompt()" title="New category">
+                            <span class="material-icons-round">folder_open</span>
+                        </button>
+                        <button class="btn-icon-xs" onclick="showNewChatDialog()" title="New chat">
+                            <span class="material-icons-round">add</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="chat-list" class="sidebar-list"></div>
+                <button class="sidebar-browse-btn" onclick="showBrowseChannelsDialog()" data-i18n="sidebar.browse">Browse channels</button>
+            </div>
+
+            <!-- User profile at bottom -->
+            <div class="sidebar-user" id="sidebar-user" onclick="showProfileDialog()">
+                <div class="sidebar-user-avatar" id="sidebar-user-avatar"></div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name" id="sidebar-user-name"></div>
+                    <div class="sidebar-user-status" id="sidebar-user-status"></div>
+                </div>
+                <button class="btn-icon-xs" onclick="event.stopPropagation(); showSettingsMenu()">
+                    <span class="material-icons-round">settings</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── MAIN AREA ── -->
+        <main class="main-area" id="main-area">
+            <!-- Top bar -->
+            <header class="topbar" id="topbar">
+                <button class="btn-icon topbar-menu-btn" onclick="toggleSidebar()">
+                    <span class="material-icons-round">menu</span>
+                </button>
+                <div class="topbar-channel-info" id="topbar-channel-info" onclick="onTopbarInfoClick()">
+                    <span class="topbar-channel-icon" id="topbar-channel-icon">#</span>
+                    <span class="topbar-channel-name" id="topbar-channel-name"></span>
+                    <span class="topbar-channel-desc" id="topbar-channel-desc"></span>
+                </div>
+                <div class="topbar-actions">
+                    <button class="btn-icon" id="btn-channel-settings" onclick="showChannelSettingsDialog()" title="Channel settings" style="display:none">
+                        <span class="material-icons-round">settings</span>
+                    </button>
+                    <button class="btn-icon" id="btn-call" onclick="startVideoCall()" title="Call" style="display:none">
+                        <span class="material-icons-round">call</span>
+                    </button>
+                    <button class="btn-icon" id="btn-call-join" onclick="joinActiveCall()" title="Join call" style="display:none">
+                        <span class="material-icons-round call-active-icon">call</span>
+                    </button>
+                    <button class="btn-icon" onclick="toggleSearch()" title="Search">
+                        <span class="material-icons-round">search</span>
+                    </button>
+                    <button class="btn-icon" id="btn-members" onclick="toggleRightPanel()" title="Members">
+                        <span class="material-icons-round">group</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Call active banner -->
+            <div class="call-banner" id="call-banner" style="display:none" onclick="toggleCallPanel()">
+                <span class="material-icons-round">call</span>
+                <span>Call in progress</span>
+                <span class="call-banner-time" id="call-banner-time">0:00</span>
+            </div>
+
+            <!-- Video overlay kept for backward compat (hidden, unused) -->
+            <div id="video-overlay" style="display:none">
+                <div id="video-overlay-grid"></div>
+            </div>
+
+            <!-- Page: Messaging (default) -->
+            <div id="page-messaging" class="page active">
+                <!-- Messages empty state -->
+                <div class="msg-empty-state" id="msg-empty-state">
+                    <span class="material-icons-round" style="font-size:48px; color:var(--text3);">forum</span>
+                    <p data-i18n="msg.empty">Select a channel or start a conversation</p>
+                </div>
+
+                <!-- Pinned message bar -->
+                <div class="msg-pinned-bar" id="msg-pinned-bar" style="display:none" onclick="onPinnedBarClick()">
+                    <span class="material-icons-round pinned-icon">push_pin</span>
+                    <div class="pinned-content">
+                        <span class="pinned-label">Pinned message</span>
+                        <span class="pinned-text" id="pinned-bar-text"></span>
+                    </div>
+                    <span class="material-icons-round pinned-chevron">chevron_right</span>
+                </div>
+
+                <!-- Messages area -->
+                <div class="msg-messages" id="msg-messages" style="display:none"></div>
+
+                <!-- Typing indicator -->
+                <div class="msg-typing" id="msg-typing" style="display:none">
+                    <div class="typing-dots"><span></span><span></span><span></span></div>
+                    <span id="msg-typing-text"></span>
+                </div>
+
+                <!-- Input area -->
+                <div class="msg-input-area" id="msg-input-area" style="display:none">
+                    <button class="btn-icon" onclick="triggerChatFileUpload()" title="Attach file">
+                        <span class="material-icons-round">attach_file</span>
+                    </button>
+                    <input type="file" id="chat-file-input" hidden onchange="uploadChatFile(this.files)">
+                    <button class="btn-icon" onclick="toggleEmojiPicker()" title="Emoji">
+                        <span class="material-icons-round">mood</span>
+                    </button>
+                    <div class="msg-input-wrapper">
+                        <textarea id="msg-input" class="msg-input" placeholder="Write a message..." rows="1" data-i18n-placeholder="msg.placeholder"></textarea>
+                        <div class="msg-mention-list" id="msg-mention-list" style="display:none"></div>
+                        <div class="emoji-picker" id="emoji-picker" style="display:none"></div>
+                    </div>
+                    <button class="btn-icon btn-accent msg-send-btn" onclick="sendMsg()" id="msg-send-btn">
+                        <span class="material-icons-round">send</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Page: Files -->
+            <div id="page-files" class="page" style="display:none">
+                <div class="files-toolbar">
+                    <div class="breadcrumb" id="breadcrumb"></div>
+                    <div class="file-view-controls">
+                        <button class="btn-icon file-view-btn active" data-view="list" onclick="setFileView('list')" title="List view">
+                            <span class="material-icons-round">view_list</span>
+                        </button>
+                        <button class="btn-icon file-view-btn" data-view="grid" onclick="setFileView('grid')" title="Grid view">
+                            <span class="material-icons-round">grid_view</span>
+                        </button>
+                        <input type="range" id="file-grid-size" min="0" max="2" step="1" value="1"
+                               class="file-size-slider" oninput="setGridSize(this.value)" style="display:none" title="Size">
+                    </div>
+                    <div class="toolbar-actions">
+                        <button class="btn-action" onclick="showNewFolderDialog()">
+                            <span class="material-icons-round">create_new_folder</span>
+                            <span class="btn-label" data-i18n="files.newFolder">New folder</span>
+                        </button>
+                        <button class="btn-action btn-accent" onclick="document.getElementById('file-input-media').click()">
+                            <span class="material-icons-round">photo_library</span>
+                            <span class="btn-label" data-i18n="files.uploadMedia">Photo / Video</span>
+                        </button>
+                        <input type="file" id="file-input-media" multiple accept="image/*,video/*" hidden onchange="uploadFiles(this.files)">
+                        <button class="btn-action" onclick="document.getElementById('file-input').click()">
+                            <span class="material-icons-round">attach_file</span>
+                            <span class="btn-label" data-i18n="files.uploadFile">File</span>
+                        </button>
+                        <input type="file" id="file-input" multiple hidden onchange="uploadFiles(this.files)">
+                    </div>
+                </div>
+                <div class="file-area" id="file-area">
+                    <div class="file-list-header" id="file-list-header">
+                        <span class="fh-name" data-i18n="files.name">Name</span>
+                        <span class="fh-size" data-i18n="files.size">Size</span>
+                        <span class="fh-date" data-i18n="files.date">Added</span>
+                        <span class="fh-actions"></span>
+                    </div>
+                    <div id="file-list" class="file-list"></div>
+                    <div id="empty-state" class="empty-state" style="display:none">
+                        <span class="material-icons-round empty-icon">folder_open</span>
+                        <p data-i18n="files.empty">Folder is empty</p>
+                    </div>
+                </div>
+                <div id="upload-progress" class="upload-progress" style="display:none">
+                    <div class="upload-bar"><div class="upload-bar-fill" id="upload-bar-fill"></div></div>
+                    <span id="upload-status" data-i18n="files.uploading">Uploading...</span>
+                </div>
+            </div>
+
+            <!-- Page: Admin Panel -->
+            <div id="page-admin" class="page" style="display:none">
+                <div class="admin-page-header">
+                    <h2 class="admin-page-title" data-i18n="admin.title">Admin Panel</h2>
+                    <div class="admin-header-actions">
+                        <button class="btn-action" onclick="downloadImportTemplate()">
+                            <span class="material-icons-round">download</span>
+                            <span data-i18n="admin.template">Шаблон</span>
+                        </button>
+                        <button class="btn-action" onclick="document.getElementById('admin-import-input').click()">
+                            <span class="material-icons-round">upload_file</span>
+                            <span data-i18n="admin.import">Импорт из Excel</span>
+                        </button>
+                        <input type="file" id="admin-import-input" accept=".xlsx,.csv" hidden onchange="adminImportUsers(this.files)">
+                        <button class="btn-action btn-accent" onclick="showCreateUserForm()">
+                            <span class="material-icons-round">person_add</span>
+                            <span data-i18n="admin.createUser">Create User</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="admin-create-user-form" class="admin-create-form" style="display:none">
+                    <div class="input-group"><span class="material-icons-round input-icon">person</span><input type="text" id="admin-new-username" placeholder="Логин" data-i18n-placeholder="admin.username" autocapitalize="none" autocomplete="off"></div>
+                    <div class="input-group"><span class="material-icons-round input-icon">lock</span><input type="text" id="admin-new-password" placeholder="Пароль" data-i18n-placeholder="admin.password"></div>
+                    <div class="input-group"><span class="material-icons-round input-icon">badge</span><input type="text" id="admin-new-display" placeholder="Отображаемое имя" data-i18n-placeholder="admin.displayName"></div>
+                    <button class="btn-action btn-accent admin-create-btn" onclick="adminCreateUser()" data-i18n="admin.create">Create</button>
+                    <button class="btn-action admin-create-btn" onclick="document.getElementById('admin-create-user-form').style.display='none'">
+                        <span class="material-icons-round">close</span>
+                    </button>
+                    <div class="admin-form-hint" data-i18n="admin.loginHint">Логин — латиница, цифры и _ (для входа и упоминаний @). Имя может быть кириллицей.</div>
+                </div>
+                <div id="admin-import-result" class="admin-import-result" style="display:none"></div>
+                <div class="admin-section">
+                    <div class="admin-section-title">
+                        <span class="material-icons-round">people</span>
+                        <span>Users</span>
+                    </div>
+                    <div id="admin-users-list" class="admin-users-list"></div>
+                </div>
+                <hr class="admin-divider">
+                <div class="admin-section">
+                    <div class="admin-section-title">
+                        <span class="material-icons-round">hub</span>
+                        <span>Серверы</span>
+                        <button class="btn-icon" onclick="loadFederation()" title="Обновить" style="margin-left:auto">
+                            <span class="material-icons-round">refresh</span>
+                        </button>
+                    </div>
+                    <div class="admin-create-form" style="display:flex">
+                        <div class="input-group">
+                            <span class="material-icons-round input-icon">dns</span>
+                            <input type="text" id="fed-domain-input" placeholder="домен сервера, напр. chat.company.tech"
+                                   autocapitalize="none" autocomplete="off" spellcheck="false">
+                        </div>
+                        <button class="btn-action btn-accent admin-create-btn" onclick="fedAddServer()">Добавить сервер</button>
+                        <div class="admin-form-hint" id="fed-self-hint"></div>
+                    </div>
+                    <div id="fed-list"></div>
+                </div>
+
+                <hr class="admin-divider">
+                <div class="admin-section">
+                    <div class="admin-section-title">
+                        <span class="material-icons-round">feedback</span>
+                        <span data-i18n="admin.feedback">Feedback</span>
+                        <button class="btn-icon" onclick="loadAdminFeedback()" title="Refresh" style="margin-left:auto">
+                            <span class="material-icons-round">refresh</span>
+                        </button>
+                    </div>
+                    <div id="admin-feedback-list"></div>
+                </div>
+            </div>
+
+            <!-- Page: ChaosTracker -->
+            <div id="page-tasks" class="page" style="display:none">
+                <!-- Sub-view: Project List -->
+                <div id="tasks-project-list" class="tasks-view">
+                    <div class="tasks-project-header">
+                        <h2 class="tasks-page-title">ChaosTracker</h2>
+                        <button class="btn-action btn-accent" onclick="showCreateProjectDialog()">
+                            <span class="material-icons-round">add</span>
+                            <span>Новый проект</span>
+                        </button>
+                    </div>
+                    <div class="tasks-projects-table-wrap">
+                        <table class="tasks-projects-table">
+                            <thead>
+                                <tr>
+                                    <th>Название</th>
+                                    <th>Описание</th>
+                                    <th>Создатель</th>
+                                    <th>Доступ</th>
+                                    <th>Участники</th>
+                                    <th>Задачи</th>
+                                    <th>Подпроекты</th>
+                                    <th>Роль</th>
+                                    <th>Создан</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasks-projects-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div id="tasks-dashboard" class="tasks-dashboard"></div>
+                </div>
+                <!-- Sub-view: Project Board -->
+                <div id="tasks-board-view" class="tasks-view" style="display:none">
+                    <!-- Breadcrumb for subprojects -->
+                    <div id="tasks-breadcrumb" class="tasks-breadcrumb" style="display:none"></div>
+                    <div class="tasks-board-header">
+                        <button class="btn-icon" onclick="tasksGoBack()">
+                            <span class="material-icons-round">arrow_back</span>
+                        </button>
+                        <div class="tasks-board-title-section">
+                            <h3 class="tasks-board-title" id="tasks-board-title"></h3>
+                            <span class="tasks-board-desc" id="tasks-board-desc"></span>
+                        </div>
+                        <div class="tasks-board-actions">
+                            <button class="btn-action" onclick="showCreateSubprojectDialog()" title="Подпроект">
+                                <span class="material-icons-round">account_tree</span>
+                                <span class="btn-label">Подпроект</span>
+                            </button>
+                            <div class="tasks-view-toggle">
+                                <button class="tasks-view-btn active" data-view="board" onclick="setTasksView('board')">
+                                    <span class="material-icons-round">view_kanban</span>
+                                </button>
+                                <button class="tasks-view-btn" data-view="list" onclick="setTasksView('list')">
+                                    <span class="material-icons-round">view_list</span>
+                                </button>
+                            </div>
+                            <button class="btn-action btn-accent" onclick="showCreateTaskDialog()">
+                                <span class="material-icons-round">add</span>
+                                <span>Задача</span>
+                            </button>
+                            <button class="btn-icon" onclick="showProjectSettingsDialog()" title="Настройки">
+                                <span class="material-icons-round">settings</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Sub-projects cards (if any) -->
+                    <div id="tasks-subprojects" class="tasks-subprojects" style="display:none"></div>
+                    <!-- Filter bar -->
+                    <div id="tasks-filter-bar" class="tasks-filter-bar">
+                        <input type="text" id="tasks-filter-search" placeholder="Поиск..." oninput="applyTaskFilters()" class="tasks-filter-input">
+                        <select id="tasks-filter-assignee" onchange="applyTaskFilters()"><option value="">Все исполнители</option></select>
+                        <select id="tasks-filter-creator" onchange="applyTaskFilters()"><option value="">Все авторы</option></select>
+                        <select id="tasks-filter-priority" onchange="applyTaskFilters()">
+                            <option value="">Все приоритеты</option>
+                            <option value="critical">Критический</option>
+                            <option value="high">Высокий</option>
+                            <option value="medium">Средний</option>
+                            <option value="low">Низкий</option>
+                        </select>
+                        <select id="tasks-filter-type" onchange="applyTaskFilters()"><option value="">Все типы</option></select>
+                        <select id="tasks-filter-label" onchange="applyTaskFilters()"><option value="">Все метки</option></select>
+                        <input type="date" id="tasks-filter-date-from" onchange="applyTaskFilters()" title="Срок от">
+                        <input type="date" id="tasks-filter-date-to" onchange="applyTaskFilters()" title="Срок до">
+                        <span id="tasks-filter-custom" class="tasks-filter-custom"></span>
+                        <button class="btn-icon" onclick="clearTaskFilters()" title="Сбросить фильтры"><span class="material-icons-round">clear</span></button>
+                    </div>
+                    <!-- Kanban board -->
+                    <div id="tasks-kanban" class="tasks-kanban">
+                        <div class="kanban-column" data-status="todo">
+                            <div class="kanban-column-header"><span class="kanban-column-title">К выполнению</span><span class="kanban-column-count" id="kanban-count-todo">0</span></div>
+                            <div class="kanban-column-body" id="kanban-todo" ondragover="onKanbanDragOver(event)" ondragleave="onKanbanDragLeave(event)" ondrop="onKanbanDrop(event,'todo')"></div>
+                        </div>
+                        <div class="kanban-column" data-status="in_progress">
+                            <div class="kanban-column-header"><span class="kanban-column-title">В работе</span><span class="kanban-column-count" id="kanban-count-in_progress">0</span></div>
+                            <div class="kanban-column-body" id="kanban-in_progress" ondragover="onKanbanDragOver(event)" ondragleave="onKanbanDragLeave(event)" ondrop="onKanbanDrop(event,'in_progress')"></div>
+                        </div>
+                        <div class="kanban-column" data-status="review">
+                            <div class="kanban-column-header"><span class="kanban-column-title">На проверке</span><span class="kanban-column-count" id="kanban-count-review">0</span></div>
+                            <div class="kanban-column-body" id="kanban-review" ondragover="onKanbanDragOver(event)" ondragleave="onKanbanDragLeave(event)" ondrop="onKanbanDrop(event,'review')"></div>
+                        </div>
+                        <div class="kanban-column" data-status="done">
+                            <div class="kanban-column-header"><span class="kanban-column-title">Готово</span><span class="kanban-column-count" id="kanban-count-done">0</span></div>
+                            <div class="kanban-column-body" id="kanban-done" ondragover="onKanbanDragOver(event)" ondragleave="onKanbanDragLeave(event)" ondrop="onKanbanDrop(event,'done')"></div>
+                        </div>
+                    </div>
+                    <!-- List view -->
+                    <div id="tasks-list" class="tasks-list-view" style="display:none">
+                        <div class="tasks-list-header">
+                            <span class="tl-type">Тип</span><span class="tl-title">Название</span><span class="tl-status">Статус</span><span class="tl-priority">Приоритет</span><span class="tl-assignee">Исполнитель</span><span class="tl-date">Срок</span>
+                            <span class="tasks-col-picker-wrap">
+                                <button class="btn-icon tasks-col-picker-btn" onclick="toggleColumnPicker()" title="Настроить столбцы">
+                                    <span class="material-icons-round" style="font-size:18px">view_column</span>
+                                </button>
+                                <div id="tasks-col-picker" class="tasks-col-picker" style="display:none">
+                                    <div class="tasks-col-picker-title">Столбцы</div>
+                                </div>
+                            </span>
+                        </div>
+                        <div id="tasks-list-body" class="tasks-list-body"></div>
+                    </div>
+                </div>
+                <!-- Sub-view: Submit Ticket (public page) -->
+                <div id="tasks-submit-view" class="tasks-view" style="display:none">
+                    <div class="tasks-submit-header">
+                        <h2 class="tasks-submit-title" id="submit-project-name"></h2>
+                        <p class="tasks-submit-desc" id="submit-project-desc"></p>
+                    </div>
+                    <div class="tasks-submit-hint">
+                        <span class="material-icons-round">info</span>
+                        <span>Выберите подпроект, чтобы отправить тикет</span>
+                    </div>
+                    <div id="submit-subprojects" class="tasks-submit-subprojects"></div>
+                    <div id="submit-no-subprojects" class="tasks-submit-empty" style="display:none">
+                        <span class="material-icons-round" style="font-size:48px;opacity:0.3">send</span>
+                        <span>У этого проекта нет подпроектов</span>
+                        <button class="btn-action btn-accent" id="submit-direct-btn" onclick="openSubmitTicketDialog(submitProjectData)">
+                            <span class="material-icons-round">add</span>
+                            <span>Отправить тикет</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- ── RIGHT PANEL ── -->
+        <aside class="right-panel" id="right-panel" style="display:none">
+            <div class="right-panel-header">
+                <button class="btn-icon right-panel-back" onclick="toggleRightPanel()">
+                    <span class="material-icons-round">arrow_back</span>
+                </button>
+                <span class="right-panel-title" id="right-panel-title" data-i18n="panel.members">Members</span>
+                <button class="btn-icon right-panel-close" onclick="toggleRightPanel()">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="right-panel-body" id="right-panel-body"></div>
+        </aside>
+
+        <!-- ── CALL PANEL ── -->
+        <aside class="call-panel" id="call-panel" style="display:none">
+            <div class="call-panel-header">
+                <span class="call-panel-title" data-i18n="call.title">In Call</span>
+                <span class="call-panel-timer" id="call-panel-timer">0:00</span>
+                <button class="btn-icon" onclick="minimizeCallPanel()" title="Minimize">
+                    <span class="material-icons-round">remove</span>
+                </button>
+            </div>
+            <!-- Video grid inside call panel -->
+            <div class="call-video-grid" id="call-video-grid"></div>
+            <div class="call-panel-controls">
+                <button class="call-ctrl-btn call-ctrl-hangup" onclick="endCall()" title="End call">
+                    <span class="material-icons-round">call_end</span>
+                </button>
+                <button class="call-ctrl-btn" id="btn-toggle-cam" onclick="toggleCamera()" title="Video">
+                    <span class="material-icons-round">videocam_off</span>
+                </button>
+                <button class="call-ctrl-btn muted" id="btn-toggle-speaker" onclick="toggleSpeaker()" title="Speaker">
+                    <span class="material-icons-round">hearing</span>
+                </button>
+                <button class="call-ctrl-btn" id="btn-toggle-mic" onclick="toggleMic()" title="Microphone">
+                    <span class="material-icons-round">mic</span>
+                </button>
+                <button class="call-ctrl-btn" onclick="showInviteToCall()" title="Invite">
+                    <span class="material-icons-round">person_add</span>
+                </button>
+            </div>
+            <div class="call-panel-participants" id="call-participants"></div>
+        </aside>
+    </div>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- New Chat (unified) -->
+<div id="new-chat-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeNewChatDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="newchat.title">New Chat</span>
+            <button class="btn-icon" onclick="closeNewChatDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div id="newchat-channel-tab" class="newchat-tab-content">
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">tag</span>
+                    <input type="text" id="newchat-channel-name" placeholder="Channel name" data-i18n-placeholder="channel.name">
+                </div>
+                <div class="slug-preview">
+                    <span class="slug-label">Slug:</span>
+                    <span id="newchat-slug-preview" class="slug-value">-</span>
+                </div>
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">description</span>
+                    <input type="text" id="newchat-channel-desc" placeholder="Description (optional)" data-i18n-placeholder="channel.desc">
+                </div>
+                <p class="form-hint" data-i18n="channel.membersHint">Add members:</p>
+                <div id="newchat-members-list" class="member-checklist"></div>
+                <button class="btn-action btn-accent" onclick="createChannelFromNewChat()" data-i18n="channel.createBtn" style="align-self:flex-end">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Channel (kept for backward compatibility) -->
+<div id="create-channel-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeCreateChannelDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="channel.create">Create Channel</span>
+            <button class="btn-icon" onclick="closeCreateChannelDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">tag</span>
+                <input type="text" id="channel-name-input" placeholder="Channel name" data-i18n-placeholder="channel.name">
+            </div>
+            <div class="slug-preview">
+                <span class="slug-label">Slug:</span>
+                <span id="channel-slug-preview" class="slug-value">-</span>
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">description</span>
+                <input type="text" id="channel-desc-input" placeholder="Description (optional)" data-i18n-placeholder="channel.desc">
+            </div>
+            <div class="radio-group">
+                <label class="radio-label"><input type="radio" name="channel-type" value="public" checked> <span class="material-icons-round">public</span> Public</label>
+                <label class="radio-label"><input type="radio" name="channel-type" value="private"> <span class="material-icons-round">lock</span> Private</label>
+            </div>
+            <p class="form-hint" data-i18n="channel.membersHint">Add members (for private channels):</p>
+            <div id="channel-members-list" class="member-checklist"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="createChannel()" data-i18n="channel.createBtn">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Browse Channels -->
+<div id="browse-channels-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeBrowseChannelsDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="channel.browse">Browse Channels</span>
+            <button class="btn-icon" onclick="closeBrowseChannelsDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col" id="browse-channels-body"></div>
+    </div>
+</div>
+
+<!-- New DM (kept for backward compatibility) -->
+<div id="new-dm-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeNewDMDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="dm.new">New Message</span>
+            <button class="btn-icon" onclick="closeNewDMDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col" id="dm-users-list"></div>
+    </div>
+</div>
+
+<!-- Profile / Settings -->
+<div id="profile-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeProfileDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="profile.title">Profile</span>
+            <button class="btn-icon" onclick="closeProfileDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="profile-avatar-section">
+                <div class="profile-avatar" id="profile-avatar"></div>
+                <button class="btn-action" onclick="document.getElementById('avatar-input').click()" data-i18n="profile.changeAvatar">Change avatar</button>
+                <input type="file" id="avatar-input" accept="image/*" hidden onchange="uploadAvatar(this.files)">
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">badge</span>
+                <input type="text" id="profile-display-name" placeholder="Display name" data-i18n-placeholder="profile.displayName">
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">alternate_email</span>
+                <input type="text" id="profile-nickname" placeholder="Nickname (@mention)" data-i18n-placeholder="profile.nickname">
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">mood</span>
+                <input type="text" id="profile-status" placeholder="Status" data-i18n-placeholder="profile.status">
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">lock</span>
+                <input type="password" id="profile-password" placeholder="New password (leave empty to keep)" data-i18n-placeholder="profile.password">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="saveProfile()" data-i18n="profile.save">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- User Card Modal -->
+<div id="user-card-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeUserCard()"></div>
+    <div class="modal-content modal-small user-card">
+        <button class="btn-icon user-card-close" onclick="closeUserCard()">
+            <span class="material-icons-round">close</span>
+        </button>
+        <div class="user-card-header">
+            <div class="user-card-avatar" id="user-card-avatar"></div>
+            <div class="user-card-online" id="user-card-online"></div>
+        </div>
+        <div class="user-card-body">
+            <div class="user-card-name" id="user-card-name"></div>
+            <div class="user-card-username" id="user-card-username"></div>
+            <div class="user-card-status" id="user-card-status"></div>
+        </div>
+        <div class="user-card-actions">
+            <button class="btn-action btn-accent user-card-dm-btn" id="user-card-dm-btn" onclick="userCardSendMessage()">
+                <span class="material-icons-round">chat</span>
+                <span data-i18n="userCard.sendMessage">Написать</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Admin Panel -->
+<!-- Admin panel is now a full page (page-admin) -->
+
+<!-- Feedback modal -->
+<div id="feedback-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeFeedbackModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="feedback.title">Feedback</span>
+            <button class="btn-icon" onclick="closeFeedbackModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <p class="feedback-hint" data-i18n="feedback.hint">Help us improve! Share your suggestions or report issues — your feedback will only be used to make the product better.</p>
+            <textarea id="feedback-text" class="feedback-textarea" rows="5" placeholder="Your message..." data-i18n-placeholder="feedback.placeholder"></textarea>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="submitFeedback()" data-i18n="feedback.send">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings menu -->
+<div id="settings-menu" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeSettingsMenu()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="settings.title">Settings</span>
+            <button class="btn-icon" onclick="closeSettingsMenu()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body settings-body">
+            <div class="settings-field">
+                <span class="settings-label" data-i18n="settings.theme">Theme</span>
+                <div class="settings-toggle">
+                    <button class="settings-option" data-theme="dark" onclick="setTheme('dark')">
+                        <span class="material-icons-round">dark_mode</span><span data-i18n="settings.dark">Dark</span>
+                    </button>
+                    <button class="settings-option" data-theme="light" onclick="setTheme('light')">
+                        <span class="material-icons-round">light_mode</span><span data-i18n="settings.light">Light</span>
+                    </button>
+                </div>
+            </div>
+            <div class="settings-field">
+                <span class="settings-label" data-i18n="settings.language">Language</span>
+                <div class="settings-toggle">
+                    <button class="settings-option" data-lang="ru" onclick="setLanguage('ru')">RU</button>
+                    <button class="settings-option" data-lang="en" onclick="setLanguage('en')">EN</button>
+                </div>
+            </div>
+
+            <div class="settings-sep"></div>
+
+            <button class="settings-item" onclick="navigateToFiles()">
+                <span class="material-icons-round settings-item-icon">folder</span>
+                <span class="settings-item-label" data-i18n="settings.files">File Manager</span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
+            <button class="settings-item" id="settings-admin-row" onclick="navigateToAdmin()" style="display:none">
+                <span class="material-icons-round settings-item-icon">admin_panel_settings</span>
+                <span class="settings-item-label" data-i18n="settings.admin">Admin Panel</span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
+
+            <button class="settings-logout" onclick="logout()">
+                <span class="material-icons-round">logout</span>
+                <span data-i18n="settings.logout">Logout</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Channel settings dialog -->
+<div id="channel-settings-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeChannelSettingsDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="channel.settings">Channel Settings</span>
+            <button class="btn-icon" onclick="closeChannelSettingsDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="ch-avatar-section" style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
+                <div class="ch-avatar-preview" id="ch-avatar-preview" style="width:64px;height:64px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:var(--text2);overflow:hidden;cursor:pointer;" onclick="document.getElementById('ch-avatar-input').click()"></div>
+                <div>
+                    <button class="btn-action" onclick="document.getElementById('ch-avatar-input').click()">Change avatar</button>
+                    <input type="file" id="ch-avatar-input" accept="image/*" hidden onchange="uploadChannelAvatarFile(this.files)">
+                </div>
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">tag</span>
+                <input type="text" id="ch-settings-name" placeholder="Название канала" data-i18n-placeholder="channel.name">
+            </div>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">description</span>
+                <input type="text" id="ch-settings-desc" placeholder="Описание" data-i18n-placeholder="channel.desc">
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content:space-between;">
+            <div style="display:flex;gap:8px;">
+                <button class="btn-action btn-danger" id="ch-settings-delete-btn" onclick="deleteCurrentChannel()" data-i18n="channel.delete">Delete</button>
+                <button class="btn-action btn-danger" id="ch-settings-leave-btn" onclick="leaveCurrentChannel()" data-i18n="channel.leave">Leave</button>
+            </div>
+            <button class="btn-action btn-accent" onclick="saveChannelSettings()" data-i18n="channel.save">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- New folder dialog -->
+<div id="folder-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeFolderDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="files.newFolder">New Folder</span>
+            <button class="btn-icon" onclick="closeFolderDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">folder</span>
+                <input type="text" id="folder-name-input" placeholder="Folder name" data-i18n-placeholder="files.folderName">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="createFolder()" data-i18n="files.createFolder">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Preview modal -->
+<div id="preview-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closePreview()"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="modal-title" id="preview-title"></span>
+            <button class="btn-icon" onclick="closePreview()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body" id="preview-body"></div>
+        <div class="modal-footer">
+            <a class="btn-action" id="preview-download" href="#" download>
+                <span class="material-icons-round">download</span>
+                <span data-i18n="files.download">Download</span>
+            </a>
+        </div>
+    </div>
+</div>
+
+
+<!-- Incoming call notification -->
+<div id="incoming-call" class="incoming-call" style="display:none">
+    <div class="incoming-call-info">
+        <span class="material-icons-round" style="font-size:32px;">call</span>
+        <div>
+            <div class="incoming-call-name" id="incoming-call-name"></div>
+            <div class="incoming-call-text" data-i18n="call.incoming">Incoming call...</div>
+        </div>
+    </div>
+    <div class="incoming-call-actions">
+        <button class="videocall-btn videocall-btn-accept" onclick="acceptIncomingCall()">
+            <span class="material-icons-round">call</span>
+        </button>
+        <button class="videocall-btn videocall-btn-hangup" onclick="declineIncomingCall()">
+            <span class="material-icons-round">call_end</span>
+        </button>
+    </div>
+</div>
+
+<!-- Invite to call modal -->
+<div id="invite-call-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeInviteCallModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="call.invite">Invite to call</span>
+            <button class="btn-icon" onclick="closeInviteCallModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="invite-call-search" placeholder="Search by name..." data-i18n-placeholder="call.searchPlaceholder" oninput="filterInviteCallList(this.value)">
+            </div>
+            <div id="invite-call-list" class="member-checklist"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="sendCallInvites()">
+                <span class="material-icons-round">call</span>
+                <span data-i18n="call.inviteBtn">Invite</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Forward Message Modal -->
+<div id="forward-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeForwardModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="forward.title">Forward message</span>
+            <button class="btn-icon" onclick="closeForwardModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="forward-search" data-i18n-placeholder="forward.search" placeholder="Search chat..." oninput="filterForwardList(this.value)">
+            </div>
+            <div id="forward-channel-list" class="forward-channel-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Share File to Chat Modal -->
+<div id="share-file-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeShareFileModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="share.title">Share to chat</span>
+            <button class="btn-icon" onclick="closeShareFileModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="share-search" data-i18n-placeholder="share.search" placeholder="Search chat..." oninput="filterShareList(this.value)">
+            </div>
+            <div id="share-channel-list" class="forward-channel-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Copy File to Folder Modal -->
+<div id="copy-file-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeCopyFileModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="copy.title">Copy to folder</span>
+            <button class="btn-icon" onclick="closeCopyFileModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="copy-search" data-i18n-placeholder="copy.search" placeholder="Search folder..." oninput="filterCopyList(this.value)">
+            </div>
+            <div id="copy-folder-list" class="copy-folder-list"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Global Search Modal -->
+<div id="global-search-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeGlobalSearchModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header" style="gap:8px;">
+            <div class="input-group" style="margin-bottom:0;flex:1;">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="global-search-input" placeholder="Поиск людей и каналов..." data-i18n-placeholder="search.usersAndChannels"
+                       oninput="filterGlobalSearch()">
+            </div>
+            <button class="btn-icon" onclick="closeGlobalSearchModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="global-search-tabs">
+            <button class="global-search-tab active" data-tab="all" onclick="switchGlobalSearchTab('all')">All</button>
+            <button class="global-search-tab" data-tab="people" onclick="switchGlobalSearchTab('people')">People</button>
+            <button class="global-search-tab" data-tab="channels" onclick="switchGlobalSearchTab('channels')">Channels</button>
+        </div>
+        <div class="global-search-results-wrap">
+            <div id="global-search-results" class="global-search-results"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Search panel -->
+<div id="search-panel" class="search-panel" style="display:none">
+    <div class="search-panel-header">
+        <div class="input-group">
+            <span class="material-icons-round input-icon">search</span>
+            <input type="text" id="search-input" placeholder="Search messages..." data-i18n-placeholder="search.placeholder">
+        </div>
+        <button class="btn-icon" onclick="toggleSearch()">
+            <span class="material-icons-round">close</span>
+        </button>
+    </div>
+    <div class="search-results" id="search-results"></div>
+</div>
+
+<!-- ── ChaosTracker Modals ── -->
+
+<!-- Create Project -->
+<div id="create-project-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeCreateProjectDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title">Новый проект</span>
+            <button class="btn-icon" onclick="closeCreateProjectDialog()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group"><span class="material-icons-round input-icon">folder</span><input type="text" id="project-name-input" placeholder="Название проекта"></div>
+            <div class="input-hint">Короткое название для доски задач</div>
+            <div class="input-group"><span class="material-icons-round input-icon">label</span><input type="text" id="project-prefix-input" placeholder="Префикс (напр. ECOMSEC)" style="text-transform:uppercase"></div>
+            <div class="input-hint">Сокращение для нумерации задач: ECOMSEC-1, ECOMSEC-2...</div>
+            <div class="input-group"><span class="material-icons-round input-icon">description</span><input type="text" id="project-desc-input" placeholder="Описание (необязательно)"></div>
+            <div class="input-hint">О чём этот проект, какие цели</div>
+            <div class="project-members-picker">
+                <label>Участники</label>
+                <div class="input-hint" style="margin-top:0">Только выбранные пользователи увидят проект</div>
+                <div id="project-members-chips" class="members-chips"></div>
+                <div class="task-form-row">
+                    <select id="project-member-select"><option value="">Добавить участника...</option></select>
+                    <select id="project-member-role"><option value="member">Участник</option><option value="lead">Руководитель</option><option value="viewer">Наблюдатель</option></select>
+                    <button class="btn-icon" onclick="addProjectCreationMember()"><span class="material-icons-round">person_add</span></button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer"><button class="btn-action btn-accent" onclick="createProject()">Создать</button></div>
+    </div>
+</div>
+
+<!-- Create Subproject -->
+<div id="create-subproject-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeCreateSubprojectDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title">Новый подпроект</span>
+            <button class="btn-icon" onclick="closeCreateSubprojectDialog()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group"><span class="material-icons-round input-icon">account_tree</span><input type="text" id="subproject-name-input" placeholder="Название подпроекта"></div>
+            <div class="input-group"><span class="material-icons-round input-icon">label</span><input type="text" id="subproject-prefix-input" placeholder="Префикс (напр. ECOMSEC)" style="text-transform:uppercase"></div>
+            <div class="input-hint">Сокращение для нумерации задач</div>
+        </div>
+        <div class="modal-footer"><button class="btn-action btn-accent" onclick="createSubproject()">Создать</button></div>
+    </div>
+</div>
+
+<!-- Create Task -->
+<div id="create-task-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeCreateTaskDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title">Новая задача</span>
+            <button class="btn-icon" onclick="closeCreateTaskDialog()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group"><span class="material-icons-round input-icon">title</span><input type="text" id="task-title-input" placeholder="Название задачи"></div>
+            <div class="input-hint">Кратко опишите что нужно сделать</div>
+            <textarea id="task-desc-input" class="task-desc-textarea" rows="3" placeholder="Описание (необязательно)"></textarea>
+            <div class="task-create-fields">
+                <div class="task-create-field">
+                    <label>Тип задачи</label>
+                    <select id="task-issue-type-input" onchange="onCreateTaskIssueTypeChange()"><option value="">Без типа</option></select>
+                </div>
+                <div class="task-create-field">
+                    <label>Приоритет</label>
+                    <select id="task-priority-input"><option value="low">Низкий</option><option value="medium" selected>Средний</option><option value="high">Высокий</option><option value="critical">Критический</option></select>
+                </div>
+                <div class="task-create-field">
+                    <label>Исполнитель</label>
+                    <select id="task-assignee-input"><option value="">Не назначен</option></select>
+                </div>
+                <div class="task-create-field">
+                    <label>Срок выполнения</label>
+                    <input type="date" id="task-due-input">
+                </div>
+            </div>
+            <div id="task-custom-fields-create" class="task-custom-fields-container"></div>
+            <div id="task-labels-select" class="task-labels-select"></div>
+            <div class="task-create-attachments">
+                <label>Вложения</label>
+                <div id="task-create-file-list" class="task-create-file-list"></div>
+                <button type="button" class="btn-action" onclick="document.getElementById('task-create-file-input').click()">
+                    <span class="material-icons-round" style="font-size:16px;vertical-align:middle">attach_file</span> Прикрепить файл
+                </button>
+                <input type="file" id="task-create-file-input" hidden multiple onchange="addCreateTaskFiles(this.files)">
+            </div>
+        </div>
+        <div class="modal-footer"><button class="btn-action btn-accent" onclick="createTask()">Создать</button></div>
+    </div>
+</div>
+
+<!-- Task Detail -->
+<div id="task-detail-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeTaskDetail()"></div>
+    <div class="modal-content task-detail-content">
+        <div class="modal-header">
+            <span class="modal-title" id="task-detail-title"></span>
+            <div style="display:flex;gap:4px;">
+                <button class="btn-icon" id="task-delete-btn" onclick="deleteCurrentTask()" title="Удалить задачу"><span class="material-icons-round">delete</span></button>
+                <button class="btn-icon" onclick="closeTaskDetail()"><span class="material-icons-round">close</span></button>
+            </div>
+        </div>
+        <div class="task-detail-body">
+            <div class="task-detail-main">
+                <div class="task-detail-section">
+                    <h4>Описание</h4>
+                    <div id="task-detail-desc" class="task-detail-desc">Нет описания</div>
+                </div>
+                <div class="task-detail-section">
+                    <h4>Подзадачи <span id="task-subtask-progress"></span></h4>
+                    <div id="task-subtask-list" class="task-subtask-list"></div>
+                    <div class="task-subtask-add">
+                        <input type="text" id="task-subtask-input" placeholder="Добавить подзадачу..." onkeydown="if(event.key==='Enter')addSubtask()">
+                        <button class="btn-icon" onclick="addSubtask()"><span class="material-icons-round">add</span></button>
+                    </div>
+                </div>
+                <div class="task-detail-section">
+                    <h4>Вложения</h4>
+                    <div id="task-attachment-list" class="task-attachment-list"></div>
+                    <button class="btn-action" onclick="document.getElementById('task-attach-input').click()"><span class="material-icons-round">attach_file</span> Добавить файл</button>
+                    <input type="file" id="task-attach-input" hidden onchange="uploadTaskAttachment(this.files)">
+                </div>
+                <div class="task-detail-section">
+                    <h4>Комментарии</h4>
+                    <div id="task-comment-list" class="task-comment-list"></div>
+                    <div class="task-comment-input-area">
+                        <textarea id="task-comment-input" rows="2" placeholder="Написать комментарий..."></textarea>
+                        <button class="btn-icon btn-accent" onclick="addTaskComment()"><span class="material-icons-round">send</span></button>
+                    </div>
+                </div>
+            </div>
+            <div class="task-detail-sidebar">
+                <div class="task-detail-field"><label>Тип</label><select id="task-detail-issue-type" onchange="updateTaskField('issue_type_id',this.value)"><option value="">Без типа</option></select></div>
+                <div class="task-detail-field"><label>Статус</label><select id="task-detail-status" onchange="updateTaskField('status',this.value)"><option value="todo">К выполнению</option><option value="in_progress">В работе</option><option value="review">На проверке</option><option value="done">Готово</option></select></div>
+                <div class="task-detail-field"><label>Приоритет</label><select id="task-detail-priority" onchange="updateTaskField('priority',this.value)"><option value="low">Низкий</option><option value="medium">Средний</option><option value="high">Высокий</option><option value="critical">Критический</option></select></div>
+                <div class="task-detail-field"><label>Исполнитель</label><select id="task-detail-assignee" onchange="updateTaskField('assignee',this.value)"><option value="">Не назначен</option></select></div>
+                <div class="task-detail-field"><label>Срок</label><input type="date" id="task-detail-due" onchange="updateTaskField('due_date',this.value)"></div>
+                <div id="task-detail-custom-fields" class="task-custom-fields-container"></div>
+                <div class="task-detail-field"><label>Метки</label><div id="task-detail-labels" class="task-detail-labels"></div></div>
+                <div class="task-detail-meta"><span id="task-detail-created"></span><span id="task-detail-author"></span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Project Settings -->
+<div id="project-settings-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeProjectSettings()"></div>
+    <div class="modal-content" style="max-width:560px;width:92vw;max-height:85vh;">
+        <div class="modal-header">
+            <span class="modal-title">Настройки проекта</span>
+            <button class="btn-icon" onclick="closeProjectSettings()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col" style="overflow-y:auto;max-height:65vh;">
+            <div class="input-group"><span class="material-icons-round input-icon">folder</span><input type="text" id="project-settings-name" placeholder="Название проекта"></div>
+            <div class="input-group"><span class="material-icons-round input-icon">description</span><input type="text" id="project-settings-desc" placeholder="Описание"></div>
+            <div class="input-group"><span class="material-icons-round input-icon">label</span><input type="text" id="project-settings-prefix" placeholder="Префикс (напр. ECOMSEC)" style="text-transform:uppercase"></div>
+            <div class="input-hint">Сокращение для нумерации задач: PREFIX-1, PREFIX-2...</div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Доступ</h4>
+            <div class="input-hint">Публичный проект виден всем пользователям</div>
+            <div class="task-form-row">
+                <label class="toggle-label" id="project-visibility-toggle">
+                    <input type="checkbox" id="project-settings-visibility">
+                    <span>Публичный доступ</span>
+                </label>
+            </div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Исполнитель по умолчанию</h4>
+            <div class="input-hint">На кого автоматически назначаются тикеты из публичного портала</div>
+            <div class="task-form-row">
+                <select id="project-settings-default-assignee" style="flex:1">
+                    <option value="">Не назначен</option>
+                </select>
+            </div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Участники</h4>
+            <div class="input-hint">Кто имеет доступ к проекту и задачам</div>
+            <div id="project-members-list" class="project-members-list"></div>
+            <div class="task-form-row">
+                <select id="project-add-member-select"><option value="">Выберите пользователя...</option></select>
+                <select id="project-add-member-role"><option value="member">Участник</option><option value="lead">Руководитель</option><option value="viewer">Наблюдатель</option></select>
+                <button class="btn-action btn-accent" onclick="addProjectMember()">Добавить</button>
+            </div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Метки</h4>
+            <div class="input-hint">Цветные теги для группировки задач</div>
+            <div id="project-labels-list" class="project-labels-list"></div>
+            <div class="task-form-row">
+                <input type="text" id="project-label-name" placeholder="Название метки">
+                <input type="color" id="project-label-color" value="#4a90d9" style="width:40px;padding:2px">
+                <button class="btn-action" onclick="createProjectLabel()">Добавить</button>
+            </div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Типы заявок</h4>
+            <div class="input-hint">Категории задач: баг, задача, история и т.д.</div>
+            <div id="project-issue-types-list" class="project-issue-types-list"></div>
+            <div class="task-form-row">
+                <input type="text" id="project-issue-type-name" placeholder="Название типа">
+                <input type="text" id="project-issue-type-icon" placeholder="Иконка" style="width:50px" value="📋">
+                <input type="color" id="project-issue-type-color" value="#4a90d9" style="width:40px;padding:2px">
+                <button class="btn-action" onclick="createIssueType()">Добавить</button>
+            </div>
+            <hr style="border-color:var(--border);margin:8px 0">
+            <h4 style="margin:0;font-size:14px">Пользовательские поля</h4>
+            <div class="input-hint">Дополнительные поля для задач: спринт, баллы, окружение</div>
+            <div id="project-custom-fields-list" class="project-custom-fields-list"></div>
+            <div class="task-form-row" style="flex-wrap:wrap;gap:6px">
+                <input type="text" id="project-field-name" placeholder="Название поля" style="flex:2;min-width:120px">
+                <select id="project-field-type" style="flex:1;min-width:80px">
+                    <option value="text">Текст</option>
+                    <option value="number">Число</option>
+                    <option value="select">Выбор</option>
+                    <option value="date">Дата</option>
+                    <option value="checkbox">Чекбокс</option>
+                    <option value="url">Ссылка</option>
+                </select>
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="project-field-required"> Обязательное</label>
+                <button class="btn-action" onclick="createCustomField()">Добавить</button>
+            </div>
+            <div id="project-field-options-row" class="task-form-row" style="display:none">
+                <input type="text" id="project-field-options" placeholder="Варианты (через запятую)" style="flex:1">
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content:space-between">
+            <button class="btn-action btn-danger" id="project-delete-btn" onclick="deleteCurrentProject()">Удалить проект</button>
+            <button class="btn-action btn-accent" onclick="saveProjectSettings()">Сохранить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Submit Ticket (simplified) -->
+<div id="submit-ticket-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeSubmitTicketDialog()"></div>
+    <div class="modal-content" style="max-width:480px;width:90vw;">
+        <div class="modal-header">
+            <span class="modal-title">Отправить тикет</span>
+            <button class="btn-icon" onclick="closeSubmitTicketDialog()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="submit-ticket-target" id="submit-ticket-target-name"></div>
+            <div class="input-group"><span class="material-icons-round input-icon">title</span><input type="text" id="submit-ticket-title" placeholder="Название тикета"></div>
+            <textarea id="submit-ticket-desc" class="task-desc-textarea" rows="4" placeholder="Описание (необязательно)"></textarea>
+            <div class="task-form-row">
+                <label style="font-size:12px;color:var(--text2)">Приоритет</label>
+                <select id="submit-ticket-priority">
+                    <option value="low">Низкий</option>
+                    <option value="medium" selected>Средний</option>
+                    <option value="high">Высокий</option>
+                    <option value="critical">Критический</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" onclick="submitTicket()">Отправить</button>
+        </div>
+    </div>
+</div>
+
+<!-- Context menu (universal) -->
+<div id="context-menu" class="context-menu" style="display:none"></div>
+
+<!-- Toast notifications -->
+<div id="toast-container" class="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+<script src="/app.js?v=44"></script>
+</body>
+</html>

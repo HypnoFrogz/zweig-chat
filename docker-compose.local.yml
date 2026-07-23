@@ -1,0 +1,57 @@
+# Local / LAN deployment — backend + nginx over plain HTTP on port 80.
+# No LiveKit, no certbot, no TLS (those need a real domain + certificates).
+# Reachable from phones/other devices on the same network via http://<PC-IP>/
+#
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+# Secrets come from .env (see .env.example).
+services:
+  backend:
+    build: ./backend
+    container_name: nebenan-backend-local
+    restart: unless-stopped
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - UPLOAD_DIR=/app/uploads
+      - DATA_DIR=/app/data
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_EMAIL=${VAPID_EMAIL}
+      - SERVER_DOMAIN=${SERVER_DOMAIN}
+      - FEDERATION_ALLOW_HTTP=${FEDERATION_ALLOW_HTTP}
+    volumes:
+      - uploads:/app/uploads
+      - data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - app-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: nebenan-nginx-local
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.local.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+      - uploads:/uploads:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-net
+
+volumes:
+  data:
+  uploads:
+
+networks:
+  app-net:

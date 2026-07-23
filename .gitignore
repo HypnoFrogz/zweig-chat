@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+uploads/*
+!uploads/.gitkeep
+firebase-service-account.json
+google-services.json
+GoogleService-Info.plist
+mobile/build/
+
+.claude/
+.env
+.env.*
+!.env.example
+
+data/*.json
+data/messages/*
+!data/messages/.gitkeep
+certbot/conf/
+
+# LiveKit config holds the shared API secret — keep only the example in git
+livekit/livekit.yaml
+docker-compose.override.yml

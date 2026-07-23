@@ -1,0 +1,99 @@
+## Задача: Подготовка Android release-сборки
+- **Статус**: Завершена
+- **Описание**: Подготовить стабильную релизную сборку Android (APK/AAB), восстановить Android-конфигурацию, настроить production-подпись и получить валидные артефакты для публикации.
+- **Шаги выполнения**:
+ - [x] Восстановлен Android-каркас Flutter-проекта (`mobile/android`).
+ - [x] Исправлены параметры сборки Android (`compileSdk`, `ndkVersion`, Gradle/Kotlin stability flags).
+ - [x] Подключен `google-services.json` для корректной работы Google Services.
+ - [x] Настроена release-подпись через `key.properties` и keystore.
+ - [x] Собраны релизные артефакты APK и AAB.
+- **Зависимости**: Firebase-конфигурация (`google-services.json`), Android SDK/NDK, Flutter toolchain.
+
+## Задача: Подготовка публикации в Google Play (Internal/Closed Testing)
+- **Статус**: В процессе
+- **Описание**: Подготовить карточку приложения и обязательные разделы Play Console для загрузки релизного AAB.
+- **Шаги выполнения**:
+ - [x] Сформирована релизная сборка AAB.
+ - [ ] Проверить версию и `versionCode` перед загрузкой в трек.
+ - [ ] Заполнить `App access`, `Data safety`, `Privacy policy`.
+ - [ ] Загрузить AAB в Internal Testing и проверить установку.
+- **Зависимости**: Аккаунт Google Play Console, URL публичной Privacy Policy.
+
+## Задача: Стабильная авторизация без частых повторных логинов
+- **Статус**: В процессе
+- **Описание**: Перевести авторизацию на схему access + refresh, исключить ложный разлогин при сетевых сбоях, сохранить управляемость сессий админом.
+- **Шаги выполнения**:
+ - [x] Добавлена серверная таблица `user_sessions` для refresh-сессий.
+ - [x] Реализованы endpoint'ы `POST /api/auth/refresh` и `POST /api/auth/logout`.
+ - [x] Изменён `POST /api/login` для выдачи пары `access_token` + `refresh_token`.
+ - [x] Реализован мобильный auto-refresh и повтор запроса после `401`.
+ - [x] Убрано удаление сессии на мобильном клиенте при сетевых/временных ошибках.
+ - [x] Добавлена диагностируемость мобильного login: показ backend `detail`/HTTP-кода вместо общего `Login failed`.
+ - [x] Устранён ложный fail login из-за push-регистрации: `NotificationService.registerToken()` переведён в best-effort после успешной авторизации.
+ - [x] Добавлена нормализация логина на mobile перед `POST /api/login` (`trim + lower`).
+ - [x] Реализована конфигурация mobile API endpoint через `--dart-define=API_BASE_URL` (с fallback на production).
+ - [x] Добавлена нормализация `API_BASE_URL` в mobile-клиенте (автодобавление `/api`, удаление хвостовых `/`).
+ - [x] Добавлены инструкции сборки mobile для prod/stage окружений в `README.md`.
+ - [ ] Прогнать интеграционные проверки сценариев: access-expired, refresh-expired, offline-start, admin-block.
+ - [ ] Подготовить релизную заметку по новым env: `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`, `REFRESH_SECRET_KEY`.
+- **Зависимости**: Стабильные значения `SECRET_KEY/REFRESH_SECRET_KEY` в production окружении.
+
+## Задача: Упрощение звонков (адресный cold-call + audio-first)
+- **Статус**: В процессе
+- **Описание**: Перевести звонки на адресную модель (конкретный абонент), добавить cold-call для Android и запускать звонок как аудио с ручным включением видео/громкой связи.
+- **Шаги выполнения**:
+ - [x] Добавлена таблица `calls` с TTL, статусами и media-state.
+ - [x] Реализованы backend endpoint'ы `calls/start|answer|reject|end|update-media|get`.
+ - [x] Обновлён FCM payload для звонков: `type=call_invite`, `call_id`, `mode`, `expires_at`.
+ - [x] Добавлен мобильный `CallsApi` и обработка `call_id` в `app.dart`.
+ - [x] Включён audio-first режим на `CallScreen` (camera off, speaker off по умолчанию).
+ - [x] Переведён web-клиент на новый поток `calls/*` с fallback на legacy `videocall/*`.
+ - [x] Доведён web до соответствия Android-потоку: `call_invite` + `call_id`, speaker toggle, `calls/update-media`.
+- [x] Добавлена серверная очистка протухших `ringing` вызовов перед busy-check в `calls/start`.
+- [x] Добавлена очистка устаревших `active` вызовов по таймауту `CALL_ACTIVE_STALE_SEC`.
+- [x] Добавлен серверный фоновый cleanup звонков (периодическая self-healing очистка + cleanup на startup).
+- [x] Добавлен retention без архивации: автоудаление завершённых/пропущенных звонков старше `CALL_RETENTION_DAYS` (5 дней).
+- [x] Улучшена диагностика ошибок старта звонка на mobile и web (показ backend `detail`).
+- [x] Выровнено ограничение direct-only для адресного звонка на mobile.
+- [x] Исправлено закрытие web-звонка по `call_ended` через `call_id` для нового потока `calls/*`.
+- [x] Исправлен mobile websocket reconnect: перед подключением выполняется refresh access-token.
+- [x] Исправлен mobile accept-поток: подключение к LiveKit только по данным ответа `calls/answer`.
+- [x] Исправлен nginx `/livekit/` proxy для стабильного websocket upgrade (без `rewrite`/dynamic upstream).
+- [x] Исправлен backend presence: сломанные websocket-сокеты удаляются сразу при send-error.
+- [x] Добавлен backend fallback доставки `CALL_PUSH_ALWAYS=true` для `calls/start`.
+- [x] Добавлен mobile foreground-fallback: обработка FCM `call_invite` в `NotificationService`.
+- [x] Исправлен release-crash в local notifications (`TypeToken`) через proguard keep-rules.
+- [x] Добавлен анти-дубль `calls/answer` на mobile (защита от повторного accept на тот же `call_id`).
+- [x] Изменён cold-start UX: при открытии из push сначала показывается in-app incoming overlay (без принудительного авто-answer).
+- [x] Добавлено сохранение pending `call_invite` в local storage и восстановление incoming overlay при старте приложения.
+- [x] Добавлена очистка pending `call_invite` в сценариях accept/reject/end для исключения устаревших приглашений.
+- [x] В адресном потоке `calls/start` включён backend push-fallback (`CALL_PUSH_ALWAYS`) для cold-call wake сценариев.
+- [x] Для mobile `call_invite` включён background incoming call notification/ringtone через `NotificationService` (с сохранением pending invite).
+- [x] Исправлена корреляция завершения/ответа входящего вызова на mobile: приоритетная сверка по `call_id` вместо `channel_slug`.
+- [x] Удалена неиспользуемая ветка `_joinCallFromNotification` в `mobile/lib/app.dart`.
+- [x] Деактивирован legacy native-call путь Android (`IncomingCallActivity`, `call_notification/call_action`), неиспользуемый в текущем Flutter incoming-потоке.
+- [x] Стабилизирован lifecycle рингтона в `mobile/lib/app.dart`: единые `_setIncomingCall/_clearIncomingCall` и авто-очистка incoming по `expires_at` (TTL fallback).
+- [x] В web (`frontend/app.js`) исправлена корреляция incoming-событий по `call_id` (`call_answered`/`call_ended`), добавлен TTL fallback по `expires_at`, убран legacy fallback reject по `channel_slug`, улучшен показ ошибок `calls/answer`.
+- [x] Для варианта 2 возвращён background wake путь звонков: в `calls/start` восстановлен push-fallback (`CALL_PUSH_ALWAYS`) и снята блокировка старта для offline callee.
+- [x] Для web добавлен background wake push при адресном звонке (`send_push_to_user` с `type=call_invite`, `call_id`, `expires_at`).
+- [x] Для mobile FCM call-payload переведён в data-only wake формат (без явного notification блока), чтобы доставка звонка шла как фоновый сигнал.
+- [x] В `frontend/service-worker.js` добавлена фоновая обработка `call_invite` как call-уведомления (requireInteraction/vibrate/open conversation).
+- [x] Добавлен silent-режим web call-push (`frontend/service-worker.js`: `silent: true` для `call_invite`) — push не генерирует звук.
+- [x] В mobile `NotificationService` разделены плееры сообщений/рингтона и введён приоритет рингтона (звуки сообщений подавляются при входящем звонке).
+- [x] В mobile call-уведомлениях (`showCallNotification`, background static) отключён звук уведомления (`playSound/presentSound=false`), чтобы аудио шло только через рингтон приложения.
+- [x] Добавлена дедупликация входящего вызова по `call_id` в `mobile/lib/services/notification_service.dart`, `mobile/lib/app.dart` и `frontend/app.js`.
+- [x] Исправлен системный звук call-push на Android: миграция с legacy-канала `calls` на silent-канал `calls_silent_v2` + удаление старого канала при инициализации.
+- [x] Обновлён default FCM notification channel в `AndroidManifest.xml` на `calls_silent_v2`.
+- [x] Исправлен тип Android TTL в `backend/fcm_sender.py` (`timedelta(seconds=45)`), чтобы доставка `call_invite` работала стабильно в фоне.
+ - [ ] Интеграционно проверить сценарии TTL/missed/busy/reject/end на staging.
+- **Зависимости**: Стабильный WS-presence online/offline, корректный `LIVEKIT_PUBLIC_URL`.
+
+## Задача: Выравнивание web-auth под access+refresh
+- **Статус**: Завершена
+- **Описание**: Привести web-клиент к новой backend-схеме токенов, чтобы исключить принудительный logout на первом `401`.
+- **Шаги выполнения**:
+ - [x] Добавлено хранение `ch_access_token` + `ch_refresh_token` (legacy `ch_token` оставлен только для миграции).
+ - [x] Реализован авто-refresh (`POST /api/auth/refresh`) внутри `apiFetch` при `401`.
+ - [x] Добавлен logout с best-effort отзывом refresh-сессии (`POST /api/auth/logout`).
+ - [x] Обновлены записи в changelog.
+- **Зависимости**: Доступность backend endpoint'ов `auth/refresh` и `auth/logout`.

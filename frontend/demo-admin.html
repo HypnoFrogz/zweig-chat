@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nebenan — превью админки</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=41">
+    <style>
+        #theme-toggle { position: fixed; top: 12px; right: 16px; z-index: 999;
+            background: var(--accent); color: var(--on-accent); border: none;
+            border-radius: 20px; padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 12px; }
+    </style>
+</head>
+<body>
+<button id="theme-toggle" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme')==='light' ? 'dark' : 'light');">Тема</button>
+
+<div id="app-screen" class="screen active">
+    <div class="app-layout">
+
+        <!-- ── SIDEBAR ── -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-header-top">
+                    <span class="material-icons-round sidebar-logo">forum</span>
+                    <span class="sidebar-title">Nebenan</span>
+                </div>
+                <div class="sidebar-header-btns">
+                    <button class="btn-icon sidebar-files-btn" title="Files"><span class="material-icons-round">folder</span></button>
+                    <button class="btn-icon" title="Feedback"><span class="material-icons-round">feedback</span></button>
+                    <button class="btn-icon sidebar-admin-btn" title="Admin"><span class="material-icons-round">admin_panel_settings</span></button>
+                </div>
+            </div>
+            <div class="sidebar-search">
+                <span class="material-icons-round sidebar-search-icon">search</span>
+                <input type="text" class="sidebar-search-input" placeholder="Поиск...">
+            </div>
+            <div class="sidebar-section">
+                <div class="sidebar-section-header"><span>Чаты</span></div>
+                <div class="sidebar-list">
+                    <div class="sidebar-item"><span class="sidebar-item-icon">#</span><span class="sidebar-item-name">двор-и-парковка</span></div>
+                    <div class="sidebar-item"><span class="sidebar-item-icon">#</span><span class="sidebar-item-name">объявления</span><span class="sidebar-item-badge">3</span></div>
+                    <div class="sidebar-item"><span class="sidebar-item-icon">🔒</span><span class="sidebar-item-name">правление-дома</span></div>
+                </div>
+            </div>
+            <div class="sidebar-user">
+                <div class="sidebar-user-avatar">К</div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name">Клаудио</div>
+                    <div class="sidebar-user-status">Администратор</div>
+                </div>
+                <button class="btn-icon-xs"><span class="material-icons-round">settings</span></button>
+            </div>
+        </aside>
+
+        <!-- ── MAIN AREA ── -->
+        <main class="main-area">
+            <header class="topbar">
+                <button class="btn-icon topbar-menu-btn"><span class="material-icons-round">menu</span></button>
+                <div class="topbar-channel-info">
+                    <span class="topbar-channel-icon"><span class="material-icons-round">admin_panel_settings</span></span>
+                    <span class="topbar-channel-name">Админ-панель</span>
+                </div>
+            </header>
+
+            <div class="page active">
+                <div style="flex:1; overflow-y:auto; padding:20px 24px;">
+                    <div class="admin-page-header">
+                        <h2 class="admin-page-title">Админ-панель</h2>
+                        <div class="admin-header-actions">
+                            <button class="btn-action"><span class="material-icons-round">download</span><span>Шаблон</span></button>
+                            <button class="btn-action"><span class="material-icons-round">upload_file</span><span>Импорт из Excel</span></button>
+                            <button class="btn-action btn-accent"><span class="material-icons-round">person_add</span><span>Создать пользователя</span></button>
+                        </div>
+                    </div>
+
+                    <!-- Create user form (shown for demo) -->
+                    <div class="admin-create-form" style="display:flex">
+                        <div class="input-group"><span class="material-icons-round input-icon">person</span><input type="text" placeholder="Логин" value="ivan_k"></div>
+                        <div class="input-group"><span class="material-icons-round input-icon">lock</span><input type="text" placeholder="Пароль"></div>
+                        <div class="input-group"><span class="material-icons-round input-icon">badge</span><input type="text" placeholder="Отображаемое имя" value="Иван Ковач"></div>
+                        <button class="btn-action btn-accent admin-create-btn">Создать</button>
+                        <button class="btn-action admin-create-btn"><span class="material-icons-round">close</span></button>
+                        <div class="admin-form-hint">Логин — латиница, цифры и _ (для входа и упоминаний @). Имя может быть кириллицей.</div>
+                    </div>
+
+                    <!-- Import result (shown for demo) -->
+                    <div class="admin-import-result" style="display:block">
+                        <div class="air-summary">
+                            <span class="air-ok">Создано: 12</span>
+                            <span class="air-skip">Пропущено: 2</span>
+                            <span class="air-err">Ошибок: 1</span>
+                            <button class="btn-icon-xs"><span class="material-icons-round">close</span></button>
+                        </div>
+                        <ul class="air-errors">
+                            <li>Строка 7 (@ivan!): Логин: 2–32 символа, только латинские буквы, цифры и _</li>
+                        </ul>
+                    </div>
+
+                    <div class="admin-section">
+                        <div class="admin-section-title">
+                            <span class="material-icons-round">people</span>
+                            <span>Пользователи</span>
+                        </div>
+                        <div class="admin-users-list">
+                            <div class="admin-user-row">
+                                <div class="admin-user-info">
+                                    <div class="admin-user-name">Клаудио (@claudio) <span class="admin-badge admin">admin</span></div>
+                                    <div class="admin-user-meta">Создан: 12.01.2025</div>
+                                </div>
+                                <div class="admin-user-actions"></div>
+                            </div>
+                            <div class="admin-user-row">
+                                <div class="admin-user-info">
+                                    <div class="admin-user-name">Анна Ковач (@anna)</div>
+                                    <div class="admin-user-meta">Создан: 03.02.2025</div>
+                                </div>
+                                <div class="admin-user-actions">
+                                    <button class="btn-icon" title="Выдать админа"><span class="material-icons-round">add_moderator</span></button>
+                                    <button class="btn-icon" title="Заблокировать"><span class="material-icons-round">block</span></button>
+                                    <button class="btn-icon" title="Сбросить пароль"><span class="material-icons-round">key</span></button>
+                                    <button class="btn-icon" title="Удалить" style="color:var(--danger)"><span class="material-icons-round">delete</span></button>
+                                </div>
+                            </div>
+                            <div class="admin-user-row">
+                                <div class="admin-user-info">
+                                    <div class="admin-user-name">Марк Вебер (@mark) <span class="admin-badge blocked">blocked</span></div>
+                                    <div class="admin-user-meta">Создан: 20.02.2025</div>
+                                </div>
+                                <div class="admin-user-actions">
+                                    <button class="btn-icon" title="Выдать админа"><span class="material-icons-round">add_moderator</span></button>
+                                    <button class="btn-icon" title="Разблокировать"><span class="material-icons-round">lock_open</span></button>
+                                    <button class="btn-icon" title="Сбросить пароль"><span class="material-icons-round">key</span></button>
+                                    <button class="btn-icon" title="Удалить" style="color:var(--danger)"><span class="material-icons-round">delete</span></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="admin-divider">
+
+                    <div class="admin-section">
+                        <div class="admin-section-title">
+                            <span class="material-icons-round">feedback</span>
+                            <span>Обратная связь</span>
+                            <button class="btn-icon" title="Обновить" style="margin-left:auto"><span class="material-icons-round">refresh</span></button>
+                        </div>
+                        <div>
+                            <div class="admin-feedback-item">
+                                <div class="admin-feedback-header">
+                                    <span class="admin-feedback-author">Анна Ковач (@anna)</span>
+                                    <span class="admin-feedback-date">13.07.2026, 09:41</span>
+                                </div>
+                                <div class="admin-feedback-text">Было бы удобно закрепить объявление о собрании жильцов вверху канала.</div>
+                            </div>
+                            <div class="admin-feedback-item">
+                                <div class="admin-feedback-header">
+                                    <span class="admin-feedback-author">Марк Вебер (@mark)</span>
+                                    <span class="admin-feedback-date">12.07.2026, 18:12</span>
+                                </div>
+                                <div class="admin-feedback-text">Добавьте тёмную тему по расписанию — вечером хочется помягче. Спасибо за приложение! 🌳</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+</body>
+</html>

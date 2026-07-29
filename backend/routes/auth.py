@@ -161,6 +161,88 @@ async def logout_session(data: dict, username: str = Depends(get_current_user)):
     return {"ok": True}
 
 
+@router.delete("/account")
+async def delete_account(data: dict, username: str = Depends(get_current_user)):
+    """Permanently delete the current user's account (Apple 5.1.1(v) / GDPR erasure).
+
+    Removes the user's personal data and revokes every session. Messages the user
+    authored in shared channels are ANONYMIZED (sender_name -> placeholder, sender
+    replaced with an opaque token), not deleted, so team history stays intact —
+    which is what a corporate deployment needs and what Apple accepts.
+
+    Requires the account password for re-authentication.
+    """
+    password = data.get("password") or ""
+    if not password:
+        raise HTTPException(status_code=400, detail="Password confirmation required")
+
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(password, user["password"]):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+
+    # Safeguard: the last active admin cannot delete themselves and lock out the org.
+    if user["role"] == "admin":
+        cur = await db.execute(
+            "SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND blocked = 0"
+        )
+        row = await cur.fetchone()
+        if (row["cnt"] if row else 0) <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="You are the last administrator — assign another admin before deleting your account.",
+            )
+
+    placeholder = "Удалённый пользователь"
+    anon = f"deleted:{uuid.uuid4().hex[:12]}"
+
+    # 1) Anonymize authored content (keep messages, drop the identity link).
+    await db.execute(
+        "UPDATE messages SET sender = ?, sender_name = ? WHERE sender = ?",
+        (anon, placeholder, username),
+    )
+    await db.execute(
+        "UPDATE channels SET last_msg_sender = ?, last_msg_sender_name = ? WHERE last_msg_sender = ?",
+        (anon, placeholder, username),
+    )
+    await db.execute("UPDATE channels SET created_by = ? WHERE created_by = ?", (anon, username))
+    await db.execute("UPDATE call_log SET started_by = ? WHERE started_by = ?", (anon, username))
+
+    # 2) Delete personal / identity-linked rows explicitly (do not rely on FK cascade).
+    await db.execute("DELETE FROM channel_members WHERE username = ?", (username,))
+    await db.execute("DELETE FROM message_reads WHERE username = ?", (username,))
+    await db.execute("DELETE FROM message_reactions WHERE username = ?", (username,))
+    await db.execute("DELETE FROM user_devices WHERE username = ?", (username,))
+    await db.execute("DELETE FROM user_sessions WHERE username = ?", (username,))
+    await db.execute("DELETE FROM preferences WHERE username = ?", (username,))
+    await db.execute("DELETE FROM feedback WHERE username = ?", (username,))
+    await db.execute("DELETE FROM online_sessions WHERE username = ?", (username,))
+    await db.execute("DELETE FROM user_activity_log WHERE username = ?", (username,))
+    await db.execute("DELETE FROM login_log WHERE username = ?", (username,))
+    await db.execute("DELETE FROM task_project_members WHERE username = ?", (username,))
+    await db.execute(
+        "DELETE FROM calls WHERE caller_username = ? OR callee_username = ?", (username, username)
+    )
+
+    # 3) Delete avatar files from disk.
+    for f in AVATAR_DIR.glob(f"{username}.*"):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+    # 4) Finally remove the user record itself.
+    await db.execute("DELETE FROM users WHERE username = ?", (username,))
+    await db.commit()
+
+    # Tell connected clients this identity is gone (they drop it from lists/UI).
+    await manager.broadcast_all({"event": "user_deleted", "username": username})
+    return {"ok": True}
+
+
 @router.get("/me")
 async def get_me(username: str = Depends(get_current_user)):
     user = await get_current_user_info(username)

@@ -266,6 +266,18 @@ const I18N = {
         'settings.files': 'Файловый менеджер',
         'settings.admin': 'Панель администратора',
         'settings.logout': 'Выйти',
+        'settings.privacy': 'Политика конфиденциальности',
+        'settings.terms': 'Условия использования',
+        'settings.support': 'Поддержка',
+        'settings.deleteAccount': 'Удалить аккаунт',
+        'delacc.title': 'Удаление аккаунта',
+        'delacc.warn': 'Аккаунт и персональные данные будут удалены безвозвратно. Ваши сообщения в общих каналах будут анонимизированы. Действие необратимо.',
+        'delacc.pw': 'Пароль',
+        'delacc.cancel': 'Отмена',
+        'delacc.confirm': 'Удалить аккаунт',
+        'delacc.needpw': 'Введите пароль',
+        'delacc.wrongpw': 'Неверный пароль',
+        'delacc.fail': 'Не удалось удалить аккаунт',
         'files.newFolder': 'Новая папка',
         'files.upload': 'Загрузить',
         'files.uploadMedia': 'Фото / Видео',
@@ -416,6 +428,18 @@ const I18N = {
         'settings.files': 'File Manager',
         'settings.admin': 'Admin Panel',
         'settings.logout': 'Logout',
+        'settings.privacy': 'Privacy Policy',
+        'settings.terms': 'Terms of Service',
+        'settings.support': 'Support',
+        'settings.deleteAccount': 'Delete account',
+        'delacc.title': 'Delete account',
+        'delacc.warn': 'This permanently deletes your account and personal data. Your messages in shared channels will be anonymized. This cannot be undone.',
+        'delacc.pw': 'Password',
+        'delacc.cancel': 'Cancel',
+        'delacc.confirm': 'Delete account',
+        'delacc.needpw': 'Enter your password',
+        'delacc.wrongpw': 'Incorrect password',
+        'delacc.fail': 'Could not delete account',
         'files.newFolder': 'New Folder',
         'files.upload': 'Upload',
         'files.uploadMedia': 'Photo / Video',
@@ -763,6 +787,41 @@ function logout() {
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
     showLogin();
     closeAllModals();
+}
+
+// ── Account deletion (Apple 5.1.1(v) / GDPR erasure) ────────────
+function openDeleteAccount() {
+    closeSettingsMenu();
+    const err = document.getElementById('del-acc-err'); if (err) err.textContent = '';
+    const pw = document.getElementById('del-acc-pw'); if (pw) pw.value = '';
+    document.getElementById('delete-account-modal').style.display = 'flex';
+}
+function closeDeleteAccount() {
+    document.getElementById('delete-account-modal').style.display = 'none';
+}
+async function deleteAccount() {
+    const pw = document.getElementById('del-acc-pw').value;
+    const err = document.getElementById('del-acc-err');
+    if (!pw) { err.textContent = t('delacc.needpw'); return; }
+    const btn = document.getElementById('del-acc-confirm');
+    btn.disabled = true;
+    try {
+        // Direct fetch (not apiFetch): a wrong password returns 401, and apiFetch
+        // would treat that as an expired session and force a logout.
+        const res = await fetch(API + '/account', {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw }),
+        });
+        if (res.ok) { closeDeleteAccount(); logout(); return; }
+        let msg = res.status === 401 ? t('delacc.wrongpw') : t('delacc.fail');
+        if (res.status !== 401) { try { const j = await res.json(); if (j && j.detail) msg = j.detail; } catch (e) {} }
+        err.textContent = msg;
+    } catch (e) {
+        err.textContent = t('delacc.fail');
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 // ── Push Notifications (Web Push / PWA) ──────────────────────────────────────

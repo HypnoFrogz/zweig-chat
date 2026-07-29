@@ -776,10 +776,56 @@
                 <span class="material-icons-round settings-item-arrow">chevron_right</span>
             </button>
 
+            <div class="settings-sep"></div>
+
+            <a class="settings-item" href="https://zweig.services/legal/privacy/" target="_blank" rel="noopener">
+                <span class="material-icons-round settings-item-icon">privacy_tip</span>
+                <span class="settings-item-label" data-i18n="settings.privacy">Privacy Policy</span>
+                <span class="material-icons-round settings-item-arrow">open_in_new</span>
+            </a>
+            <a class="settings-item" href="https://zweig.services/legal/terms/" target="_blank" rel="noopener">
+                <span class="material-icons-round settings-item-icon">description</span>
+                <span class="settings-item-label" data-i18n="settings.terms">Terms of Service</span>
+                <span class="material-icons-round settings-item-arrow">open_in_new</span>
+            </a>
+            <a class="settings-item" href="https://zweig.services/support/" target="_blank" rel="noopener">
+                <span class="material-icons-round settings-item-icon">help_outline</span>
+                <span class="settings-item-label" data-i18n="settings.support">Support</span>
+                <span class="material-icons-round settings-item-arrow">open_in_new</span>
+            </a>
+
+            <button class="settings-item" onclick="openDeleteAccount()" style="color:#e0684f">
+                <span class="material-icons-round settings-item-icon" style="color:inherit">delete_forever</span>
+                <span class="settings-item-label" data-i18n="settings.deleteAccount">Delete account</span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
+
             <button class="settings-logout" onclick="logout()">
                 <span class="material-icons-round">logout</span>
                 <span data-i18n="settings.logout">Logout</span>
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete account confirmation -->
+<div id="delete-account-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeDeleteAccount()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="delacc.title">Delete account</span>
+            <button class="btn-icon" onclick="closeDeleteAccount()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <p data-i18n="delacc.warn" style="color:var(--text2);line-height:1.5;margin:0 0 4px">This permanently deletes your account and personal data. Your messages in shared channels will be anonymized. This cannot be undone.</p>
+            <input type="password" id="del-acc-pw" placeholder="Password" data-i18n-placeholder="delacc.pw" autocomplete="current-password"
+                   style="width:100%;padding:11px 13px;border-radius:10px;background:var(--bg3);border:1px solid var(--border,rgba(255,255,255,.1));color:var(--text);box-sizing:border-box">
+            <div id="del-acc-err" class="login-error" style="min-height:18px;color:#e0684f;font-size:13px"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end">
+                <button class="btn-action" onclick="closeDeleteAccount()" data-i18n="delacc.cancel">Cancel</button>
+                <button class="btn-action" id="del-acc-confirm" onclick="deleteAccount()" data-i18n="delacc.confirm"
+                        style="background:#e0684f;color:#fff;border-color:#e0684f">Delete account</button>
+            </div>
         </div>
     </div>
 </div>

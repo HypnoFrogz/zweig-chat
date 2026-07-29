@@ -1,7 +1,7 @@
 services:
   backend:
     build: ./backend
-    container_name: nebenan-backend
+    container_name: zweig-backend
     restart: unless-stopped
     volumes:
       - uploads:/app/uploads
@@ -35,7 +35,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: nebenan-nginx
+    container_name: zweig-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -56,7 +56,7 @@ services:
 
   livekit:
     image: livekit/livekit-server:latest
-    container_name: nebenan-livekit
+    container_name: zweig-livekit
     restart: unless-stopped
     ports:
       - "7880:7880"
@@ -73,7 +73,7 @@ services:
 
   certbot:
     image: certbot/certbot
-    container_name: nebenan-certbot
+    container_name: zweig-certbot
     restart: unless-stopped
     volumes:
       - ./certbot/conf:/etc/letsencrypt

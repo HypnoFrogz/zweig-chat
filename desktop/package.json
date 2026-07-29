@@ -1,13 +1,13 @@
 {
-  "name": "nebenan-desktop",
+  "name": "zweig-desktop",
   "version": "1.0.0",
-  "description": "Nebenan Desktop — the web client wrapped as a native Windows app",
+  "description": "Zweig Desktop — the web client wrapped as a native Windows app",
   "main": "main.js",
-  "author": "Nebenan",
+  "author": "Zweig",
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-packager . Nebenan --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --extra-resource=../frontend --app-version=1.0.0 --win32metadata.FileDescription=Nebenan --win32metadata.ProductName=Nebenan"
+    "dist": "electron-packager . Zweig --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --extra-resource=../frontend --app-version=1.0.0 --win32metadata.FileDescription=Zweig --win32metadata.ProductName=Zweig"
   },
   "devDependencies": {
     "electron": "^32.2.0",

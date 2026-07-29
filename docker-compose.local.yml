@@ -8,7 +8,7 @@
 services:
   backend:
     build: ./backend
-    container_name: nebenan-backend-local
+    container_name: zweig-backend-local
     restart: unless-stopped
     environment:
       - SECRET_KEY=${SECRET_KEY}
@@ -35,7 +35,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: nebenan-nginx-local
+    container_name: zweig-nginx-local
     restart: unless-stopped
     ports:
       - "80:80"

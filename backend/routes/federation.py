@@ -1,4 +1,4 @@
-"""Nebenan Messenger — server-to-server federation (peer linking).
+"""Zweig Messenger — server-to-server federation (peer linking).
 
 Handshake, in short:
 
@@ -107,7 +107,7 @@ def _public(row: dict) -> dict:
 @router.get("/federation/info")
 async def federation_info():
     """Public identity of this server."""
-    return {"domain": SERVER_DOMAIN, "software": "nebenan", "federation": bool(SERVER_DOMAIN)}
+    return {"domain": SERVER_DOMAIN, "software": "zweig", "federation": bool(SERVER_DOMAIN)}
 
 
 @router.get("/federation/verify")

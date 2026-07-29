@@ -1,4 +1,4 @@
-"""Nebenan Messenger — FastAPI entry point."""
+"""Zweig Messenger — FastAPI entry point."""
 
 import asyncio
 import os
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title="Nebenan Messenger", lifespan=lifespan)
+app = FastAPI(title="Zweig Messenger", lifespan=lifespan)
 
 # CORS — allows the web/PWA frontend to talk to this backend from a different
 # origin (Mattermost-style "enter server address" flow). Auth uses Bearer

@@ -1,4 +1,4 @@
-"""Nebenan Messenger — Admin panel (user management + feedback)."""
+"""Zweig Messenger — Admin panel (user management + feedback)."""
 
 import csv
 import io
@@ -223,7 +223,7 @@ async def import_template(username: str = Depends(get_current_user)):
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="nebenan_users_template.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="zweig_users_template.xlsx"'},
     )
 
 

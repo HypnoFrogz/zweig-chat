@@ -1,6 +1,6 @@
-// Nebenan Service Worker — Push Notifications + Badge
+// Zweig Service Worker — Push Notifications + Badge
 
-const CACHE_VERSION = 'nebenan-sw-v1';
+const CACHE_VERSION = 'zweig-sw-v1';
 
 // ── Push event: show notification ────────────────────────────────────────────
 self.addEventListener('push', event => {
@@ -10,7 +10,7 @@ self.addEventListener('push', event => {
     try {
         payload = event.data.json();
     } catch {
-        payload = { title: 'Nebenan', body: event.data.text(), type: 'message' };
+        payload = { title: 'Zweig', body: event.data.text(), type: 'message' };
     }
 
     const { title, body, type, conv_id, badge } = payload;
@@ -36,7 +36,7 @@ self.addEventListener('push', event => {
     }
 
     event.waitUntil(
-        self.registration.showNotification(title || 'Nebenan', options)
+        self.registration.showNotification(title || 'Zweig', options)
     );
 });
 

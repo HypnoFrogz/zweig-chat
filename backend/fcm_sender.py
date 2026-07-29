@@ -1,4 +1,4 @@
-"""Nebenan Messenger — Firebase Cloud Messaging sender."""
+"""Zweig Messenger — Firebase Cloud Messaging sender."""
 
 import os
 import time

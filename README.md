@@ -1,4 +1,4 @@
-# Nebenan
+# Zweig
 
 Корпоративный мессенджер, который разворачивается в контуре компании: чаты в реальном времени, видеозвонки, файловое хранилище и админ-панель. Переписка, документы и встречи не покидают ваш сервер. Один и тот же веб-интерфейс работает в браузере, как PWA и как десктопное приложение (Windows `.exe`).
 
@@ -35,7 +35,7 @@
 
 ## Фирменный стиль и палитра
 
-Nebenan использует тёплую двухтемную палитру на CSS-переменных. Amber и Forest меняются ролями между темами, что задействует все фирменные цвета в каждой.
+Zweig использует тёплую двухтемную палитру на CSS-переменных. Amber и Forest меняются ролями между темами, что задействует все фирменные цвета в каждой.
 
 | Цвет | HEX | Роль |
 |------|-----|------|
@@ -170,7 +170,7 @@ Nebenan использует тёплую двухтемную палитру н
 ## Структура репозитория
 
 ```
-nebenan-chat/
+zweig-chat/
 ├── backend/                     # FastAPI-приложение
 │   ├── main.py                  # Точка входа, CORS, /api/health
 │   ├── database.py              # Схема SQLite, миграции
@@ -225,8 +225,8 @@ nebenan-chat/
 ### 1. Клонировать
 
 ```bash
-git clone https://github.com/HypnoFrogz/nebenan-chat.git
-cd nebenan
+git clone https://github.com/HypnoFrogz/zweig-chat.git
+cd zweig
 ```
 
 ### 2. Настроить секреты (`.env`)
@@ -348,7 +348,7 @@ npm install
 npm run dist
 ```
 
-Результат: `desktop/dist/Nebenan-win32-x64/Nebenan.exe` (portable, подпись не требуется).
+Результат: `desktop/dist/Zweig-win32-x64/Zweig.exe` (portable, подпись не требуется).
 
 ### Как это работает
 - При запуске поднимается локальный статический сервер на фиксированном loopback-порту (`17673`+), что даёт стабильный `http`-origin — сохраняются адрес сервера и токены между запусками, работает service worker.
@@ -361,7 +361,7 @@ npm run dist
 
 ## Федерация серверов
 
-Два независимых сервера Nebenan можно связать, чтобы их пользователи могли общаться между собой. Связывание подтверждают **администраторы обоих серверов**.
+Два независимых сервера Zweig можно связать, чтобы их пользователи могли общаться между собой. Связывание подтверждают **администраторы обоих серверов**.
 
 ### Настройка
 В `.env` каждого сервера обязателен его собственный публичный домен — без него федерация выключена (сервер не может доказать, кто он):
@@ -397,7 +397,7 @@ FEDERATION_ALLOW_HTTP=        # только для отладки; в прод�
 1. **Адрес сервера** — IP или домен (например `chat.example.com` или `192.168.1.10`). Адрес проверяется через `GET /api/health` и сохраняется.
 2. **Логин и пароль**.
 
-После подключения все запросы (`/api`, WebSocket, `/uploads`) идут на выбранный сервер. Пустой адрес = тот же origin, что и страница. Это делает один и тот же билд фронтенда пригодным для любого сервера Nebenan (нужен включённый CORS — он есть по умолчанию).
+После подключения все запросы (`/api`, WebSocket, `/uploads`) идут на выбранный сервер. Пустой адрес = тот же origin, что и страница. Это делает один и тот же билд фронтенда пригодным для любого сервера Zweig (нужен включённый CORS — он есть по умолчанию).
 
 ---
 
@@ -449,13 +449,13 @@ sudo ufw allow 5349/tcp
 ### Windows Server (PowerShell от администратора)
 
 ```powershell
-New-NetFirewallRule -DisplayName "Nebenan HTTP"       -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan HTTPS"      -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan LiveKit WS" -Direction Inbound -Protocol TCP -LocalPort 7880 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan LiveKit TCP" -Direction Inbound -Protocol TCP -LocalPort 7881 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan LiveKit UDP" -Direction Inbound -Protocol UDP -LocalPort 7882-7892 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan TURN UDP"   -Direction Inbound -Protocol UDP -LocalPort 3478 -Action Allow
-New-NetFirewallRule -DisplayName "Nebenan TURN TLS"   -Direction Inbound -Protocol TCP -LocalPort 5349 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig HTTP"       -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig HTTPS"      -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig LiveKit WS" -Direction Inbound -Protocol TCP -LocalPort 7880 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig LiveKit TCP" -Direction Inbound -Protocol TCP -LocalPort 7881 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig LiveKit UDP" -Direction Inbound -Protocol UDP -LocalPort 7882-7892 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig TURN UDP"   -Direction Inbound -Protocol UDP -LocalPort 3478 -Action Allow
+New-NetFirewallRule -DisplayName "Zweig TURN TLS"   -Direction Inbound -Protocol TCP -LocalPort 5349 -Action Allow
 ```
 
 ---
@@ -581,7 +581,7 @@ SQLite в режиме WAL (асинхронно через aiosqlite). Схем
 Бэкап SQLite из тома:
 
 ```bash
-docker cp nebenan-backend:/app/data/chaoshelper.db ./backup.db
+docker cp zweig-backend:/app/data/chaoshelper.db ./backup.db
 ```
 
 ---

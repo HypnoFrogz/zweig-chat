@@ -1,4 +1,4 @@
-// ═══ Nebenan Messenger ═══
+// ═══ Zweig Messenger ═══
 
 // ── Config & State ─────────────────────────────────────────────
 // Server base URL (Mattermost-style). Empty string = same origin as this page.
@@ -207,7 +207,7 @@ const I18N = {
         'login.password': 'Пароль',
         'login.submit': 'Войти',
         'login.serverTitle': 'Подключение к серверу',
-        'login.serverHint': 'Введите адрес или IP сервера Nebenan',
+        'login.serverHint': 'Введите адрес или IP сервера Zweig',
         'login.serverPlaceholder': 'например, chat.example.com или 192.168.1.10',
         'login.serverConnect': 'Продолжить',
         'login.serverInvalid': 'Некорректный адрес сервера',
@@ -357,7 +357,7 @@ const I18N = {
         'login.password': 'Password',
         'login.submit': 'Sign In',
         'login.serverTitle': 'Connect to server',
-        'login.serverHint': 'Enter the address or IP of your Nebenan server',
+        'login.serverHint': 'Enter the address or IP of your Zweig server',
         'login.serverPlaceholder': 'e.g. chat.example.com or 192.168.1.10',
         'login.serverConnect': 'Continue',
         'login.serverInvalid': 'Invalid server address',
@@ -2720,7 +2720,7 @@ async function downloadImportTemplate() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'nebenan_users_template.xlsx';
+    a.download = 'zweig_users_template.xlsx';
     document.body.appendChild(a);
     a.click();
     a.remove();

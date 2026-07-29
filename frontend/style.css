@@ -1,9 +1,9 @@
-/* ═══ Nebenan Messenger — Mattermost-style ═══ */
+/* ═══ Zweig Messenger — Mattermost-style ═══ */
 
 /* === Reset & Base === */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* ═══ DARK THEME — Nebenan (Forest accent on Charcoal, Amber notifications) ═══ */
+/* ═══ DARK THEME — Zweig (Forest accent on Charcoal, Amber notifications) ═══ */
 :root {
     --bg:         #33302c;
     --bg2:        #3a3631;
@@ -32,7 +32,7 @@
     --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* ═══ LIGHT THEME — Nebenan (Amber accent on Cream, Forest for online/status) ═══ */
+/* ═══ LIGHT THEME — Zweig (Amber accent on Cream, Forest for online/status) ═══ */
 [data-theme="light"] {
     --bg:         #f5eee3;
     --bg2:        #efe7d8;

@@ -1,4 +1,4 @@
-// Nebenan Desktop — wraps the exact web frontend (frontend/) in an Electron shell.
+// Zweig Desktop — wraps the exact web frontend (frontend/) in an Electron shell.
 //
 // The frontend is served over a fixed loopback port so the renderer has a
 // stable http origin. A stable origin matters for two reasons:
@@ -112,7 +112,7 @@ async function createWindow() {
     height: 820,
     minWidth: 760,
     minHeight: 560,
-    title: 'Nebenan',
+    title: 'Zweig',
     backgroundColor: '#33302c',
     autoHideMenuBar: true,
     webPreferences: {

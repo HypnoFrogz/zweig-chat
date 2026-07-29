@@ -19,7 +19,6 @@
 - [Быстрый старт (Docker, продакшн)](#быстрый-старт-docker-продакшн)
 - [Локальный запуск и разработка](#локальный-запуск-и-разработка)
 - [Десктопное приложение (.exe)](#десктопное-приложение-exe)
-- [Мобильное приложение (Android / iOS)](#мобильное-приложение-android--ios)
 - [Федерация серверов](#федерация-серверов)
 - [Вход по адресу сервера](#вход-по-адресу-сервера)
 - [Переменные окружения](#переменные-окружения)
@@ -112,9 +111,10 @@ Nebenan использует тёплую двухтемную палитру н
 |--------|-----------|--------|
 | **Веб / PWA** | `frontend/` (vanilla JS) | Мессенджер на вашем домене |
 | **Десктоп (Windows `.exe`)** | `desktop/` (Electron, оборачивает `frontend/`) | Поддерживается — 1:1 веб-версия |
-| **Мобильный (Android / iOS)** | `mobile/` (Flutter) | Адрес сервера вводится в приложении |
 
 Десктоп и веб используют **один и тот же** `frontend/`, поэтому выглядят идентично.
+
+> Мобильные приложения (Android / iOS) в открытый код не входят — распространяются отдельно.
 
 ### Домен
 
@@ -208,7 +208,6 @@ nebenan-chat/
 ├── livekit/
 │   └── livekit.yaml.example     # Шаблон конфига LiveKit (реальный — gitignored)
 ├── certbot/                     # Сертификаты Let's Encrypt (gitignored)
-├── mobile/                      # Flutter-клиент (legacy)
 ├── docker-compose.yml
 ├── .env.example                 # Шаблон секретов → скопировать в .env
 └── README.md
@@ -357,49 +356,6 @@ npm run dist
 - Внешние ссылки открываются в системном браузере.
 
 > Изменения во `frontend/` попадают в exe только после **пересборки** (`npm run dist`). В веб-версии они применяются сразу.
-
----
-
-## Мобильное приложение (Android / iOS)
-
-Flutter-клиент в `mobile/`, переоформленный под палитру Nebenan (тёплые темы, squircle-аватары каналов, Forest-пузыри сообщений, Amber-бейджи, собственная иконка). Идентичность: **package `ru.nebenan.app`**, имя **Nebenan**.
-
-> Адрес сервера **зашивается в сборку** (`--dart-define=API_BASE_URL=...`) — рантайм-поля адреса в мобилке пока нет. Пересобирайте при смене адреса. Это следующий пункт доработки (по образцу веба).
-
-### Требования
-- Flutter SDK (stable), Android SDK (platform 34/35, build-tools, NDK), JDK 17.
-- Для iOS-сборки — macOS + Xcode + CocoaPods.
-
-### Сборка APK (Android)
-```bash
-cd mobile
-./build_apk.sh http://192.168.1.113        # тест в локальной сети
-./build_apk.sh https://chat.example.com     # прод-домен
-# (Windows PowerShell: .\build_apk.ps1 http://192.168.1.113)
-```
-Результат: `mobile/build/app/outputs/flutter-apk/app-release.apk`.
-Скрипт сам подставит placeholder `google-services.json` (push отключён). Для рабочего push положите настоящий `mobile/android/app/google-services.json`.
-
-Release-APK подписан debug-ключом (см. `android/app/build.gradle.kts`) — ставится на устройство как «из неизвестных источников».
-
-### Сборка iOS (на macOS)
-Файлы уже подготовлены: bundle id `ru.nebenan.app`, имя Nebenan, иконки, `Info.plist` (разрешение локальной HTTP-сети для LAN + usage-строки камеры/микрофона/фото).
-```bash
-cd mobile
-./build_ios.sh https://chat.example.com
-# затем откройте ios/Runner.xcworkspace в Xcode для подписи и архивации
-```
-Для push нужен настоящий `ios/Runner/GoogleService-Info.plist` (в репозитории — `.example`).
-
-### Тест в локальной сети
-1. Поднимите локальный сервер: `docker compose -f docker-compose.local.yml up -d --build` (nginx :80 + backend, без TLS/livekit).
-2. Откройте порт 80 в брандмауэре Windows (от админа):
-   `New-NetFirewallRule -DisplayName "Nebenan LAN 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Private`
-3. Соберите APK с IP вашего ПК: `./build_apk.sh http://<IP-ПК>`.
-4. Телефон в той же Wi-Fi. Проверка связи: откройте в браузере телефона `http://<IP-ПК>/api/health` → `{"status":"ok"}`.
-5. Установите APK, войдите (по умолчанию `admin` / `admin`).
-
-> `http://<IP>` работает на iOS благодаря `NSAllowsLocalNetworking`; для App Store/боевого использования нужен HTTPS-домен.
 
 ---
 

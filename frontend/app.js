@@ -3292,6 +3292,11 @@ async function joinLivekitRoom(tk, roomName) {
     } catch (err) {
         console.error('LiveKit connect error:', err);
         showToast(t('call.connectionFailed'), 'error');
+        // Tell the server the call is over. closeCall() only clears local
+        // state, so without this the call stays "ringing": the other side keeps
+        // ringing until it times out, and by then there is nothing left to
+        // cancel with, because closeCall() has already dropped activeCallId.
+        await hangUpOnServer();
         closeCall();
     }
 }
@@ -3456,13 +3461,23 @@ async function toggleCamera() {
         } catch (e) {}
     }
 }
-async function endCall() {
-    if (!livekitRoom || !currentChannel) return;
-    if (activeCallId) {
+// Tells the server the call is over. A no-op when there is nothing to end, and
+// never throws: a failed request must not stop the local teardown, or the UI is
+// left showing a call that no longer exists.
+async function hangUpOnServer() {
+    if (!activeCallId) return;
+    try {
         await apiFetch('/calls/end', { method: 'POST', body: { call_id: activeCallId } });
-    } else {
-        console.warn('No active call id for endCall');
+    } catch (err) {
+        console.warn('Could not tell the server the call ended:', err);
     }
+}
+
+async function endCall() {
+    // Deliberately not requiring livekitRoom: the call must be cancellable
+    // while it is still ringing, which is exactly when the media room may not
+    // be up yet.
+    await hangUpOnServer();
     closeCall();
 }
 let callTimerInterval = null;

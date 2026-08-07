@@ -26,6 +26,8 @@ secret and must never go over plain HTTP.
 import os
 import re
 import secrets
+import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -482,3 +484,287 @@ async def remove_server(domain: str, username: str = Depends(get_current_user)):
     await db.execute("DELETE FROM federated_servers WHERE domain = ?", (domain,))
     await db.commit()
     return {"ok": True}
+
+
+# ── Invite links ─────────────────────────────────────────────────────────────
+#
+# There is no cross-server user directory: a server never hands a peer the list
+# of its people. Instead the owner of a profile mints a token, passes the link
+# on out of band (mail, another messenger, paper), and only whoever holds that
+# token can open a conversation with them.
+
+INVITE_DEFAULT_TTL_DAYS = 14
+INVITE_MAX_TTL_DAYS = 365
+INVITE_MAX_USES = 100
+INVITE_MAX_ACTIVE = 50
+
+# Best-effort throttle on redemption attempts, keyed by calling peer. It lives
+# in the process, so it resets on restart and is per-worker — enough to make
+# guessing tokens impractical, not a substitute for the token's own entropy.
+_REDEEM_WINDOW_SEC = 300.0
+_REDEEM_MAX_ATTEMPTS = 20
+_redeem_attempts: dict[str, list[float]] = {}
+
+_INVITE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+
+
+def _invite_url(token: str) -> str:
+    scheme = "http" if FEDERATION_ALLOW_HTTP else "https"
+    return f"{scheme}://{SERVER_DOMAIN}/i/{token}"
+
+
+def _absolute_url(path: str) -> str:
+    """Make a local avatar path absolute so a peer can actually load it."""
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://")):
+        return path
+    scheme = "http" if FEDERATION_ALLOW_HTTP else "https"
+    return f"{scheme}://{SERVER_DOMAIN}{path if path.startswith('/') else '/' + path}"
+
+
+def _invite_status(row: dict) -> str:
+    if row["revoked"]:
+        return "revoked"
+    if row["used_count"] >= row["max_uses"]:
+        return "used_up"
+    expires = row["expires_at"]
+    if expires:
+        try:
+            if datetime.fromisoformat(expires) <= datetime.now(timezone.utc):
+                return "expired"
+        except ValueError:
+            return "expired"
+    return "active"
+
+
+def _public_invite(row: dict) -> dict:
+    return {
+        "token": row["token"],
+        "url": _invite_url(row["token"]),
+        "status": _invite_status(row),
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+        "max_uses": row["max_uses"],
+        "used_count": row["used_count"],
+        "note": row["note"],
+    }
+
+
+def _parse_invite_link(raw: str) -> tuple[str, str]:
+    """Pull (domain, token) out of an invite link the user pasted."""
+    s = re.sub(r"^https?://", "", (raw or "").strip())
+    s = s.split("?")[0].split("#")[0]
+    if "/i/" not in s:
+        raise HTTPException(status_code=400, detail="Это не похоже на ссылку-приглашение")
+    host, _, token = s.partition("/i/")
+    domain = _normalize_domain(host)
+    token = token.strip("/").strip()
+    if not domain or not _DOMAIN_RE.fullmatch(domain):
+        raise HTTPException(status_code=400, detail="Некорректный домен в ссылке")
+    if not _INVITE_TOKEN_RE.fullmatch(token):
+        raise HTTPException(status_code=400, detail="Некорректный код приглашения")
+    if SERVER_DOMAIN and domain == SERVER_DOMAIN:
+        raise HTTPException(status_code=400, detail="Это ссылка вашего же сервера")
+    return domain, token
+
+
+async def _require_local_user(db, username: str) -> dict:
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (username,))
+    row = await cur.fetchone()
+    if not row or row["home_server"] or row["blocked"]:
+        raise HTTPException(status_code=403, detail="Недоступно для этой учётной записи")
+    return dict(row)
+
+
+def _check_redeem_rate(domain: str) -> None:
+    now = time.monotonic()
+    bucket = [t for t in _redeem_attempts.get(domain, []) if now - t < _REDEEM_WINDOW_SEC]
+    if len(bucket) >= _REDEEM_MAX_ATTEMPTS:
+        _redeem_attempts[domain] = bucket
+        raise HTTPException(status_code=429, detail="Слишком много попыток, попробуйте позже")
+    bucket.append(now)
+    _redeem_attempts[domain] = bucket
+
+
+@router.post("/invites")
+async def create_invite(data: dict, username: str = Depends(get_current_user)):
+    """Mint an invite link for the calling user."""
+    _require_configured()
+    db = await get_db()
+    await _require_local_user(db, username)
+
+    try:
+        ttl_days = int(data.get("ttl_days") or INVITE_DEFAULT_TTL_DAYS)
+        max_uses = int(data.get("max_uses") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Некорректные параметры приглашения")
+    if not 1 <= ttl_days <= INVITE_MAX_TTL_DAYS:
+        raise HTTPException(status_code=400, detail=f"Срок жизни — от 1 до {INVITE_MAX_TTL_DAYS} дней")
+    if not 1 <= max_uses <= INVITE_MAX_USES:
+        raise HTTPException(status_code=400, detail=f"Число погашений — от 1 до {INVITE_MAX_USES}")
+
+    cur = await db.execute(
+        "SELECT * FROM federation_invites WHERE owner = ? AND revoked = 0", (username,)
+    )
+    active = [r for r in await cur.fetchall() if _invite_status(dict(r)) == "active"]
+    if len(active) >= INVITE_MAX_ACTIVE:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Слишком много активных приглашений (максимум {INVITE_MAX_ACTIVE}), отзовите ненужные",
+        )
+
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    row = {
+        "token": token,
+        "owner": username,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(days=ttl_days)).isoformat(),
+        "max_uses": max_uses,
+        "used_count": 0,
+        "revoked": 0,
+        "note": (data.get("note") or "").strip()[:200],
+    }
+    await db.execute(
+        "INSERT INTO federation_invites (token, owner, created_at, expires_at, max_uses, used_count, revoked, note) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (row["token"], row["owner"], row["created_at"], row["expires_at"],
+         row["max_uses"], 0, 0, row["note"]),
+    )
+    await db.commit()
+    return _public_invite(row)
+
+
+@router.get("/invites")
+async def list_invites(username: str = Depends(get_current_user)):
+    """The calling user's own invites."""
+    _require_configured()
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT * FROM federation_invites WHERE owner = ? ORDER BY created_at DESC", (username,)
+    )
+    return [_public_invite(dict(r)) for r in await cur.fetchall()]
+
+
+@router.delete("/invites/{token}")
+async def revoke_invite(token: str, username: str = Depends(get_current_user)):
+    """Revoke one of your invites. A leaked link is useless afterwards."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT 1 FROM federation_invites WHERE token = ? AND owner = ?", (token, username)
+    )
+    if not await cur.fetchone():
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    await db.execute("UPDATE federation_invites SET revoked = 1 WHERE token = ?", (token,))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/invites/redeem")
+async def redeem_invite(data: dict, username: str = Depends(get_current_user)):
+    """Redeem a link someone sent us, opening a conversation with its owner.
+
+    Runs on the *recipient's* server: we authenticate our own user normally,
+    then make one authenticated server-to-server call to the owner's server.
+    """
+    from routes.channels import get_or_create_direct
+
+    _require_configured()
+    db = await get_db()
+    me = await _require_local_user(db, username)
+    domain, token = _parse_invite_link(data.get("link") or "")
+
+    peer = await _get_peer(db, domain)
+    if not peer or peer["status"] != "active":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Сервер {domain} не связан с нашим — попросите администратора добавить его",
+        )
+
+    try:
+        resp = await peer_post(domain, "/api/federation/invite/redeem", {
+            "token": token,
+            "remote_username": username,
+            "display_name": me["display_name"] or username,
+            "avatar_url": _absolute_url(me["avatar_path"]),
+        })
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"Сервер {domain} недоступен")
+
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="Приглашение недействительно")
+    if resp.status_code == 429:
+        raise HTTPException(status_code=429, detail="Слишком много попыток, попробуйте позже")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Сервер {domain} отклонил приглашение")
+
+    owner = resp.json().get("owner") or {}
+    owner_name = (owner.get("username") or "").strip().lower()
+    if not owner_name:
+        raise HTTPException(status_code=502, detail="Некорректный ответ сервера")
+
+    uid = await ensure_remote_user(
+        domain, owner_name, owner.get("display_name", ""), owner.get("avatar_url", "")
+    )
+    channel_id, _ = await get_or_create_direct(db, username, uid)
+    return {"ok": True, "channel_id": channel_id, "user": {"username": uid, "domain": domain}}
+
+
+@router.post("/federation/invite/redeem")
+async def federation_invite_redeem(data: dict, peer: str = Depends(require_peer)):
+    """A peer redeems one of our users' invite links on behalf of its user.
+
+    Every rejection returns the same 404: distinguishing "no such token" from
+    "expired" or "already used" would let a peer probe for valid tokens. The
+    owner's profile is returned only on success, for the same reason.
+    """
+    from routes.channels import get_or_create_direct
+
+    _check_redeem_rate(peer)
+    token = (data.get("token") or "").strip()
+    remote_username = (data.get("remote_username") or "").strip().lower()
+    if not _INVITE_TOKEN_RE.fullmatch(token) or not remote_username:
+        raise HTTPException(status_code=404, detail="Приглашение недействительно")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM federation_invites WHERE token = ?", (token,))
+    row = await cur.fetchone()
+    if not row or _invite_status(dict(row)) != "active":
+        raise HTTPException(status_code=404, detail="Приглашение недействительно")
+
+    invite = dict(row)
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (invite["owner"],))
+    owner_row = await cur.fetchone()
+    if not owner_row or owner_row["home_server"] or owner_row["blocked"]:
+        raise HTTPException(status_code=404, detail="Приглашение недействительно")
+    owner = dict(owner_row)
+
+    uid = await ensure_remote_user(
+        peer, remote_username, data.get("display_name", ""), data.get("avatar_url", "")
+    )
+    channel_id, created = await get_or_create_direct(db, owner["username"], uid)
+    await db.execute(
+        "UPDATE federation_invites SET used_count = used_count + 1 WHERE token = ?", (token,)
+    )
+    await db.commit()
+
+    if created:
+        await manager.send_to_user(owner["username"], {
+            "event": "federation_invite_redeemed",
+            "channel_id": channel_id,
+            "domain": peer,
+            "user": {"username": uid, "display_name": data.get("display_name", "") or remote_username},
+        })
+
+    return {
+        "ok": True,
+        "owner": {
+            "username": owner["username"],
+            "display_name": owner["display_name"] or owner["username"],
+            "avatar_url": _absolute_url(owner["avatar_path"]),
+        },
+        "channel_id": channel_id,
+    }

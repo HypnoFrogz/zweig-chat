@@ -237,6 +237,48 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
         "livekit_token": callee_token,
         "livekit_url": LIVEKIT_PUBLIC_URL,
     }
+    # A callee living on another server is reached through their server, not
+    # over our WebSocket, and our push channels know nothing about them. The
+    # room stays here: the token above is signed with our LiveKit secret.
+    from routes.federation import remote_peer_of, push_call_event
+    callee_domain = await remote_peer_of(db, callee_username)
+    if callee_domain:
+        await db.execute(
+            "UPDATE calls SET remote_domain = ? WHERE id = ?", (callee_domain, call_id)
+        )
+        await db.commit()
+        cur = await db.execute("SELECT remote_username FROM users WHERE username = ?", (callee_username,))
+        row = await cur.fetchone()
+        delivered = await push_call_event(callee_domain, "/api/federation/call/invite", {
+            "call_id": call_id,
+            "caller": username,
+            "caller_name": caller_name,
+            "callee": row["remote_username"] if row else "",
+            "room_name": room_name,
+            "mode": mode,
+            "expires_at": expires_at,
+            "livekit_token": callee_token,
+            "livekit_url": LIVEKIT_PUBLIC_URL,
+        })
+        if not delivered:
+            await db.execute(
+                "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = 'peer_unreachable' WHERE id = ?",
+                (now_iso(), call_id),
+            )
+            await db.commit()
+            raise HTTPException(status_code=502, detail=f"Сервер {callee_domain} недоступен")
+        await manager.send_to_user(username, {"event": "call_ringing", "call_id": call_id, "channel_slug": ch["slug"]})
+        return {
+            "ok": True,
+            "call_id": call_id,
+            "status": "ringing",
+            "mode": mode,
+            "expires_at": expires_at,
+            "livekit_token": caller_token,
+            "livekit_url": LIVEKIT_PUBLIC_URL,
+            "room_name": room_name,
+        }
+
     await manager.send_to_user(callee_username, payload)
     await manager.send_to_user(username, {"event": "call_ringing", "call_id": call_id, "channel_slug": ch["slug"]})
 
@@ -310,8 +352,16 @@ async def answer_addressed_call(data: dict, username: str = Depends(get_current_
     )
     await db.commit()
 
-    display_name = await get_display_name(username)
-    token = _create_livekit_token(call["room_name"], username, display_name)
+    # For a federated call the room is on the other server, so the token we
+    # hand back is the one it minted for us — we cannot sign one for its room.
+    if call["remote_domain"]:
+        token = call["remote_livekit_token"]
+        livekit_url = call["remote_livekit_url"]
+        await _relay_call_state(db, call, "answered")
+    else:
+        display_name = await get_display_name(username)
+        token = _create_livekit_token(call["room_name"], username, display_name)
+        livekit_url = LIVEKIT_PUBLIC_URL
 
     answer_event = {
         "event": "call_answered",
@@ -329,7 +379,7 @@ async def answer_addressed_call(data: dict, username: str = Depends(get_current_
         "room_name": call["room_name"],
         "mode": call["mode"],
         "livekit_token": token,
-        "livekit_url": LIVEKIT_PUBLIC_URL,
+        "livekit_url": livekit_url,
     }
 
 
@@ -357,6 +407,7 @@ async def reject_addressed_call(data: dict, username: str = Depends(get_current_
             (ended, call["channel_id"]),
         )
         await db.commit()
+        await _relay_call_state(db, call, "rejected", "rejected")
         reject_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "rejected"}
         await manager.send_to_user(call["caller_username"], reject_event)
         await manager.send_to_user(call["callee_username"], reject_event)
@@ -389,6 +440,7 @@ async def end_addressed_call(data: dict, username: str = Depends(get_current_use
             (ended, ended, call["channel_id"]),
         )
         await db.commit()
+        await _relay_call_state(db, call, "ended", "ended")
         end_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "ended"}
         await manager.send_to_user(call["caller_username"], end_event)
         await manager.send_to_user(call["callee_username"], end_event)
@@ -620,11 +672,16 @@ async def invite_to_call(data: dict, username: str = Depends(get_current_user)):
     room_name = call_row["room_name"]
     display_name = await get_display_name(username)
 
+    from routes.federation import remote_peer_of, push_call_event
+
     invited = 0
+    unreachable = []
     for u in usernames:
         u_display = await get_display_name(u)
+        # The room is ours either way, so we mint the token here — including
+        # for participants on other servers, whose own server cannot sign one.
         u_token = _create_livekit_token(room_name, u, u_display)
-        await manager.send_to_user(u, {
+        payload = {
             "event": "call_started",
             "channel_id": ch["id"],
             "channel_slug": ch["slug"],
@@ -633,10 +690,28 @@ async def invite_to_call(data: dict, username: str = Depends(get_current_user)):
             "started_by_name": display_name,
             "livekit_token": u_token,
             "livekit_url": LIVEKIT_PUBLIC_URL,
-        })
+        }
+
+        domain = await remote_peer_of(db, u)
+        if domain:
+            cur = await db.execute("SELECT remote_username FROM users WHERE username = ?", (u,))
+            row = await cur.fetchone()
+            ok = await push_call_event(domain, "/api/federation/call/conference", {
+                **payload,
+                "callee": row["remote_username"] if row else "",
+                "inviter": username,
+                "inviter_name": display_name,
+            })
+            if ok:
+                invited += 1
+            else:
+                unreachable.append(u)
+            continue
+
+        await manager.send_to_user(u, payload)
         invited += 1
 
-    return {"ok": True, "invited": invited}
+    return {"ok": True, "invited": invited, "unreachable": unreachable}
 
 
 @router.post("/videocall/reject")
@@ -874,3 +949,137 @@ async def get_active_call(slug: str, username: str = Depends(get_current_user)):
         "livekit_token": token,
         "livekit_url": LIVEKIT_PUBLIC_URL,
     }
+
+
+# ── Federated calls ──────────────────────────────────────────────────────────
+#
+# Called from routes.federation, which owns the peer authentication. These
+# functions hold the call-state half so that videocall.py stays the only place
+# that writes to the calls table.
+
+
+async def register_incoming_federated_call(
+    db, *, call_id: str, channel_id: str, room_name: str, caller_uid: str,
+    caller_name: str, callee: str, mode: str, expires_at: str, domain: str,
+    livekit_url: str, livekit_token: str,
+) -> dict:
+    """Record a call started on a peer's server and ring our local user.
+
+    The room belongs to `domain`, so we keep the token and URL they minted:
+    we cannot produce our own, the secret that signs them is theirs.
+    """
+    await run_calls_cleanup_once()
+    c = await db.execute(
+        "SELECT id FROM calls WHERE callee_username = ? AND status IN ('ringing', 'active') LIMIT 1",
+        (callee,),
+    )
+    if await c.fetchone():
+        raise HTTPException(status_code=409, detail="Callee is busy")
+
+    c = await db.execute("SELECT slug FROM channels WHERE id = ?", (channel_id,))
+    row = await c.fetchone()
+    channel_slug = row["slug"] if row else ""
+    mode = mode if mode in ("audio", "video") else "audio"
+
+    await db.execute(
+        """INSERT OR REPLACE INTO calls
+           (id, channel_id, channel_slug, room_name, caller_username, callee_username, status, mode,
+            video_enabled, speaker_enabled, expires_at, created_at,
+            remote_domain, remote_livekit_url, remote_livekit_token)
+           VALUES (?, ?, ?, ?, ?, ?, 'ringing', ?, 0, 0, ?, ?, ?, ?, ?)""",
+        (call_id, channel_id, channel_slug, room_name, caller_uid, callee, mode,
+         expires_at, now_iso(), domain, livekit_url, livekit_token),
+    )
+    await db.commit()
+
+    payload = {
+        "event": "call_invite",
+        "call_id": call_id,
+        "channel_id": channel_id,
+        "channel_slug": channel_slug,
+        "room_name": room_name,
+        "caller_username": caller_uid,
+        "caller_name": caller_name,
+        "callee_username": callee,
+        "mode": mode,
+        "expires_at": expires_at,
+        "livekit_token": livekit_token,
+        "livekit_url": livekit_url,
+        "remote_domain": domain,
+    }
+    await manager.send_to_user(callee, payload)
+
+    if CALL_PUSH_ALWAYS or not manager.is_online(callee):
+        from fcm_sender import send_call_notification
+        await send_call_notification(
+            recipient=callee, caller_name=caller_name, channel_slug=channel_slug,
+            room_name=room_name, livekit_token=livekit_token, livekit_url=livekit_url,
+            call_id=call_id, mode=mode, expires_at=expires_at,
+        )
+    from routes.push import send_push_to_user
+    await send_push_to_user(callee, {
+        "type": "call_invite",
+        "title": "Входящий звонок",
+        "body": f"{caller_name} звонит вам",
+        "conv_id": channel_slug,
+        "channel_slug": channel_slug,
+        "call_id": call_id,
+        "mode": mode,
+        "expires_at": expires_at,
+        "badge": 0,
+    })
+    return {"ok": True}
+
+
+async def apply_federated_call_state(db, call: dict, state: str, reason: str = "") -> dict:
+    """Apply answer / reject / end that happened on the peer's side."""
+    call_id = call["id"]
+    if state == "answered":
+        if call["status"] == "ringing":
+            await db.execute(
+                "UPDATE calls SET status = 'active', answered_at = ? WHERE id = ?",
+                (now_iso(), call_id),
+            )
+            await db.commit()
+        event = {
+            "event": "call_answered",
+            "call_id": call_id,
+            "channel_slug": call["channel_slug"],
+            "answered_by": call["callee_username"],
+        }
+    else:
+        if call["status"] in ("ringing", "active"):
+            ended = now_iso()
+            await db.execute(
+                "UPDATE calls SET status = ?, ended_at = ?, end_reason = ? WHERE id = ?",
+                ("rejected" if state == "rejected" else "ended", ended, reason or state, call_id),
+            )
+            await db.execute(
+                """UPDATE call_log SET status = ?, ended_at = ?,
+                   duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
+                   WHERE channel_id = ? AND status = 'active'""",
+                (state, ended, ended, call["channel_id"]),
+            )
+            await db.commit()
+        event = {
+            "event": "call_ended",
+            "call_id": call_id,
+            "channel_slug": call["channel_slug"],
+            "reason": reason or state,
+        }
+
+    # Only one of these is local; sending to a stub is a harmless no-op.
+    await manager.send_to_user(call["caller_username"], event)
+    await manager.send_to_user(call["callee_username"], event)
+    return {"ok": True}
+
+
+async def _relay_call_state(db, call, state: str, reason: str = "") -> None:
+    """Tell the other server about a state change, if the call crosses servers."""
+    domain = call["remote_domain"] if "remote_domain" in call.keys() else ""
+    if not domain:
+        return
+    from routes.federation import push_call_event
+    await push_call_event(domain, "/api/federation/call/state", {
+        "call_id": call["id"], "state": state, "reason": reason,
+    })

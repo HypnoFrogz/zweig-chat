@@ -27,6 +27,7 @@ import httpx, sys, time
 A = "http://localhost:8001"
 B = "http://localhost:8002"
 DOM_A, DOM_B = "localhost:8001", "localhost:8002"
+LK_A, LK_B = "wss://lk-a.test/livekit/", "wss://lk-b.test/livekit/"
 
 ok = 0
 fail = 0
@@ -150,6 +151,66 @@ r = httpx.post(f"{A}/api/federation/message", json={
     "id": "forged-1", "to": "admin", "from": "stranger", "text": "should not arrive",
 }, headers={"Authorization": f"Peer {DOM_B}:x"}, timeout=10)
 check("forged message with bad secret rejected", r.status_code == 401, r.status_code)
+
+print("== calls across servers ==")
+import sqlite3, glob
+CALLEE_ON_A = f"admin@{DOM_A}"          # how A's admin looks from B
+CALLER_ON_A = f"admin@{DOM_B}"          # how B's admin looks from A
+
+r = httpx.post(f"{B}/api/calls/start", json={
+    "channel_slug": slug_b, "callee_username": CALLEE_ON_A, "mode": "audio",
+}, headers=hb, timeout=30)
+check("B starts a call to A's user", r.status_code == 200, r.text[:200])
+call = r.json() if r.status_code == 200 else {}
+call_id = call.get("call_id")
+check("caller dials its own LiveKit", call.get("livekit_url") == LK_B, call.get("livekit_url"))
+
+time.sleep(1)
+dba = glob.glob("/tmp/fedtest/a/*.db")[0]
+row = sqlite3.connect(dba).execute(
+    "SELECT status, remote_domain, remote_livekit_url, remote_livekit_token, caller_username "
+    "FROM calls WHERE id = ?", (call_id,)).fetchone()
+check("A recorded the incoming call", row is not None, row)
+if row:
+    check("A marks it as crossing servers", row[1] == DOM_B, row[1])
+    check("A stored the room owner's URL", row[2] == LK_B, row[2])
+    check("A stored a token it could not mint", bool(row[3]))
+    check("caller is the qualified remote id", row[4] == CALLER_ON_A, row[4])
+
+r = httpx.post(f"{A}/api/calls/answer", json={"call_id": call_id}, headers=ha, timeout=30)
+check("A answers", r.status_code == 200, r.text[:200])
+ans = r.json() if r.status_code == 200 else {}
+check("answer returns the OTHER server's LiveKit", ans.get("livekit_url") == LK_B, ans.get("livekit_url"))
+check("answer returns the stored token", ans.get("livekit_token") == (row[3] if row else None))
+
+time.sleep(1)
+dbb = glob.glob("/tmp/fedtest/b/*.db")[0]
+st = sqlite3.connect(dbb).execute("SELECT status FROM calls WHERE id = ?", (call_id,)).fetchone()
+check("answer propagated back to B", st and st[0] == "active", st)
+
+r = httpx.post(f"{A}/api/calls/end", json={"call_id": call_id}, headers=ha, timeout=30)
+check("A ends the call", r.status_code == 200, r.text[:200])
+time.sleep(1)
+st = sqlite3.connect(dbb).execute("SELECT status FROM calls WHERE id = ?", (call_id,)).fetchone()
+check("end propagated back to B", st and st[0] == "ended", st)
+
+print("== conference invite across servers ==")
+r = httpx.post(f"{B}/api/videocall/start", json={"channel_slug": slug_b}, headers=hb, timeout=30)
+check("B starts a channel call", r.status_code == 200, r.text[:200])
+r = httpx.post(f"{B}/api/videocall/invite", json={
+    "channel_slug": slug_b, "usernames": [CALLEE_ON_A],
+}, headers=hb, timeout=30)
+check("B invites A's user into the conference", r.status_code == 200, r.text[:200])
+inv2 = r.json() if r.status_code == 200 else {}
+check("invite reached the peer", inv2.get("invited") == 1 and not inv2.get("unreachable"), inv2)
+
+print("== a stranger cannot be called ==")
+sec = sqlite3.connect(dbb).execute(
+    "SELECT shared_secret FROM federated_servers WHERE domain = ?", (DOM_A,)).fetchone()[0]
+r = httpx.post(f"{A}/api/federation/call/invite", json={
+    "call_id": "x1", "caller": "stranger", "callee": "admin", "room_name": "r1",
+}, headers={"Authorization": f"Peer {DOM_B}:{sec}"}, timeout=10)
+check("call invite without a conversation refused", r.status_code == 403, r.status_code)
 
 print(f"\n{'=' * 40}\nPASSED {ok}   FAILED {fail}")
 sys.exit(1 if fail else 0)

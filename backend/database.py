@@ -442,6 +442,18 @@ async def init_db():
         await db.execute("ALTER TABLE users ADD COLUMN home_server TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: federated call columns ----------
+    # A call room lives on exactly one server, because its LiveKit token is
+    # signed with that server's secret. The other side cannot mint a token, so
+    # it stores the one the room's server sent, together with the URL to dial.
+    # remote_domain is set on both sides and marks the call as crossing servers.
+    pragma_calls = await db.execute("PRAGMA table_info(calls)")
+    call_cols = [r[1] for r in await pragma_calls.fetchall()]
+    for col in ("remote_domain", "remote_livekit_url", "remote_livekit_token"):
+        if col not in call_cols:
+            await db.execute(f"ALTER TABLE calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    await db.commit()
+
     # ---------- Migration: add remote_username to users (federation) ----------
     # username is the primary key and the namespace is shared with local
     # accounts, so a remote user is stored qualified as "bob@peer.example".

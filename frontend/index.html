@@ -734,6 +734,40 @@
 </div>
 
 <!-- Settings menu -->
+<!-- Federation: invite links to and from other servers -->
+<div id="federation-dialog" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeFederationDialog()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="fed.title">Links to other servers</span>
+            <button class="btn-icon" onclick="closeFederationDialog()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <p class="fed-hint" data-i18n="fed.hint">
+                There is no directory of people on other servers. To let someone
+                write to you, create a link and send it to them yourself.
+            </p>
+
+            <div class="settings-sep"></div>
+
+            <span class="settings-label" data-i18n="fed.addByLink">Add a contact by link</span>
+            <div class="input-group">
+                <span class="material-icons-round input-icon">link</span>
+                <input type="text" id="fed-redeem-input" placeholder="https://server/i/…" data-i18n-placeholder="fed.redeemPlaceholder">
+            </div>
+            <button class="btn-action btn-accent" id="fed-redeem-btn" onclick="redeemInviteLink()" data-i18n="fed.redeem">Open conversation</button>
+
+            <div class="settings-sep"></div>
+
+            <span class="settings-label" data-i18n="fed.myLinks">My invite links</span>
+            <button class="btn-action" onclick="createInviteLink()" data-i18n="fed.create">Create a link</button>
+            <div id="fed-invites-list" class="fed-invites"></div>
+        </div>
+    </div>
+</div>
+
 <div id="settings-menu" class="modal" style="display:none">
     <div class="modal-backdrop" onclick="closeSettingsMenu()"></div>
     <div class="modal-content modal-small">
@@ -768,6 +802,11 @@
             <button class="settings-item" onclick="navigateToFiles()">
                 <span class="material-icons-round settings-item-icon">folder</span>
                 <span class="settings-item-label" data-i18n="settings.files">File Manager</span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
+            <button class="settings-item" id="settings-federation-row" onclick="openFederationDialog()" style="display:none">
+                <span class="material-icons-round settings-item-icon">hub</span>
+                <span class="settings-item-label" data-i18n="fed.title">Links to other servers</span>
                 <span class="material-icons-round settings-item-arrow">chevron_right</span>
             </button>
             <button class="settings-item" id="settings-admin-row" onclick="navigateToAdmin()" style="display:none">
@@ -1323,6 +1362,6 @@
 <div id="toast-container" class="toast-container"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
-<script src="/app.js?v=46"></script>
+<script src="/app.js?v=48"></script>
 </body>
 </html>

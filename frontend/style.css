@@ -3171,3 +3171,32 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     .dashboard-widgets { grid-template-columns: 1fr; }
     .project-bar-label { min-width: 80px; }
 }
+
+/* ── Federation: invite links ─────────────────────────────────────────────── */
+.fed-hint { font-size: 13px; line-height: 1.45; color: var(--text-muted); margin: 0 0 4px; }
+.fed-invites { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.fed-empty { font-size: 13px; color: var(--text-muted); padding: 6px 0; }
+.fed-invite {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+}
+.fed-invite-main { min-width: 0; flex: 1; }
+.fed-invite-url {
+    font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fed-invite-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.fed-invite-actions { display: flex; gap: 2px; flex-shrink: 0; }
+.fed-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    font-size: 11px; margin-right: 6px;
+}
+.fed-badge-active { background: var(--success); color: #fff; }
+.fed-badge-revoked, .fed-badge-expired, .fed-badge-used_up {
+    background: var(--border); color: var(--text-muted);
+}
+.dm-domain {
+    margin-left: 6px; padding: 1px 5px; border-radius: 4px;
+    background: var(--border); color: var(--text-muted);
+    font-size: 11px; font-weight: 400; vertical-align: middle;
+}

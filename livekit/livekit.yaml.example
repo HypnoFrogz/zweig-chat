@@ -6,6 +6,11 @@ rtc:
   tcp_port: 7881
 turn:
   enabled: true
+  # Pin the relay ports so they can be published in docker-compose.yml and
+  # opened in the firewall; left unset, TURN picks ephemeral ports that are
+  # unreachable from outside the container.
+  relay_range_start: 30000
+  relay_range_end: 30100
   domain: your-domain.example
   tls_port: 5349
   udp_port: 3478

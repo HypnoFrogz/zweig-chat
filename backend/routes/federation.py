@@ -48,7 +48,19 @@ SERVER_DOMAIN = os.getenv("SERVER_DOMAIN", "").strip().lower().rstrip("/")
 FEDERATION_ALLOW_HTTP = os.getenv("FEDERATION_ALLOW_HTTP", "").lower() in ("1", "true", "yes")
 
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
+
+# Development only. With FEDERATION_ALLOW_HTTP the two peers are usually
+# processes on the same machine, so a port — and a single-label host like
+# "localhost" — has to be accepted. Never reachable in production, where
+# FEDERATION_ALLOW_HTTP is off and a real public domain is required.
+_DEV_HOST_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{2,5})?$"
+)
 _TIMEOUT = 10.0
+
+
+def _host_re() -> re.Pattern:
+    return _DEV_HOST_RE if FEDERATION_ALLOW_HTTP else _DOMAIN_RE
 
 
 def _normalize_domain(raw: str) -> str:
@@ -59,7 +71,7 @@ def _normalize_domain(raw: str) -> str:
 
 
 def _validate_domain(d: str) -> None:
-    if not d or not _DOMAIN_RE.fullmatch(d):
+    if not d or not _host_re().fullmatch(d):
         raise HTTPException(status_code=400, detail="Некорректный домен сервера")
     if SERVER_DOMAIN and d == SERVER_DOMAIN:
         raise HTTPException(status_code=400, detail="Нельзя подключить сервер к самому себе")
@@ -127,7 +139,10 @@ async def require_peer(authorization: str = Header(default="")) -> str:
     if scheme.lower() != "peer" or ":" not in value:
         raise HTTPException(status_code=401, detail="Требуется аутентификация сервера")
 
-    domain, _, secret = value.partition(":")
+    # rpartition, not partition: the domain may itself contain a colon when it
+    # carries a port (dev setups), while the secret is token_urlsafe and never
+    # does. Splitting on the first colon would cut "localhost:8002" in half.
+    domain, _, secret = value.rpartition(":")
     domain = _normalize_domain(domain)
     if not domain or not secret:
         raise HTTPException(status_code=401, detail="Требуется аутентификация сервера")
@@ -562,7 +577,7 @@ def _parse_invite_link(raw: str) -> tuple[str, str]:
     host, _, token = s.partition("/i/")
     domain = _normalize_domain(host)
     token = token.strip("/").strip()
-    if not domain or not _DOMAIN_RE.fullmatch(domain):
+    if not domain or not _host_re().fullmatch(domain):
         raise HTTPException(status_code=400, detail="Некорректный домен в ссылке")
     if not _INVITE_TOKEN_RE.fullmatch(token):
         raise HTTPException(status_code=400, detail="Некорректный код приглашения")

@@ -27,7 +27,7 @@ async def _get_members(db, channel_id: str) -> list[str]:
 async def _get_member_details(db, channel_id: str) -> list[dict]:
     cursor = await db.execute(
         """SELECT cm.username, cm.role, cm.joined_at,
-                  u.display_name, u.nickname, u.avatar_path, u.status_text
+                  u.display_name, u.nickname, u.avatar_path, u.status_text, u.home_server
            FROM channel_members cm
            JOIN users u ON u.username = cm.username
            WHERE cm.channel_id = ?

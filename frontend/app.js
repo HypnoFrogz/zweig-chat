@@ -271,6 +271,27 @@ const I18N = {
         'settings.terms': 'Условия использования',
         'settings.support': 'Поддержка',
         'settings.deleteAccount': 'Удалить аккаунт',
+        'fed.title': 'Связи с другими серверами',
+        'fed.hint': 'Каталога людей с других серверов нет. Чтобы вам смогли написать, создайте ссылку и передайте её сами — почтой или любым другим способом.',
+        'fed.addByLink': 'Добавить собеседника по ссылке',
+        'fed.redeemPlaceholder': 'https://сервер/i/…',
+        'fed.redeem': 'Открыть диалог',
+        'fed.myLinks': 'Мои ссылки-приглашения',
+        'fed.create': 'Создать ссылку',
+        'fed.copy': 'Скопировать',
+        'fed.revoke': 'Отозвать',
+        'fed.none': 'Ссылок пока нет',
+        'fed.uses': 'использований',
+        'fed.until': 'до',
+        'fed.status.active': 'активна',
+        'fed.status.revoked': 'отозвана',
+        'fed.status.expired': 'истекла',
+        'fed.status.used_up': 'исчерпана',
+        'fed.created': 'Ссылка создана и скопирована',
+        'fed.revoked': 'Ссылка отозвана',
+        'fed.redeemed': 'Диалог открыт',
+        'fed.needLink': 'Вставьте ссылку-приглашение',
+        'fed.redeemedByYou': 'открыл диалог по вашей ссылке',
         'delacc.title': 'Удаление аккаунта',
         'delacc.warn': 'Аккаунт и персональные данные будут удалены безвозвратно. Ваши сообщения в общих каналах будут анонимизированы. Действие необратимо.',
         'delacc.pw': 'Пароль',
@@ -433,6 +454,27 @@ const I18N = {
         'settings.terms': 'Terms of Service',
         'settings.support': 'Support',
         'settings.deleteAccount': 'Delete account',
+        'fed.title': 'Links to other servers',
+        'fed.hint': 'There is no directory of people on other servers. To let someone write to you, create a link and pass it on yourself — by mail or any other way.',
+        'fed.addByLink': 'Add a contact by link',
+        'fed.redeemPlaceholder': 'https://server/i/…',
+        'fed.redeem': 'Open conversation',
+        'fed.myLinks': 'My invite links',
+        'fed.create': 'Create a link',
+        'fed.copy': 'Copy',
+        'fed.revoke': 'Revoke',
+        'fed.none': 'No links yet',
+        'fed.uses': 'uses',
+        'fed.until': 'until',
+        'fed.status.active': 'active',
+        'fed.status.revoked': 'revoked',
+        'fed.status.expired': 'expired',
+        'fed.status.used_up': 'used up',
+        'fed.created': 'Link created and copied',
+        'fed.revoked': 'Link revoked',
+        'fed.redeemed': 'Conversation opened',
+        'fed.needLink': 'Paste an invite link',
+        'fed.redeemedByYou': 'opened a conversation with your link',
         'delacc.title': 'Delete account',
         'delacc.warn': 'This permanently deletes your account and personal data. Your messages in shared channels will be anonymized. This cannot be undone.',
         'delacc.pw': 'Password',
@@ -700,6 +742,7 @@ async function showApp() {
         const adminBtn = document.getElementById('sidebar-admin-btn');
         if (adminBtn) adminBtn.style.display = '';
     }
+    refreshFederationAvailability();
     // Route based on current URL path
     const initPath = window.location.pathname;
     if (initPath && initPath !== '/') {
@@ -1185,24 +1228,42 @@ function renderSidebar() {
     updateAppBadge(totalUnread);
 }
 
+// Resolve the other party of a direct chat. allUsers is the local directory and
+// deliberately excludes federated stubs, so fall back to the channel's own
+// member_details — otherwise a conversation with someone on another server
+// shows their raw "name@server" id instead of their name and avatar.
+function dmPeer(ch) {
+    const other = (ch.members || []).find(m => m !== currentUser) || '';
+    const info = allUsers.find(u => u.username === other)
+        || (ch.member_details || []).find(m => m.username === other)
+        || null;
+    return {
+        username: other,
+        name: (info && info.display_name) || other,
+        avatar: (info && info.avatar_path) || '',
+        domain: (info && info.home_server) || '',
+    };
+}
+
 function renderSidebarItem(ch) {
     const active = currentChannel && currentChannel.id === ch.id ? 'active' : '';
     const badge = ch.unread_count > 0 ? `<span class="sidebar-item-badge">${ch.unread_count}</span>` : '';
     const menuBtn = `<button class="sidebar-item-menu btn-icon-xs" onclick="event.stopPropagation(); showChannelContextMenu(event, '${ch.slug}')"><span class="material-icons-round">more_vert</span></button>`;
 
     if (ch.type === 'direct') {
-        const other = (ch.members || []).find(m => m !== currentUser) || 'Unknown';
-        const otherUser = allUsers.find(u => u.username === other);
-        const name = otherUser ? otherUser.display_name : other;
+        const peer = dmPeer(ch);
+        const other = peer.username;
+        const name = peer.name;
         const isOnline = onlineUsers[other]?.online;
-        const avatarContent = otherUser?.avatar_path
-            ? `<img src="${srv(otherUser.avatar_path)}">`
+        const avatarContent = peer.avatar
+            ? `<img src="${srv(peer.avatar)}">`
             : name.charAt(0).toUpperCase();
+        const domainTag = peer.domain ? `<span class="dm-domain" title="${esc(peer.domain)}">${esc(peer.domain)}</span>` : '';
         return `<div class="sidebar-item ${active}" draggable="true" data-channel-id="${ch.id}"
                      onclick="openChannel('${ch.slug}')"
                      ondragstart="onDragStart(event, '${ch.id}')" ondragend="onDragEnd(event)">
             <div class="sidebar-dm-avatar">${avatarContent}</div>
-            <span class="sidebar-item-name">${esc(name)}</span>
+            <span class="sidebar-item-name">${esc(name)}${domainTag}</span>
             <span class="sidebar-dm-status ${isOnline ? 'online' : 'offline'}"></span>
             ${badge}
             ${menuBtn}
@@ -1370,11 +1431,13 @@ function updateTopbar() {
     const membersBtn = document.getElementById('btn-members');
 
     if (currentChannel.type === 'direct') {
-        const other = (currentChannel.members || []).find(m => m !== currentUser) || '';
-        const otherUser = allUsers.find(u => u.username === other);
+        const peer = dmPeer(currentChannel);
+        const other = peer.username;
         iconEl.textContent = '@';
-        nameEl.textContent = otherUser ? otherUser.display_name : other;
-        descEl.textContent = onlineUsers[other]?.online ? 'Online' : '';
+        nameEl.textContent = peer.name;
+        // For a federated peer the server is part of who they are, and the
+        // online dot would be misleading — presence is local only.
+        descEl.textContent = peer.domain ? peer.domain : (onlineUsers[other]?.online ? 'Online' : '');
         if (settingsBtn) settingsBtn.style.display = 'none';
         if (membersBtn) membersBtn.style.display = 'none';
     } else {
@@ -2144,6 +2207,7 @@ function handleWsEvent(data) {
         case 'reaction_updated': onReactionUpdated(data); break;
         case 'federation_request': onFederationRequest(data); break;
         case 'federation_linked': case 'federation_declined': loadFederation(); break;
+        case 'federation_invite_redeemed': onInviteRedeemed(data); break;
         case 'channel_created': case 'channel_updated': case 'channel_deleted': loadChannels(); break;
         case 'member_joined': case 'member_left':
             if (data.event === 'member_left' && data.username === currentUser && currentChannel && currentChannel.id === data.channel_id) {
@@ -5764,4 +5828,128 @@ function handleTaskWsEvent(data) {
             loadTaskProjects(); // Also refresh project list for table stats
             break;
     }
+}
+
+// ── Federation: invite links ────────────────────────────────────────────────
+// There is no cross-server directory of people, by design. Reaching someone on
+// another server means holding a link they made and sent you themselves.
+
+async function refreshFederationAvailability() {
+    // The row stays hidden unless this server has a domain configured —
+    // without one it cannot prove who it is and federation is off.
+    const row = document.getElementById('settings-federation-row');
+    if (!row) return;
+    try {
+        const res = await apiFetch('/federation/info');
+        if (!res || !res.ok) return;
+        const info = await res.json();
+        row.style.display = info.federation ? '' : 'none';
+    } catch (e) { /* leave it hidden */ }
+}
+
+function openFederationDialog() {
+    closeSettingsMenu();
+    document.getElementById('fed-redeem-input').value = '';
+    document.getElementById('federation-dialog').style.display = 'flex';
+    loadInvites();
+}
+
+function closeFederationDialog() {
+    document.getElementById('federation-dialog').style.display = 'none';
+}
+
+async function loadInvites() {
+    const box = document.getElementById('fed-invites-list');
+    if (!box) return;
+    const res = await apiFetch('/invites');
+    if (!res || !res.ok) { box.innerHTML = ''; return; }
+    renderInvites(await res.json());
+}
+
+function renderInvites(items) {
+    const box = document.getElementById('fed-invites-list');
+    if (!items.length) {
+        box.innerHTML = `<div class="fed-empty">${esc(t('fed.none'))}</div>`;
+        return;
+    }
+    box.innerHTML = items.map(inv => {
+        const until = inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : '';
+        const meta = `${inv.used_count}/${inv.max_uses} ${t('fed.uses')}` +
+                     (until ? ` · ${t('fed.until')} ${until}` : '');
+        const canRevoke = inv.status === 'active';
+        return `<div class="fed-invite">
+            <div class="fed-invite-main">
+                <div class="fed-invite-url" title="${esc(inv.url)}">${esc(inv.url)}</div>
+                <div class="fed-invite-meta">
+                    <span class="fed-badge fed-badge-${inv.status}">${esc(t('fed.status.' + inv.status))}</span>
+                    ${esc(meta)}${inv.note ? ' · ' + esc(inv.note) : ''}
+                </div>
+            </div>
+            <div class="fed-invite-actions">
+                <button class="btn-icon" title="${esc(t('fed.copy'))}" onclick="copyInvite('${esc(inv.url)}')">
+                    <span class="material-icons-round">content_copy</span>
+                </button>
+                ${canRevoke ? `<button class="btn-icon" title="${esc(t('fed.revoke'))}" onclick="revokeInvite('${esc(inv.token)}')">
+                    <span class="material-icons-round">link_off</span>
+                </button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function copyInvite(url) {
+    navigator.clipboard.writeText(url).then(() => showToast(t('toast.copied'), 'success'));
+}
+
+async function createInviteLink() {
+    const res = await apiFetch('/invites', { method: 'POST', body: { ttl_days: 14, max_uses: 1 } });
+    if (!res || !res.ok) {
+        const err = res ? await res.json().catch(() => ({})) : {};
+        showToast(err?.detail || t('toast.error'), 'error');
+        return;
+    }
+    const inv = await res.json();
+    // Copy straight away: the link is useless until it reaches the other
+    // person, and it is the only reason the user pressed the button.
+    try { await navigator.clipboard.writeText(inv.url); } catch (e) { /* clipboard may be blocked */ }
+    showToast(t('fed.created'), 'success');
+    loadInvites();
+}
+
+async function revokeInvite(token) {
+    const res = await apiFetch(`/invites/${encodeURIComponent(token)}`, { method: 'DELETE' });
+    if (res && res.ok) { showToast(t('fed.revoked'), 'success'); loadInvites(); }
+    else showToast(t('toast.error'), 'error');
+}
+
+async function redeemInviteLink() {
+    const input = document.getElementById('fed-redeem-input');
+    const link = (input.value || '').trim();
+    if (!link) { showToast(t('fed.needLink'), 'error'); return; }
+
+    const btn = document.getElementById('fed-redeem-btn');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/invites/redeem', { method: 'POST', body: { link } });
+        if (!res || !res.ok) {
+            const err = res ? await res.json().catch(() => ({})) : {};
+            showToast(err?.detail || t('toast.error'), 'error');
+            return;
+        }
+        const data = await res.json();
+        input.value = '';
+        showToast(t('fed.redeemed'), 'success');
+        closeFederationDialog();
+        await loadChannels();
+        const ch = channels.find(c => c.id === data.channel_id);
+        if (ch) openChannel(ch.slug);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function onInviteRedeemed(data) {
+    const who = (data.user && data.user.display_name) || '';
+    showToast(`${who} ${t('fed.redeemedByYou')}`, 'success');
+    loadChannels();
 }

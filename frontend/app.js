@@ -57,6 +57,7 @@ let wsReconnectTimer = null;
 let livekitRoom = null;
 let activeCallId = null;
 let incomingCallData = null;
+let incomingCallTimeoutTimer = null;
 // ── Push Notifications (Web Push / PWA) ──────────────────────────────────────
 let swRegistration = null;
 let pushSubscription = null;

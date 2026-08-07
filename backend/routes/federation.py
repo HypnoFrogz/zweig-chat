@@ -943,7 +943,14 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     """
     from routes.channels import find_direct
     from routes.messages import _get_members
-    from routes.moderation import get_blockers_of
+
+    # Blocking is not part of every build (the open-source packaging ships
+    # without routes/moderation). Absent the module, nobody has blocked anyone.
+    try:
+        from routes.moderation import get_blockers_of
+    except ImportError:
+        async def get_blockers_of(_db, _username):
+            return []
 
     msg_id = (data.get("id") or "").strip()
     to_user = (data.get("to") or "").strip().lower()

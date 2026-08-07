@@ -1023,3 +1023,128 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
         })
 
     return {"ok": True}
+
+
+# ── Calls across servers ─────────────────────────────────────────────────────
+#
+# A LiveKit room lives on exactly one server — the one that started the call —
+# because the join token is signed with that server's LiveKit secret and no
+# peer can forge it. So the room's server mints a token for every participant,
+# local or remote, and the remote participant's browser dials that server's
+# LiveKit directly. The peer only relays signalling.
+#
+# Authorisation is the same as for messages: there must already be a
+# conversation between the two people, which only a redeemed invite creates.
+
+
+async def remote_peer_of(db, username: str) -> str | None:
+    """Domain this user lives on, or None if they are local to us."""
+    cur = await db.execute("SELECT home_server FROM users WHERE username = ?", (username,))
+    row = await cur.fetchone()
+    return (row["home_server"] or None) if row else None
+
+
+async def push_call_event(domain: str, path: str, payload: dict) -> bool:
+    """Relay one call signalling event to a peer. Never raises."""
+    try:
+        resp = await peer_post(domain, path, payload)
+        if resp.status_code != 200:
+            print(f"[federation] call event {path} to {domain}: HTTP {resp.status_code}")
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"[federation] call event {path} to {domain} failed: {e}")
+        return False
+
+
+async def _authorised_channel(db, local_user: str, remote_uid: str) -> str | None:
+    """The conversation that authorises these two to reach each other."""
+    from routes.channels import find_direct
+    return await find_direct(db, local_user, remote_uid)
+
+
+@router.post("/federation/call/invite")
+async def federation_call_invite(data: dict, peer: str = Depends(require_peer)):
+    """A peer's user is calling one of ours. We only relay — the room is theirs."""
+    from routes.videocall import register_incoming_federated_call
+
+    call_id = (data.get("call_id") or "").strip()
+    callee = (data.get("callee") or "").strip().lower()
+    caller = (data.get("caller") or "").strip().lower()
+    room_name = (data.get("room_name") or "").strip()
+    if not all((call_id, callee, caller, room_name)):
+        raise HTTPException(status_code=400, detail="Некорректное приглашение в звонок")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (callee,))
+    local = await cur.fetchone()
+    if not local or local["home_server"] or local["blocked"]:
+        raise HTTPException(status_code=404, detail="Получатель не найден")
+
+    uid = await ensure_remote_user(peer, caller, data.get("caller_name", ""), data.get("avatar_url", ""))
+    channel_id = await _authorised_channel(db, callee, uid)
+    if not channel_id:
+        raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+
+    return await register_incoming_federated_call(
+        db, call_id=call_id, channel_id=channel_id, room_name=room_name,
+        caller_uid=uid, caller_name=data.get("caller_name", "") or caller, callee=callee,
+        mode=data.get("mode", "audio"), expires_at=data.get("expires_at", ""),
+        domain=peer, livekit_url=data.get("livekit_url", ""),
+        livekit_token=data.get("livekit_token", ""),
+    )
+
+
+@router.post("/federation/call/state")
+async def federation_call_state(data: dict, peer: str = Depends(require_peer)):
+    """Relay answer / reject / end for a call we share with this peer."""
+    from routes.videocall import apply_federated_call_state
+
+    call_id = (data.get("call_id") or "").strip()
+    state = (data.get("state") or "").strip()
+    if not call_id or state not in ("answered", "rejected", "ended"):
+        raise HTTPException(status_code=400, detail="Некорректное состояние звонка")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM calls WHERE id = ? AND remote_domain = ?", (call_id, peer))
+    call = await cur.fetchone()
+    if not call:
+        raise HTTPException(status_code=404, detail="Звонок не найден")
+    return await apply_federated_call_state(db, dict(call), state, data.get("reason", ""))
+
+
+@router.post("/federation/call/conference")
+async def federation_call_conference(data: dict, peer: str = Depends(require_peer)):
+    """A peer adds one of our users to a call already running on their server.
+
+    No local call row: joining a conference is stateless for us, we just hand
+    the invitation to the user. The conversation check still applies, so only
+    someone they already accepted can pull them in.
+    """
+    callee = (data.get("callee") or "").strip().lower()
+    inviter = (data.get("inviter") or "").strip().lower()
+    room_name = (data.get("room_name") or "").strip()
+    if not all((callee, inviter, room_name)):
+        raise HTTPException(status_code=400, detail="Некорректное приглашение в конференцию")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (callee,))
+    local = await cur.fetchone()
+    if not local or local["home_server"] or local["blocked"]:
+        raise HTTPException(status_code=404, detail="Получатель не найден")
+
+    uid = await ensure_remote_user(peer, inviter, data.get("inviter_name", ""))
+    if not await _authorised_channel(db, callee, uid):
+        raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+
+    await manager.send_to_user(callee, {
+        "event": "call_started",
+        "channel_id": data.get("channel_id", ""),
+        "channel_slug": data.get("channel_slug", ""),
+        "room_name": room_name,
+        "started_by": uid,
+        "started_by_name": data.get("inviter_name", "") or inviter,
+        "livekit_token": data.get("livekit_token", ""),
+        "livekit_url": data.get("livekit_url", ""),
+        "remote_domain": peer,
+    })
+    return {"ok": True}

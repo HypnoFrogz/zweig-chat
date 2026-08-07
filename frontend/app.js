@@ -3081,7 +3081,7 @@ async function startVideoCall() {
     }
     const data = await res.json();
     activeCallId = data.call_id || null;
-    await joinLivekitRoom(data.livekit_token, data.room_name);
+    await joinLivekitRoom(data.livekit_token, data.room_name, data.livekit_url);
 }
 async function checkActiveCall() {
     if (!currentChannel) return;
@@ -3089,14 +3089,14 @@ async function checkActiveCall() {
     if (!res || !res.ok) return;
     const data = await res.json();
     const joinBtn = document.getElementById('btn-call-join');
-    if (data.active) { joinBtn.style.display = ''; joinBtn.dataset.token = data.livekit_token; joinBtn.dataset.room = data.room_name; }
+    if (data.active) { joinBtn.style.display = ''; joinBtn.dataset.token = data.livekit_token; joinBtn.dataset.room = data.room_name; joinBtn.dataset.url = data.livekit_url || ''; }
     else joinBtn.style.display = 'none';
 }
 async function joinActiveCall() {
     const joinBtn = document.getElementById('btn-call-join');
     if (joinBtn.dataset.token && joinBtn.dataset.room) {
         if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
-        await joinLivekitRoom(joinBtn.dataset.token, joinBtn.dataset.room);
+        await joinLivekitRoom(joinBtn.dataset.token, joinBtn.dataset.room, joinBtn.dataset.url);
     }
 }
 function onCallStarted(data) {
@@ -3151,7 +3151,7 @@ async function acceptIncomingCall() {
             if (res && res.ok) {
                 const data = await res.json();
                 activeCallId = callId;
-                await joinLivekitRoom(data.livekit_token, data.room_name);
+                await joinLivekitRoom(data.livekit_token, data.room_name, data.livekit_url);
             } else if (res) {
                 const err = await res.json().catch(() => ({}));
                 showToast(err?.detail || `Ошибка принятия звонка (${res.status})`, 'error');
@@ -3219,9 +3219,14 @@ function scheduleIncomingCallTimeout(data) {
     }, delay);
 }
 
-async function joinLivekitRoom(tk, roomName) {
+async function joinLivekitRoom(tk, roomName, url) {
     if (!window.LivekitClient) { showToast(t('call.livekitNotLoaded'), 'error'); return; }
-    const livekitUrl = `wss://${location.host}/livekit/`;
+    // The room lives on whichever server started the call, and its token is
+    // signed with that server's LiveKit secret — so for a federated call we
+    // must dial the URL the backend handed us, not our own host. Falling back
+    // to location.host keeps single-server deployments working if the field is
+    // missing (older backend, cached client).
+    const livekitUrl = url || `wss://${location.host}/livekit/`;
     const room = new LivekitClient.Room();
     livekitRoom = room;
     livekitRoom.name = roomName;

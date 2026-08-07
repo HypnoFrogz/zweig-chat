@@ -3125,7 +3125,13 @@ function onCallAnswered(data) {
 }
 function onCallMediaUpdated(data) {
     if (!data || !activeCallId || data.call_id !== activeCallId) return;
-    if (typeof data.speaker_enabled === 'boolean') {
+    // The backend sends this event to both call participants, because
+    // video_enabled legitimately concerns the other side. speaker_enabled does
+    // not — it is a local audio-routing choice — so apply it only when we are
+    // the one who made it, i.e. the update came from another of our own
+    // devices. Without this check, toggling the speaker here also flipped the
+    // button on the other participant's screen.
+    if (typeof data.speaker_enabled === 'boolean' && data.updated_by === currentUser) {
         speakerEnabled = data.speaker_enabled;
         const speakerBtn = document.getElementById('btn-toggle-speaker');
         if (speakerBtn) {

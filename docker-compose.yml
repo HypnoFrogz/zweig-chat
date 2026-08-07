@@ -64,6 +64,11 @@ services:
       - "7882-7892:7882-7892/udp"
       - "3478:3478/udp"
       - "5349:5349"
+      # TURN relay range — must match turn.relay_range_* in livekit.yaml.
+      # Without it TURN hands clients relay addresses on ports that never
+      # reach the container, ICE finds no working candidate pair and the
+      # browser reports "your TURN server appears to be broken".
+      - "30000-30100:30000-30100/udp"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
       - ./certbot/conf:/etc/letsencrypt:ro

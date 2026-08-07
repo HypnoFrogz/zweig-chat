@@ -15,6 +15,7 @@ from routes.admin import router as admin_router
 from routes.files import router as files_router
 from routes.videocall import router as videocall_router
 from routes import videocall
+from routes import federation
 from routes.preferences import router as preferences_router
 from routes.devices import router as devices_router
 from routes.chat_folders import router as chat_folders_router
@@ -30,12 +31,15 @@ async def lifespan(app: FastAPI):
     if videocall.CALL_CLEANUP_ON_STARTUP:
         await videocall.run_calls_cleanup_once()
     cleanup_task = asyncio.create_task(videocall.run_calls_cleanup_loop())
+    # Retries queued server-to-server messages (no-op without SERVER_DOMAIN).
+    outbox_task = asyncio.create_task(federation.run_outbox_loop())
     yield
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
+    for task in (cleanup_task, outbox_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await close_db()
 
 

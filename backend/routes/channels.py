@@ -90,12 +90,14 @@ async def _ensure_unique_slug(db, slug: str, exclude_id: str | None = None) -> s
         counter += 1
 
 
-async def get_or_create_direct(db, user_a: str, user_b: str) -> tuple[str, bool]:
-    """Find the direct channel between two users, creating it if missing.
+async def find_direct(db, user_a: str, user_b: str) -> str | None:
+    """Id of the existing direct channel between two users, or None.
 
-    Returns (channel_id, created). Shared with federation: redeeming an invite
-    opens exactly this kind of conversation, the only difference being that one
-    member is a stub row for someone on another server.
+    Federation relies on the distinction between this and
+    get_or_create_direct: an incoming remote message is only accepted into a
+    conversation that already exists, because that conversation is what a
+    redeemed invite created. Creating one on delivery would let anyone on a
+    linked server message anyone here.
     """
     cursor = await db.execute(
         """SELECT c.id FROM channels c
@@ -104,9 +106,20 @@ async def get_or_create_direct(db, user_a: str, user_b: str) -> tuple[str, bool]
            WHERE c.type = 'direct'""",
         (user_a, user_b),
     )
-    existing = await cursor.fetchone()
+    row = await cursor.fetchone()
+    return row["id"] if row else None
+
+
+async def get_or_create_direct(db, user_a: str, user_b: str) -> tuple[str, bool]:
+    """Find the direct channel between two users, creating it if missing.
+
+    Returns (channel_id, created). Shared with federation: redeeming an invite
+    opens exactly this kind of conversation, the only difference being that one
+    member is a stub row for someone on another server.
+    """
+    existing = await find_direct(db, user_a, user_b)
     if existing:
-        return existing["id"], False
+        return existing, False
 
     now = now_iso()
     ch_id = str(uuid.uuid4())

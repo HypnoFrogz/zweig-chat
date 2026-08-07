@@ -28,7 +28,7 @@ import re
 import secrets
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from helpers import get_current_user, require_admin, now_iso
 from database import get_db
@@ -100,6 +100,98 @@ def _public(row: dict) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+# ── Peer authentication ──────────────────────────────────────────────────────
+
+async def require_peer(authorization: str = Header(default="")) -> str:
+    """FastAPI dependency — authenticate a call coming from a federated server.
+
+    Peers authenticate with the shared_secret agreed during the handshake:
+
+        Authorization: Peer <their-domain>:<shared_secret>
+
+    Both sides store the same secret for a given link, so the same row serves
+    to verify incoming calls and to sign outgoing ones. Returns the caller's
+    domain; raises 401 for anything unrecognised.
+
+    Note this is deliberately NOT used by the handshake endpoints above: those
+    run before a secret exists and prove domain ownership by calling back.
+    """
+    _require_configured()
+    scheme, _, value = (authorization or "").strip().partition(" ")
+    if scheme.lower() != "peer" or ":" not in value:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация сервера")
+
+    domain, _, secret = value.partition(":")
+    domain = _normalize_domain(domain)
+    if not domain or not secret:
+        raise HTTPException(status_code=401, detail="Требуется аутентификация сервера")
+
+    db = await get_db()
+    peer = await _get_peer(db, domain)
+    if not peer or peer["status"] != "active" or not peer["shared_secret"]:
+        raise HTTPException(status_code=401, detail="Сервер не в активной федерации")
+    # compare_digest keeps the check constant-time — a plain != would leak the
+    # secret one byte at a time to anyone able to measure the response.
+    if not secrets.compare_digest(peer["shared_secret"], secret):
+        raise HTTPException(status_code=401, detail="Неверный секрет сервера")
+    return domain
+
+
+def remote_id(domain: str, username: str) -> str:
+    """Local primary key for a user that lives on `domain`."""
+    return f"{username.strip().lower()}@{_normalize_domain(domain)}"
+
+
+async def ensure_remote_user(
+    domain: str, username: str, display_name: str = "", avatar_url: str = ""
+) -> str:
+    """Create or refresh the stub row for a user living on a peer server.
+
+    channel_members.username is a foreign key into users(username) and
+    foreign_keys is ON, so a remote participant cannot be added to a
+    conversation without a row here. The stub carries no usable password: the
+    stored value is a marker, and login rejects any row with home_server set.
+
+    Returns the local qualified username.
+    """
+    domain = _normalize_domain(domain)
+    bare = (username or "").strip().lower()
+    if not domain or not bare:
+        raise HTTPException(status_code=400, detail="Некорректный удалённый пользователь")
+
+    uid = remote_id(domain, bare)
+    display = (display_name or "").strip() or bare
+    db = await get_db()
+    cur = await db.execute("SELECT 1 FROM users WHERE username = ?", (uid,))
+    if await cur.fetchone():
+        await db.execute(
+            "UPDATE users SET display_name = ?, avatar_path = ? WHERE username = ?",
+            (display, avatar_url or "", uid),
+        )
+    else:
+        await db.execute(
+            "INSERT INTO users (username, password, display_name, avatar_path, role, "
+            "created_at, home_server, remote_username) "
+            "VALUES (?, ?, ?, ?, 'user', ?, ?, ?)",
+            (uid, "!federated", display, avatar_url or "", now_iso(), domain, bare),
+        )
+    await db.commit()
+    return uid
+
+
+async def peer_post(domain: str, path: str, payload: dict) -> httpx.Response:
+    """POST to a federated peer, signed with the secret we share with it."""
+    _require_configured()
+    db = await get_db()
+    peer = await _get_peer(db, domain)
+    if not peer or peer["status"] != "active" or not peer["shared_secret"]:
+        raise HTTPException(status_code=409, detail=f"Сервер {domain} не в активной федерации")
+
+    headers = {"Authorization": f"Peer {SERVER_DOMAIN}:{peer['shared_secret']}"}
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        return await client.post(_peer_url(domain, path), json=payload, headers=headers)
 
 
 # ── Server-to-server endpoints (no user auth) ────────────────────────────────

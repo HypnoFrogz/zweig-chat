@@ -411,6 +411,14 @@ async def init_db():
         await db.execute("ALTER TABLE users ADD COLUMN home_server TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: add remote_username to users (federation) ----------
+    # username is the primary key and the namespace is shared with local
+    # accounts, so a remote user is stored qualified as "bob@peer.example".
+    # remote_username keeps the bare name they use on their own server.
+    if "remote_username" not in user_cols:
+        await db.execute("ALTER TABLE users ADD COLUMN remote_username TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
     # ---------- Migration: add parent_id to task_projects ----------
     pragma4 = await db.execute("PRAGMA table_info(task_projects)")
     tp_cols = [r[1] for r in await pragma4.fetchall()]

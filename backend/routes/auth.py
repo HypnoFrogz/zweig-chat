@@ -60,7 +60,13 @@ async def login(data: dict, request: Request):
     db = await get_db()
     cursor = await db.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = await cursor.fetchone()
-    if not user or not verify_password(password, user["password"]):
+    # Federated stubs live in the same table but are not accounts on this
+    # server: they have no usable password. Reject them before verify_password
+    # both because the stored value is not a valid hash and because the reply
+    # must stay indistinguishable from "no such user".
+    if not user or user["home_server"]:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if user["blocked"]:
@@ -338,10 +344,16 @@ async def get_avatar(target_user: str):
 
 @router.get("/users")
 async def list_users(username: str = Depends(get_current_user)):
-    """List all non-blocked users."""
+    """List all non-blocked local users.
+
+    Federated stubs (home_server != '') are deliberately excluded: this is the
+    local directory used for DMs, mentions and member pickers, and remote
+    people are reachable only through an invite link they were given.
+    """
     db = await get_db()
     cursor = await db.execute(
-        "SELECT username, display_name, nickname, avatar_path, status_text, role FROM users WHERE blocked = 0 ORDER BY username"
+        "SELECT username, display_name, nickname, avatar_path, status_text, role "
+        "FROM users WHERE blocked = 0 AND home_server = '' ORDER BY username"
     )
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]

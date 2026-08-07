@@ -351,6 +351,21 @@ TABLES = [
         revoked      INTEGER NOT NULL DEFAULT 0,
         note         TEXT NOT NULL DEFAULT ''
     )""",
+    # Outgoing queue for server-to-server message delivery. A peer can be down,
+    # so delivery is retried in the background instead of failing the send.
+    #
+    # id is "<message_id>:<domain>" — one row per message per destination, so
+    # re-queueing the same message is a no-op and retries cannot fan out.
+    """CREATE TABLE IF NOT EXISTS federation_outbox (
+        id           TEXT PRIMARY KEY,
+        domain       TEXT NOT NULL,
+        payload      TEXT NOT NULL,
+        attempts     INTEGER NOT NULL DEFAULT 0,
+        next_attempt TEXT NOT NULL DEFAULT '',
+        last_error   TEXT NOT NULL DEFAULT '',
+        created_at   TEXT NOT NULL DEFAULT '',
+        delivered_at TEXT NOT NULL DEFAULT ''
+    )""",
 ]
 
 INDEXES = [
@@ -365,6 +380,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_revoked ON user_sessions(revoked_at)",
     "CREATE INDEX IF NOT EXISTS idx_federation_invites_owner ON federation_invites(owner)",
+    "CREATE INDEX IF NOT EXISTS idx_federation_outbox_pending ON federation_outbox(delivered_at, next_attempt)",
     # ChaosTracker indexes
     "CREATE INDEX IF NOT EXISTS idx_task_project_members ON task_project_members(username)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)",

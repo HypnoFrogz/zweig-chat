@@ -200,6 +200,10 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     )
     await db.commit()
 
+    # Queue for any member living on another server. Never raises.
+    from routes.federation import queue_message_for_peers
+    await queue_message_for_peers(db, ch["id"], msg, username)
+
     members = await _get_members(db, ch["id"])
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": ch["slug"], "message": msg})
 
@@ -559,6 +563,10 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
         (lm_text, username, display_name, now, channel_id),
     )
     await db.commit()
+
+    # Same as the REST path: hand the message to federation before broadcasting.
+    from routes.federation import queue_message_for_peers
+    await queue_message_for_peers(db, channel_id, msg, username)
 
     members = await _get_members(db, channel_id)
 

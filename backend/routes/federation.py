@@ -23,6 +23,8 @@ with it (see require_peer). Everything travels over HTTPS — S is a bearer
 secret and must never go over plain HTTP.
 """
 
+import asyncio
+import json
 import os
 import re
 import secrets
@@ -768,3 +770,241 @@ async def federation_invite_redeem(data: dict, peer: str = Depends(require_peer)
         },
         "channel_id": channel_id,
     }
+
+
+# ── Message delivery ─────────────────────────────────────────────────────────
+#
+# A conversation with a remote user exists on both servers; each keeps its own
+# copy of the messages. Sending pushes the message to the peer, which files it
+# under its own copy of the same conversation.
+#
+# Delivery is queued rather than awaited inline: a peer being down must not
+# fail the send for the local user, who has already got their message stored.
+
+_OUTBOX_TICK_SEC = 15.0
+_OUTBOX_MAX_ATTEMPTS = 12
+_OUTBOX_BATCH = 25
+
+
+def _backoff_seconds(attempts: int) -> float:
+    """1m, 2m, 4m … capped at an hour."""
+    return min(60.0 * (2 ** max(0, attempts - 1)), 3600.0)
+
+
+async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -> None:
+    """Queue `msg` for every remote member of this channel.
+
+    Called after the message is already committed locally. Never raises: a
+    federation problem must not turn into a failed send.
+    """
+    if not SERVER_DOMAIN:
+        return
+    try:
+        cur = await db.execute(
+            "SELECT u.username, u.home_server, u.remote_username FROM channel_members cm "
+            "JOIN users u ON u.username = cm.username "
+            "WHERE cm.channel_id = ? AND u.home_server != ''",
+            (channel_id,),
+        )
+        remotes = [dict(r) for r in await cur.fetchall()]
+        if not remotes:
+            return
+
+        cur = await db.execute(
+            "SELECT display_name, avatar_path FROM users WHERE username = ?", (sender,)
+        )
+        me = await cur.fetchone()
+        now = datetime.now(timezone.utc)
+
+        for r in remotes:
+            payload = {
+                "id": msg["id"],
+                "to": r["remote_username"],
+                "from": sender,
+                "display_name": (me["display_name"] if me else "") or sender,
+                "avatar_url": _absolute_url(me["avatar_path"] if me else ""),
+                "type": msg.get("type", "text"),
+                "text": msg.get("text", ""),
+                "timestamp": msg.get("timestamp") or now.isoformat(),
+            }
+            await db.execute(
+                "INSERT OR IGNORE INTO federation_outbox "
+                "(id, domain, payload, attempts, next_attempt, created_at) VALUES (?,?,?,0,?,?)",
+                (
+                    f"{msg['id']}:{r['home_server']}",
+                    r["home_server"],
+                    json.dumps(payload, ensure_ascii=False),
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+        await db.commit()
+        # Kick delivery now rather than waiting for the next tick; anything
+        # that fails here stays queued and is retried by run_outbox_loop.
+        asyncio.create_task(_flush_soon())
+    except Exception as e:
+        print(f"[federation] queueing failed for channel {channel_id}: {e}")
+
+
+async def _deliver_one(db, row: dict) -> None:
+    """Attempt one outbox row, updating it with the outcome."""
+    attempts = row["attempts"] + 1
+    now = datetime.now(timezone.utc)
+    try:
+        resp = await peer_post(row["domain"], "/api/federation/message", json.loads(row["payload"]))
+        # 4xx other than 429 means the peer will never accept it — retrying
+        # would just burn attempts, so stop and keep the error for diagnosis.
+        if resp.status_code == 200:
+            await db.execute(
+                "UPDATE federation_outbox SET delivered_at = ?, attempts = ?, last_error = '' WHERE id = ?",
+                (now.isoformat(), attempts, row["id"]),
+            )
+            await db.commit()
+            return
+        permanent = 400 <= resp.status_code < 500 and resp.status_code != 429
+        error = f"HTTP {resp.status_code}"
+    except Exception as e:
+        permanent = False
+        error = str(e)[:200]
+
+    if permanent or attempts >= _OUTBOX_MAX_ATTEMPTS:
+        # Give up: leave it undelivered with the reason recorded, and stop
+        # scheduling it by pushing next_attempt far out.
+        await db.execute(
+            "UPDATE federation_outbox SET attempts = ?, last_error = ?, next_attempt = '' WHERE id = ?",
+            (attempts, error, row["id"]),
+        )
+    else:
+        nxt = now + timedelta(seconds=_backoff_seconds(attempts))
+        await db.execute(
+            "UPDATE federation_outbox SET attempts = ?, last_error = ?, next_attempt = ? WHERE id = ?",
+            (attempts, error, nxt.isoformat(), row["id"]),
+        )
+    await db.commit()
+
+
+async def _flush_due() -> None:
+    """Deliver every queued message whose next attempt is due."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT * FROM federation_outbox WHERE delivered_at = '' AND next_attempt != '' "
+        "AND next_attempt <= ? ORDER BY next_attempt LIMIT ?",
+        (datetime.now(timezone.utc).isoformat(), _OUTBOX_BATCH),
+    )
+    for row in [dict(r) for r in await cur.fetchall()]:
+        await _deliver_one(db, row)
+
+
+async def _flush_soon() -> None:
+    """Best-effort immediate flush, so a normal message is not held for a tick."""
+    try:
+        await _flush_due()
+    except Exception as e:
+        print(f"[federation] immediate flush failed: {e}")
+
+
+async def run_outbox_loop() -> None:
+    """Background task — retry queued messages until they land or expire."""
+    while True:
+        try:
+            await asyncio.sleep(_OUTBOX_TICK_SEC)
+            if not SERVER_DOMAIN:
+                continue
+            await _flush_due()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[federation] outbox loop error: {e}")
+
+
+@router.post("/federation/message")
+async def federation_message(data: dict, peer: str = Depends(require_peer)):
+    """Accept a message from a federated peer.
+
+    The conversation must already exist here: it is created when an invite is
+    redeemed, and that redemption is the only thing that authorises someone on
+    another server to write to a local user. Delivering into a conversation we
+    would have to invent would turn federation into open messaging.
+    """
+    from routes.channels import find_direct
+    from routes.messages import _get_members
+    from routes.moderation import get_blockers_of
+
+    msg_id = (data.get("id") or "").strip()
+    to_user = (data.get("to") or "").strip().lower()
+    from_user = (data.get("from") or "").strip().lower()
+    text = data.get("text") or ""
+    if not msg_id or not to_user or not from_user:
+        raise HTTPException(status_code=400, detail="Некорректное сообщение")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (to_user,))
+    recipient = await cur.fetchone()
+    if not recipient or recipient["home_server"] or recipient["blocked"]:
+        raise HTTPException(status_code=404, detail="Получатель не найден")
+
+    uid = await ensure_remote_user(
+        peer, from_user, data.get("display_name", ""), data.get("avatar_url", "")
+    )
+    channel_id = await find_direct(db, to_user, uid)
+    if not channel_id:
+        raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+
+    # A block is enforced silently: we accept the message so the sender's
+    # server stops retrying, but nothing is stored or shown.
+    if to_user in await get_blockers_of(db, uid):
+        return {"ok": True, "dropped": True}
+
+    now = data.get("timestamp") or now_iso()
+    display = (data.get("display_name") or "").strip() or from_user
+    msg_type = data.get("type") or "text"
+
+    # INSERT OR IGNORE makes redelivery harmless — the sender owns the id, and
+    # retries after a timeout are expected.
+    cur = await db.execute(
+        "INSERT OR IGNORE INTO messages (id, channel_id, sender, sender_name, type, text, timestamp) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (msg_id, channel_id, uid, display, msg_type, text, now),
+    )
+    if cur.rowcount == 0:
+        return {"ok": True, "duplicate": True}
+
+    await db.execute(
+        "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, "
+        "last_msg_timestamp = ? WHERE id = ?",
+        (text, uid, display, now, channel_id),
+    )
+    await db.commit()
+
+    cur = await db.execute("SELECT slug, name FROM channels WHERE id = ?", (channel_id,))
+    ch = await cur.fetchone()
+    slug = ch["slug"] if ch else channel_id
+
+    msg = {
+        "id": msg_id,
+        "channel_id": channel_id,
+        "sender": uid,
+        "sender_name": display,
+        "sender_avatar": data.get("avatar_url", ""),
+        "type": msg_type,
+        "text": text,
+        "timestamp": now,
+        "read_by": [],
+        "reactions": [],
+        "reply_count": 0,
+        "remote_domain": peer,
+    }
+    members = await _get_members(db, channel_id)
+    await manager.send_to_channel(members, {"event": "new_message", "channel_slug": slug, "message": msg})
+
+    if not manager.is_online(to_user):
+        from routes.push import send_push_to_user
+        await send_push_to_user(to_user, {
+            "type": "message",
+            "title": display,
+            "body": (text or "")[:100] or "Новое сообщение",
+            "conv_id": slug,
+            "badge": 1,
+        })
+
+    return {"ok": True}

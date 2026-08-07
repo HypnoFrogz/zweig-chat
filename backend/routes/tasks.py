@@ -237,7 +237,12 @@ async def create_project(data: dict, username: str = Depends(get_current_user)):
             continue
         if member_role not in ("lead", "member", "viewer"):
             member_role = "member"
-        c_u = await db.execute("SELECT 1 FROM users WHERE username = ? AND blocked = 0", (member_username,))
+        # home_server = '' — task projects are local-only; federated stubs
+        # cannot be project members.
+        c_u = await db.execute(
+            "SELECT 1 FROM users WHERE username = ? AND blocked = 0 AND home_server = ''",
+            (member_username,),
+        )
         if await c_u.fetchone():
             await db.execute(
                 "INSERT OR IGNORE INTO task_project_members (project_id, username, role, joined_at) VALUES (?,?,?,?)",
@@ -392,8 +397,10 @@ async def add_member(slug: str, data: dict, username: str = Depends(get_current_
     if not new_user:
         raise HTTPException(status_code=400, detail="Username required")
 
-    # Check user exists
-    c = await db.execute("SELECT 1 FROM users WHERE username = ?", (new_user,))
+    # Check user exists and is local — task projects do not span servers.
+    c = await db.execute(
+        "SELECT 1 FROM users WHERE username = ? AND home_server = ''", (new_user,)
+    )
     if not await c.fetchone():
         raise HTTPException(status_code=404, detail="User not found")
 

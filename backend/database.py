@@ -337,6 +337,20 @@ TABLES = [
         created_at    TEXT NOT NULL DEFAULT '',
         updated_at    TEXT NOT NULL DEFAULT ''
     )""",
+    # Invite links — how someone on a federated server gets permission to
+    # start a conversation with a local user. There is deliberately no
+    # cross-server user directory: the owner generates a token, passes the
+    # link on out of band, and only a holder of that token can reach them.
+    """CREATE TABLE IF NOT EXISTS federation_invites (
+        token        TEXT PRIMARY KEY,
+        owner        TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        created_at   TEXT NOT NULL DEFAULT '',
+        expires_at   TEXT NOT NULL DEFAULT '',
+        max_uses     INTEGER NOT NULL DEFAULT 1,
+        used_count   INTEGER NOT NULL DEFAULT 0,
+        revoked      INTEGER NOT NULL DEFAULT 0,
+        note         TEXT NOT NULL DEFAULT ''
+    )""",
 ]
 
 INDEXES = [
@@ -350,6 +364,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_username ON user_sessions(username)",
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_revoked ON user_sessions(revoked_at)",
+    "CREATE INDEX IF NOT EXISTS idx_federation_invites_owner ON federation_invites(owner)",
     # ChaosTracker indexes
     "CREATE INDEX IF NOT EXISTS idx_task_project_members ON task_project_members(username)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)",

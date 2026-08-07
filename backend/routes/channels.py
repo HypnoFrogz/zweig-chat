@@ -90,6 +90,40 @@ async def _ensure_unique_slug(db, slug: str, exclude_id: str | None = None) -> s
         counter += 1
 
 
+async def get_or_create_direct(db, user_a: str, user_b: str) -> tuple[str, bool]:
+    """Find the direct channel between two users, creating it if missing.
+
+    Returns (channel_id, created). Shared with federation: redeeming an invite
+    opens exactly this kind of conversation, the only difference being that one
+    member is a stub row for someone on another server.
+    """
+    cursor = await db.execute(
+        """SELECT c.id FROM channels c
+           JOIN channel_members cm1 ON c.id = cm1.channel_id AND cm1.username = ?
+           JOIN channel_members cm2 ON c.id = cm2.channel_id AND cm2.username = ?
+           WHERE c.type = 'direct'""",
+        (user_a, user_b),
+    )
+    existing = await cursor.fetchone()
+    if existing:
+        return existing["id"], False
+
+    now = now_iso()
+    ch_id = str(uuid.uuid4())
+    slug = await _ensure_unique_slug(db, f"dm-{ch_id[:8]}")
+    await db.execute(
+        "INSERT INTO channels (id, name, slug, type, created_by, created_at) VALUES (?, '', ?, 'direct', ?, ?)",
+        (ch_id, slug, user_a, now),
+    )
+    for member in (user_a, user_b):
+        await db.execute(
+            "INSERT INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
+            (ch_id, member, now),
+        )
+    await db.commit()
+    return ch_id, True
+
+
 # ── Endpoints ────────────────────────────────────────────────────
 
 @router.get("/channels")
@@ -145,42 +179,13 @@ async def create_channel(data: dict, username: str = Depends(get_current_user)):
         if not participant or participant == username:
             raise HTTPException(status_code=400, detail="Invalid participant")
 
-        # Check for existing DM
-        cursor = await db.execute(
-            """SELECT c.id FROM channels c
-               JOIN channel_members cm1 ON c.id = cm1.channel_id AND cm1.username = ?
-               JOIN channel_members cm2 ON c.id = cm2.channel_id AND cm2.username = ?
-               WHERE c.type = 'direct'""",
-            (username, participant),
-        )
-        existing = await cursor.fetchone()
-        if existing:
-            c2 = await db.execute("SELECT * FROM channels WHERE id = ?", (existing["id"],))
-            return await _build_channel(db, await c2.fetchone(), username)
-
-        ch_id = str(uuid.uuid4())
-        slug = f"dm-{ch_id[:8]}"
-        slug = await _ensure_unique_slug(db, slug)
-
-        await db.execute(
-            "INSERT INTO channels (id, name, slug, type, created_by, created_at) VALUES (?, '', ?, 'direct', ?, ?)",
-            (ch_id, slug, username, now),
-        )
-        await db.execute(
-            "INSERT INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
-            (ch_id, username, now),
-        )
-        await db.execute(
-            "INSERT INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
-            (ch_id, participant, now),
-        )
-        await db.commit()
-
+        ch_id, created = await get_or_create_direct(db, username, participant)
         c3 = await db.execute("SELECT * FROM channels WHERE id = ?", (ch_id,))
         ch = await _build_channel(db, await c3.fetchone(), username)
-        # Notify both users (recipient + creator's other tabs)
-        await manager.send_to_user(participant, {"event": "channel_created", "channel": ch})
-        await manager.send_to_user(username, {"event": "channel_created", "channel": ch})
+        if created:
+            # Notify both users (recipient + creator's other tabs)
+            await manager.send_to_user(participant, {"event": "channel_created", "channel": ch})
+            await manager.send_to_user(username, {"event": "channel_created", "channel": ch})
         return ch
 
     else:

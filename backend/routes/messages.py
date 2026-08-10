@@ -212,20 +212,24 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     from routes.push import send_push_to_user
     for member in members:
         if member != username and not manager.is_online(member):
-            await send_message_notification(
+            delivered = await send_message_notification(
                 recipient=member,
                 sender_name=display_name,
                 text=text,
                 channel_slug=ch["slug"],
                 channel_name=ch.get("name") or display_name,
             )
-            await send_push_to_user(member, {
-                "type": "message",
-                "title": ch.get("name") or display_name,
-                "body": (text or "")[:100] or "Новое сообщение",
-                "conv_id": ch["slug"],
-                "badge": 1,
-            })
+            # Web Push only as a fallback. Someone running both the app and the
+            # PWA is subscribed on both channels and would otherwise be told
+            # about the same message twice.
+            if not delivered:
+                await send_push_to_user(member, {
+                    "type": "message",
+                    "title": ch.get("name") or display_name,
+                    "body": (text or "")[:100] or "Новое сообщение",
+                    "conv_id": ch["slug"],
+                    "badge": 1,
+                })
 
     return msg
 
@@ -583,20 +587,22 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     from routes.push import send_push_to_user
     for member in members:
         if member != username and not manager.is_online(member):
-            await send_message_notification(
+            delivered = await send_message_notification(
                 recipient=member,
                 sender_name=display_name,
                 text=text,
                 channel_slug=ch_slug,
                 channel_name=ch_name,
             )
-            await send_push_to_user(member, {
-                "type": "message",
-                "title": ch_name,
-                "body": (text or "")[:100] or "Новое сообщение",
-                "conv_id": ch_slug,
-                "badge": 1,
-            })
+            # Same fallback rule as the REST path above.
+            if not delivered:
+                await send_push_to_user(member, {
+                    "type": "message",
+                    "title": ch_name,
+                    "body": (text or "")[:100] or "Новое сообщение",
+                    "conv_id": ch_slug,
+                    "badge": 1,
+                })
 
 
 async def _ws_typing(data: dict, username: str, display_name: str):

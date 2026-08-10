@@ -42,14 +42,21 @@ async def send_message_notification(
     channel_slug: str,
     channel_name: str,
     unread_count: int = 0,
-):
+) -> bool:
+    """Push a message to the user's native apps.
+
+    Returns True if at least one device took it, so the caller can decide
+    whether a Web Push fallback is still needed — sending both is what gave
+    users with the app *and* the PWA two notifications per message.
+    """
     if not _firebase_app:
-        return
+        return False
 
     devices = await get_user_tokens(recipient)
     if not devices:
-        return
+        return False
 
+    delivered = False
     preview = (text or "")[:100]
 
     for device in devices:
@@ -86,10 +93,13 @@ async def send_message_notification(
                 ),
             )
             messaging.send(msg)
+            delivered = True
         except messaging.UnregisteredError:
             await _remove_token(device["token"])
         except Exception as e:
             print(f"[fcm] Error sending to {recipient}: {e}")
+
+    return delivered
 
 
 async def send_call_notification(

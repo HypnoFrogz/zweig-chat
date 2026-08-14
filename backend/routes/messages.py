@@ -102,25 +102,32 @@ async def get_messages(
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
 
+    # Everything up to the moment this user deleted the chat for themselves
+    # stays hidden from them — the other side is unaffected.
+    from routes.channels import cleared_at
+    since = await cleared_at(db, ch["id"], username)
+
     if before:
         bc = await db.execute("SELECT timestamp FROM messages WHERE id = ?", (before,))
         before_row = await bc.fetchone()
         if before_row:
             cursor = await db.execute(
                 """SELECT * FROM messages
-                   WHERE channel_id = ? AND timestamp < ?
+                   WHERE channel_id = ? AND timestamp < ? AND timestamp > ?
                    ORDER BY timestamp DESC LIMIT ?""",
-                (ch["id"], before_row["timestamp"], limit),
+                (ch["id"], before_row["timestamp"], since, limit),
             )
         else:
             cursor = await db.execute(
-                "SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?",
-                (ch["id"], limit),
+                """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
+                   ORDER BY timestamp DESC LIMIT ?""",
+                (ch["id"], since, limit),
             )
     else:
         cursor = await db.execute(
-            "SELECT * FROM messages WHERE channel_id = ? ORDER BY timestamp DESC LIMIT ?",
-            (ch["id"], limit),
+            """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
+               ORDER BY timestamp DESC LIMIT ?""",
+            (ch["id"], since, limit),
         )
 
     rows = list(reversed(await cursor.fetchall()))

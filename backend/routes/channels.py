@@ -37,19 +37,34 @@ async def _get_member_details(db, channel_id: str) -> list[dict]:
     return [dict(r) for r in await cursor.fetchall()]
 
 
+async def cleared_at(db, channel_id: str, username: str) -> str:
+    """When this member deleted the conversation for themselves ('' = never).
+
+    Everything at or before this moment is invisible to them, in the list, in
+    the history and in the unread counter.
+    """
+    cursor = await db.execute(
+        "SELECT cleared_at FROM channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, username),
+    )
+    row = await cursor.fetchone()
+    return (row["cleared_at"] if row else "") or ""
+
+
 async def _count_unread(db, channel_id: str, username: str) -> int:
+    since = await cleared_at(db, channel_id, username)
     cursor = await db.execute(
         """SELECT COUNT(*) FROM messages m
            WHERE m.channel_id = ? AND m.sender != ?
+           AND m.timestamp > ?
            AND NOT EXISTS (
                SELECT 1 FROM message_reads mr
                WHERE mr.message_id = m.id AND mr.username = ?
            )""",
-        (channel_id, username, username),
+        (channel_id, username, since, username),
     )
     row = await cursor.fetchone()
     return row[0]
-
 
 async def _build_channel(db, row, username: str) -> dict:
     c = dict(row)
@@ -141,12 +156,20 @@ async def get_or_create_direct(db, user_a: str, user_b: str) -> tuple[str, bool]
 
 @router.get("/channels")
 async def list_channels(username: str = Depends(get_current_user)):
-    """List channels the user is a member of."""
+    """List channels the user is a member of.
+
+    A conversation the user deleted for themselves stays hidden until something
+    new arrives in it: `cleared_at` marks the moment, and the chat comes back
+    only when a message is newer than that.
+    """
     db = await get_db()
     cursor = await db.execute(
         """SELECT c.* FROM channels c
            JOIN channel_members cm ON c.id = cm.channel_id
            WHERE cm.username = ?
+             AND (cm.cleared_at = ''
+                  OR (c.last_msg_timestamp IS NOT NULL
+                      AND c.last_msg_timestamp > cm.cleared_at))
            ORDER BY COALESCE(c.last_msg_timestamp, c.created_at) DESC""",
         (username,),
     )
@@ -412,6 +435,38 @@ async def join_channel(slug: str, username: str = Depends(get_current_user)):
 
     c2 = await db.execute("SELECT * FROM channels WHERE id = ?", (ch["id"],))
     return await _build_channel(db, await c2.fetchone(), username)
+
+
+@router.post("/channels/{slug}/clear")
+async def clear_channel(slug: str, username: str = Depends(get_current_user)):
+    """Delete a conversation for the calling user only.
+
+    Nothing is removed: the other side keeps the chat and the whole history.
+    We only record the moment for this member, and everything up to it stops
+    being shown to them. The chat reappears when a newer message arrives, with
+    only what came after — this is what "delete chat" means in Telegram, and
+    what people expect from the button.
+    """
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM channels WHERE slug = ?", (slug,))
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    ch = dict(row)
+    c2 = await db.execute(
+        "SELECT 1 FROM channel_members WHERE channel_id = ? AND username = ?",
+        (ch["id"], username),
+    )
+    if not await c2.fetchone():
+        raise HTTPException(status_code=403, detail="Not a member of this conversation")
+
+    await db.execute(
+        "UPDATE channel_members SET cleared_at = ? WHERE channel_id = ? AND username = ?",
+        (now_iso(), ch["id"], username),
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/channels/{slug}/leave")

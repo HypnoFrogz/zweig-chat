@@ -442,6 +442,19 @@ async def init_db():
         await db.execute("ALTER TABLE users ADD COLUMN home_server TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: per-user "cleared" boundary on a conversation ----------
+    # Deleting a direct chat is one-sided, like in Telegram: the chat disappears
+    # for whoever deleted it while the other side keeps everything. There is no
+    # per-user copy of the messages, so instead we remember when this member
+    # cleared the conversation and hide everything older from them. A new
+    # message after that moment brings the chat back — showing only what arrived
+    # since.
+    pragma_cleared = await db.execute("PRAGMA table_info(channel_members)")
+    member_cols = [r[1] for r in await pragma_cleared.fetchall()]
+    if "cleared_at" not in member_cols:
+        await db.execute("ALTER TABLE channel_members ADD COLUMN cleared_at TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
     # ---------- Migration: federated call columns ----------
     # A call room lives on exactly one server, because its LiveKit token is
     # signed with that server's secret. The other side cannot mint a token, so

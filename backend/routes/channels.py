@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — Channel management (CRUD, members, slug routing)."""
+"""Zweig Messenger — Channel management (CRUD, members, slug routing)."""
 
 import uuid
 import os

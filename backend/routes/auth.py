@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — Authentication & user profile."""
+"""Zweig Messenger — Authentication & user profile."""
 
 import os
 import uuid

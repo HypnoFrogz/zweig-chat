@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — shared utilities."""
+"""Zweig Messenger — shared utilities."""
 
 import os
 import re

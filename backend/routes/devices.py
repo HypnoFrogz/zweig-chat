@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — Device token registration for push notifications."""
+"""Zweig Messenger — Device token registration for push notifications."""
 
 import uuid
 from fastapi import APIRouter, Depends

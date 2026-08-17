@@ -1,5 +1,5 @@
 """
-ChaosHelper Messenger — Database layer.
+Zweig Messenger — Database layer.
 SQLite + aiosqlite, WAL mode, singleton async connection.
 """
 
@@ -9,7 +9,10 @@ import aiosqlite
 from pathlib import Path
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
-DB_PATH = DATA_DIR / "chaoshelper.db"
+# Servers deployed before the rename carry the old file name; keep using it
+# rather than silently starting from an empty database next to it.
+_LEGACY_DB = DATA_DIR / "chaoshelper.db"
+DB_PATH = _LEGACY_DB if _LEGACY_DB.exists() else DATA_DIR / "zweig.db"
 _db: aiosqlite.Connection | None = None
 
 

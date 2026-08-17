@@ -383,6 +383,7 @@ FEDERATION_ALLOW_HTTP=        # только для отладки; в прод�
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Ключи Web Push | сгенерировать заново |
 | `VAPID_EMAIL` | Контакт для Web Push | `mailto:...` |
 | `FIREBASE_CREDENTIALS` | Путь к firebase-service-account.json | опционально; без него push отключён |
+| `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` | APNs для входящих звонков на iOS (PushKit) | опционально; пусто — звонки на iOS не звонят в фоне |
 | `UPLOAD_DIR` / `DATA_DIR` | Пути хранения | `/app/uploads`, `/app/data` |
 | `CORS_ORIGINS` | Разрешённые origin через запятую | по умолчанию `*` |
 
@@ -555,6 +556,7 @@ SQLite в режиме WAL (асинхронно через aiosqlite). Схем
 | `preferences` | Тема/язык |
 | `chat_folders` | Категории чатов |
 | `user_devices` | Токены устройств для push |
+| `user_voip_devices` | PushKit-токены iOS (входящие звонки) |
 | `user_blocks` | Блокировки «пользователь → пользователь» |
 | `content_reports` | Жалобы на контент |
 | `feedback` | Обратная связь |

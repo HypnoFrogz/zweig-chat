@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from helpers import get_current_user, get_display_name, decode_token_from_string, now_iso
 from database import get_db
 from ws_manager import manager
+from routes.moderation import get_blocked_by, get_blockers_of
 
 router = APIRouter(prefix="/api", tags=["messages"])
 
@@ -132,6 +133,13 @@ async def get_messages(
 
     rows = list(reversed(await cursor.fetchall()))
 
+    # Drop messages from users this one has blocked. Filtering here rather than
+    # in SQL keeps the pagination cursor (`before`) pointing at real message
+    # ids, which a filtered query would skip over.
+    blocked = await get_blocked_by(db, username)
+    if blocked:
+        rows = [r for r in rows if r["sender"] not in blocked]
+
     total_cursor = await db.execute(
         "SELECT COUNT(*) FROM messages WHERE channel_id = ?", (ch["id"],)
     )
@@ -212,6 +220,11 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     await queue_message_for_peers(db, ch["id"], msg, username)
 
     members = await _get_members(db, ch["id"])
+    # Anyone who blocked the sender should neither see the message arrive live
+    # nor get a push for it, so drop them before both.
+    blockers = await get_blockers_of(db, username)
+    if blockers:
+        members = [m for m in members if m not in blockers]
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": ch["slug"], "message": msg})
 
     # Push notifications to offline members (FCM for native apps + Web Push for PWA)
@@ -580,6 +593,11 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     await queue_message_for_peers(db, channel_id, msg, username)
 
     members = await _get_members(db, channel_id)
+    # Same as the REST path: recipients who blocked the sender drop out before
+    # the broadcast and the pushes below.
+    blockers = await get_blockers_of(db, username)
+    if blockers:
+        members = [m for m in members if m not in blockers]
 
     # Get channel slug for WS event
     ch_cursor = await db.execute("SELECT slug, name FROM channels WHERE id = ?", (channel_id,))

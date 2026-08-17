@@ -22,6 +22,7 @@ from routes.chat_folders import router as chat_folders_router
 from routes.tasks import router as tasks_router
 from routes.push import router as push_router
 from routes.federation import router as federation_router
+from routes.moderation import router as moderation_router
 
 
 @asynccontextmanager
@@ -76,3 +77,4 @@ app.include_router(chat_folders_router)
 app.include_router(tasks_router)
 app.include_router(push_router)
 app.include_router(federation_router)
+app.include_router(moderation_router)

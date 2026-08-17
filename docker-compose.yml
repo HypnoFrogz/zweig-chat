@@ -20,8 +20,11 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
-      - LIVEKIT_URL=ws://livekit:7880
-      - LIVEKIT_PUBLIC_URL=wss://chat.example.com/livekit/
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      # Public WSS address clients dial. Leave it out of .env and the backend
+      # derives wss://${SERVER_DOMAIN}/livekit/ — set it only when LiveKit is
+      # reached under a different name than the messenger.
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-}
       # APNs (iOS calls over PushKit). Firebase cannot carry VoIP pushes, so
       # call invites go to APNs directly. Empty key id / team = feature off.
       - APNS_KEY_PATH=/app/apns-key.p8

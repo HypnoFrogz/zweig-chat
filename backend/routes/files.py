@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — File manager (CRUD + upload-to-chat)."""
+"""Zweig Messenger — File manager (CRUD + upload-to-chat)."""
 
 import shutil
 from datetime import datetime, timezone

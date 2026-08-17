@@ -547,7 +547,7 @@ SQLite в режиме WAL (асинхронно через aiosqlite). Схем
 Бэкап SQLite из тома:
 
 ```bash
-docker cp zweig-backend:/app/data/chaoshelper.db ./backup.db
+docker cp zweig-backend:/app/data/zweig.db ./backup.db
 ```
 
 ---

@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — Video calling via LiveKit (channel-based)."""
+"""Zweig Messenger — Video calling via LiveKit (channel-based)."""
 
 import json
 import os

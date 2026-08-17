@@ -1,4 +1,4 @@
-"""ChaosHelper Messenger — Messages (send, edit, delete, search, WebSocket)."""
+"""Zweig Messenger — Messages (send, edit, delete, search, WebSocket)."""
 
 import json
 import uuid

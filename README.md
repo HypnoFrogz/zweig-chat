@@ -514,6 +514,19 @@ New-NetFirewallRule -DisplayName "Zweig TURN TLS"   -Direction Inbound -Protocol
 | DELETE | `/api/admin/users/{username}` | Удалить |
 | POST/GET | `/api/admin/feedback` | Отправить / список фидбэка |
 
+### Модерация
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET/POST | `/api/blocks` | Список своих блокировок / заблокировать пользователя |
+| DELETE | `/api/blocks/{username}` | Разблокировать |
+| POST | `/api/reports` | Пожаловаться на сообщение или пользователя |
+| GET | `/api/admin/reports` | Очередь жалоб (админ) |
+| PUT | `/api/admin/reports/{id}` | Закрыть жалобу (админ) |
+| DELETE | `/api/admin/reports/{id}/message` | Удалить сообщение, на которое пожаловались (админ) |
+
+Блокировка действует на обе стороны доставки: заблокированный не появляется ни в истории, ни в live-рассылке, ни в пушах.
+
 Также есть эндпоинты `preferences`, `chat-folders`, `devices` и `push` (Web Push).
 
 ---
@@ -542,6 +555,8 @@ SQLite в режиме WAL (асинхронно через aiosqlite). Схем
 | `preferences` | Тема/язык |
 | `chat_folders` | Категории чатов |
 | `user_devices` | Токены устройств для push |
+| `user_blocks` | Блокировки «пользователь → пользователь» |
+| `content_reports` | Жалобы на контент |
 | `feedback` | Обратная связь |
 
 Бэкап SQLite из тома:

@@ -161,6 +161,44 @@ TABLES = [
         created_at  TEXT NOT NULL DEFAULT '',
         updated_at  TEXT NOT NULL DEFAULT ''
     )""",
+    # User-to-user blocks. Distinct from users.blocked, which is an admin
+    # disabling an account outright; this is one user muting another for
+    # themselves only (App Store guideline 1.2).
+    """CREATE TABLE IF NOT EXISTS user_blocks (
+        id          TEXT PRIMARY KEY,
+        blocker     TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        blocked     TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        created_at  TEXT NOT NULL DEFAULT '',
+        UNIQUE(blocker, blocked)
+    )""",
+    # Reports of objectionable content, for admins to act on (guideline 1.2).
+    """CREATE TABLE IF NOT EXISTS content_reports (
+        id            TEXT PRIMARY KEY,
+        reporter      TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        reported_user TEXT NOT NULL DEFAULT '',
+        message_id    TEXT NOT NULL DEFAULT '',
+        channel_slug  TEXT NOT NULL DEFAULT '',
+        reason        TEXT NOT NULL DEFAULT '',
+        details       TEXT NOT NULL DEFAULT '',
+        -- Snapshot of the reported text: the author can delete the message,
+        -- and a report with no evidence left is useless to a moderator.
+        message_text  TEXT NOT NULL DEFAULT '',
+        status        TEXT NOT NULL DEFAULT 'open',
+        created_at    TEXT NOT NULL DEFAULT '',
+        resolved_at   TEXT NOT NULL DEFAULT '',
+        resolved_by   TEXT NOT NULL DEFAULT ''
+    )""",
+    # PushKit VoIP tokens (iOS calls). Kept apart from user_devices because a
+    # VoIP token is issued by PushKit independently of the FCM token, arrives in
+    # its own callback, and user_devices.fcm_token is NOT NULL UNIQUE — so an
+    # iOS device cannot be represented there before its FCM token is known.
+    """CREATE TABLE IF NOT EXISTS user_voip_devices (
+        id          TEXT PRIMARY KEY,
+        username    TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        voip_token  TEXT NOT NULL UNIQUE,
+        created_at  TEXT NOT NULL DEFAULT '',
+        updated_at  TEXT NOT NULL DEFAULT ''
+    )""",
     # Long-lived auth sessions (refresh tokens)
     """CREATE TABLE IF NOT EXISTS user_sessions (
         id            TEXT PRIMARY KEY,
@@ -372,6 +410,10 @@ TABLES = [
 ]
 
 INDEXES = [
+    # Blocks are checked on every message fetch and broadcast, so keep the
+    # blocker lookup indexed.
+    "CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker ON user_blocks(blocker)",
+    "CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id)",
     "CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC)",

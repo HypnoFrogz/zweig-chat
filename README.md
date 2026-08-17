@@ -242,7 +242,7 @@ cp livekit/livekit.yaml.example livekit/livekit.yaml
 
 ### 4. Домен в Nginx
 
-Конфиги уже настроены на **`example.com`** (`nginx/nginx.conf`, `nginx/nginx-ssl.conf`, `init-ssl.sh`, `LIVEKIT_PUBLIC_URL` в `docker-compose.yml`). Если домен другой — замените его в этих файлах:
+Конфиги настроены на **`example.com`** (`nginx/nginx.conf`, `nginx/nginx-ssl.conf`, `init-ssl.sh`). Домен для клиентов и федерации задаётся один раз в `.env` (`SERVER_DOMAIN`) — адрес LiveKit бэкенд соберёт из него сам. В nginx и `init-ssl.sh` домен пока нужно вписать руками:
 
 ```nginx
 server_name ваш-домен;
@@ -379,7 +379,8 @@ FEDERATION_ALLOW_HTTP=        # только для отладки; в прод�
 | `LIVEKIT_API_KEY` | API-ключ LiveKit | совпадает с `livekit.yaml` |
 | `LIVEKIT_API_SECRET` | Секрет LiveKit | совпадает с `livekit.yaml` |
 | `LIVEKIT_URL` | Внутренний WS-адрес LiveKit | `ws://livekit:7880` |
-| `LIVEKIT_PUBLIC_URL` | Публичный WSS-адрес LiveKit | `wss://ваш-домен/livekit/` |
+| `LIVEKIT_PUBLIC_URL` | Публичный WSS-адрес LiveKit | можно не задавать — по умолчанию `wss://$SERVER_DOMAIN/livekit/` |
+| `SERVER_DOMAIN` | Публичный домен этого сервера (клиенты, федерация, LiveKit) | `chat.example.com` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Ключи Web Push | сгенерировать заново |
 | `VAPID_EMAIL` | Контакт для Web Push | `mailto:...` |
 | `FIREBASE_CREDENTIALS` | Путь к firebase-service-account.json | опционально; без него push отключён |

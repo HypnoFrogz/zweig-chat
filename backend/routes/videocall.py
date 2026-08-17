@@ -16,8 +16,17 @@ router = APIRouter(prefix="/api", tags=["videocall"])
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "devsecret1234567890devsecret")
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
-# Public URL for clients (mobile/web) — never expose Docker-internal hostname
-LIVEKIT_PUBLIC_URL = os.getenv("LIVEKIT_PUBLIC_URL", "wss://chaoshelper.ru/livekit/")
+# Public URL for clients (mobile/web) — never expose the Docker-internal hostname.
+# NB: os.getenv's default only applies when the var is UNSET; docker-compose passes
+# LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL} which sends an empty string when it's not
+# in .env, so we must handle "" explicitly or clients get an empty host
+# ("https:///rtc/validate"). Fall back to the server's own domain.
+LIVEKIT_PUBLIC_URL = os.getenv("LIVEKIT_PUBLIC_URL", "").strip()
+if not LIVEKIT_PUBLIC_URL:
+    _lk_domain = os.getenv("SERVER_DOMAIN", "").strip()
+    LIVEKIT_PUBLIC_URL = (
+        f"wss://{_lk_domain}/livekit/" if _lk_domain else "wss://localhost/livekit/"
+    )
 CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
 CALL_ACTIVE_STALE_SEC = int(os.getenv("CALL_ACTIVE_STALE_SEC", "180"))
 CALL_CLEANUP_INTERVAL_SEC = int(os.getenv("CALL_CLEANUP_INTERVAL_SEC", "30"))

@@ -7,6 +7,9 @@ services:
       - uploads:/app/uploads
       - data:/app/data
       - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+      # APNs auth key for iOS VoIP pushes (incoming calls). Optional: without a
+      # real key the backend just skips the PushKit path.
+      - ./apns-key.p8:/app/apns-key.p8:ro
     environment:
       # Secrets are injected from .env (see .env.example). Never hardcode them here.
       - SECRET_KEY=${SECRET_KEY}
@@ -19,6 +22,16 @@ services:
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_URL=ws://livekit:7880
       - LIVEKIT_PUBLIC_URL=wss://chat.example.com/livekit/
+      # APNs (iOS calls over PushKit). Firebase cannot carry VoIP pushes, so
+      # call invites go to APNs directly. Empty key id / team = feature off.
+      - APNS_KEY_PATH=/app/apns-key.p8
+      - APNS_KEY_ID=${APNS_KEY_ID:-}
+      - APNS_TEAM_ID=${APNS_TEAM_ID:-}
+      - APNS_BUNDLE_ID=${APNS_BUNDLE_ID:-}
+      # Optional. Both APNs environments are tried regardless, so this only
+      # decides which is attempted first — set it when most devices run builds
+      # installed from Xcode, to save a wasted round trip.
+      - APNS_SANDBOX=${APNS_SANDBOX:-}
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
       - VAPID_EMAIL=${VAPID_EMAIL}

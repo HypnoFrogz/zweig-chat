@@ -6,6 +6,7 @@ import uuid
 import asyncio
 from datetime import datetime, timezone, timedelta
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from helpers import get_current_user, get_display_name, now_iso
 from database import get_db
@@ -16,7 +17,8 @@ router = APIRouter(prefix="/api", tags=["videocall"])
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET", "devsecret1234567890devsecret")
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
-# Public URL for clients (mobile/web) — never expose the Docker-internal hostname.
+# Public URL for clients (mobile/web) — never expose Docker-internal hostname.
+# In hosted mode set this to the central LiveKit wss (e.g. wss://livekit.example.com).
 # NB: os.getenv's default only applies when the var is UNSET; docker-compose passes
 # LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL} which sends an empty string when it's not
 # in .env, so we must handle "" explicitly or clients get an empty host
@@ -27,6 +29,12 @@ if not LIVEKIT_PUBLIC_URL:
     LIVEKIT_PUBLIC_URL = (
         f"wss://{_lk_domain}/livekit/" if _lk_domain else "wss://localhost/livekit/"
     )
+
+# LiveKit tenancy: self = mint tokens locally; hosted = ask the central control
+# plane so this server never holds the master LiveKit secret. See control-plane/.
+LIVEKIT_MODE = os.getenv("LIVEKIT_MODE", "self").strip().lower()
+CONTROL_PLANE_URL = os.getenv("CONTROL_PLANE_URL", "").rstrip("/")
+ORG_KEY = os.getenv("ORG_KEY", "")
 CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
 CALL_ACTIVE_STALE_SEC = int(os.getenv("CALL_ACTIVE_STALE_SEC", "180"))
 CALL_CLEANUP_INTERVAL_SEC = int(os.getenv("CALL_CLEANUP_INTERVAL_SEC", "30"))
@@ -42,7 +50,10 @@ def _env_bool(name: str, default: bool) -> bool:
 
 CALL_CLEANUP_ON_STARTUP = _env_bool("CALL_CLEANUP_ON_STARTUP", True)
 CALL_PUSH_ALWAYS = _env_bool("CALL_PUSH_ALWAYS", True)
-def _create_livekit_token(room_name: str, username: str, display_name: str) -> str:
+async def _create_livekit_token(room_name: str, username: str, display_name: str) -> str:
+    if LIVEKIT_MODE == "hosted":
+        return await _hosted_livekit_token(room_name, username, display_name)
+
     from livekit.api import AccessToken, VideoGrants
 
     token = AccessToken(
@@ -53,6 +64,28 @@ def _create_livekit_token(room_name: str, username: str, display_name: str) -> s
     token.with_name(display_name)
     token.with_grants(VideoGrants(room_join=True, room=room_name))
     return token.to_jwt()
+
+
+async def _hosted_livekit_token(room_name: str, username: str, display_name: str) -> str:
+    """Fetch a scoped token from the central control plane (Team/hosted tier)."""
+    if not CONTROL_PLANE_URL or not ORG_KEY:
+        raise HTTPException(status_code=503, detail="Hosted LiveKit not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{CONTROL_PLANE_URL}/api/livekit/token",
+                headers={"Authorization": f"Bearer {ORG_KEY}"},
+                json={"room": room_name, "identity": username, "name": display_name},
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"control plane unreachable: {e}")
+    if r.status_code != 200:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise HTTPException(status_code=502, detail=f"control plane: {detail}")
+    return r.json()["token"]
 
 
 async def _get_members(db, channel_id: str) -> list[str]:
@@ -229,8 +262,8 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
 
     caller_name = await get_display_name(username)
     callee_name = await get_display_name(callee_username)
-    callee_token = _create_livekit_token(room_name, callee_username, callee_name)
-    caller_token = _create_livekit_token(room_name, username, caller_name)
+    callee_token = await _create_livekit_token(room_name, callee_username, callee_name)
+    caller_token = await _create_livekit_token(room_name, username, caller_name)
 
     payload = {
         "event": "call_invite",
@@ -369,7 +402,7 @@ async def answer_addressed_call(data: dict, username: str = Depends(get_current_
         await _relay_call_state(db, call, "answered")
     else:
         display_name = await get_display_name(username)
-        token = _create_livekit_token(call["room_name"], username, display_name)
+        token = await _create_livekit_token(call["room_name"], username, display_name)
         livekit_url = LIVEKIT_PUBLIC_URL
 
     answer_event = {
@@ -536,7 +569,7 @@ async def get_token(data: dict, username: str = Depends(get_current_user)):
 
     room_name = f"call-{ch['id']}"
     display_name = await get_display_name(username)
-    token = _create_livekit_token(room_name, username, display_name)
+    token = await _create_livekit_token(room_name, username, display_name)
     return {"token": token, "url": LIVEKIT_PUBLIC_URL, "room_name": room_name}
 
 
@@ -562,7 +595,7 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
 
     room_name = f"call-{ch['id']}"
     display_name = await get_display_name(username)
-    token = _create_livekit_token(room_name, username, display_name)
+    token = await _create_livekit_token(room_name, username, display_name)
     now = now_iso()
 
     # Register active call
@@ -613,10 +646,13 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
 
     # Notify all members with their personal tokens
     from fcm_sender import send_call_notification
+    from routes.federation import remote_peer_of, push_call_event
     for p in members:
         p_display = await get_display_name(p)
-        p_token = _create_livekit_token(room_name, p, p_display)
-        await manager.send_to_user(p, {
+        # The room is ours, so we mint every token here — a peer server cannot
+        # sign one for a room it does not own.
+        p_token = await _create_livekit_token(room_name, p, p_display)
+        payload = {
             "event": "call_started",
             "channel_id": ch["id"],
             "channel_slug": ch["slug"],
@@ -625,7 +661,26 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
             "started_by_name": display_name,
             "livekit_token": p_token,
             "livekit_url": LIVEKIT_PUBLIC_URL,
-        })
+        }
+
+        # A member on another server has no socket here and is unknown to our
+        # push provider: the invitation has to travel to their server, which
+        # delivers it and rings their devices.
+        p_domain = await remote_peer_of(db, p)
+        if p_domain:
+            cur_r = await db.execute(
+                "SELECT remote_username FROM users WHERE username = ?", (p,)
+            )
+            row_r = await cur_r.fetchone()
+            await push_call_event(p_domain, "/api/federation/call/conference", {
+                **payload,
+                "callee": row_r["remote_username"] if row_r else "",
+                "inviter": username,
+                "inviter_name": display_name,
+            })
+            continue
+
+        await manager.send_to_user(p, payload)
         # Send push to offline members (calls are critical)
         if p != username and not manager.is_online(p):
             await send_call_notification(
@@ -689,7 +744,7 @@ async def invite_to_call(data: dict, username: str = Depends(get_current_user)):
         u_display = await get_display_name(u)
         # The room is ours either way, so we mint the token here — including
         # for participants on other servers, whose own server cannot sign one.
-        u_token = _create_livekit_token(room_name, u, u_display)
+        u_token = await _create_livekit_token(room_name, u, u_display)
         payload = {
             "event": "call_started",
             "channel_id": ch["id"],
@@ -914,7 +969,7 @@ async def get_any_active_call(username: str = Depends(get_current_user)):
         return {"active": False}
 
     display_name = await get_display_name(username)
-    token = _create_livekit_token(row["room_name"], username, display_name)
+    token = await _create_livekit_token(row["room_name"], username, display_name)
 
     # Fetch caller display name
     cursor2 = await db.execute(
@@ -949,7 +1004,7 @@ async def get_active_call(slug: str, username: str = Depends(get_current_user)):
         return {"active": False}
 
     display_name = await get_display_name(username)
-    token = _create_livekit_token(row["room_name"], username, display_name)
+    token = await _create_livekit_token(row["room_name"], username, display_name)
     return {
         "active": True,
         "room_name": row["room_name"],

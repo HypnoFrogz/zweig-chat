@@ -806,6 +806,69 @@ def _backoff_seconds(attempts: int) -> float:
     return min(60.0 * (2 ** max(0, attempts - 1)), 3600.0)
 
 
+async def sync_channel_to_peers(db, channel_id: str) -> None:
+    """Tell every participating server who is in this channel.
+
+    Called after membership changed. Each peer gets the full member list rather
+    than a diff: the list is small, and a diff would need ordering guarantees
+    the outbox does not give. Never raises — a peer being unreachable must not
+    fail the local change; the next membership edit re-sends the whole picture.
+    """
+    if not SERVER_DOMAIN:
+        return
+    try:
+        cur = await db.execute("SELECT * FROM channels WHERE id = ?", (channel_id,))
+        ch = await cur.fetchone()
+        if not ch or ch["type"] == "direct":
+            return
+        # A mirror is not ours to describe: the owner is the one who tells
+        # everybody the composition, or two servers would fight over it.
+        if (ch["home_server"] or ""):
+            return
+
+        cur = await db.execute(
+            "SELECT u.username, u.home_server, u.remote_username, u.display_name, u.avatar_path "
+            "FROM channel_members cm JOIN users u ON u.username = cm.username "
+            "WHERE cm.channel_id = ?",
+            (channel_id,),
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        domains = {r["home_server"] for r in rows if r["home_server"]}
+        if not domains:
+            return
+
+        for domain in domains:
+            # Each peer is addressed in its own names: their own people by bare
+            # username, everyone else qualified by the domain they live on.
+            members = []
+            for r in rows:
+                if r["home_server"] == domain:
+                    continue
+                members.append({
+                    "username": r["remote_username"] or r["username"],
+                    "home_server": r["home_server"] or SERVER_DOMAIN,
+                    "display_name": r["display_name"] or "",
+                    "avatar_url": _absolute_url(r["avatar_path"] or ""),
+                })
+            for r in rows:
+                if r["home_server"] != domain:
+                    continue
+                payload = {
+                    "channel_id": channel_id,
+                    "for_user": r["remote_username"] or r["username"],
+                    "name": ch["name"] or "",
+                    "description": ch["description"] or "",
+                    "created_by": ch["created_by"] or "",
+                    "members": members,
+                }
+                try:
+                    await peer_post(domain, "/federation/channel/sync", payload)
+                except Exception as e:
+                    print(f"[federation] channel sync to {domain} failed: {e}")
+    except Exception as e:
+        print(f"[federation] sync_channel_to_peers failed: {e}")
+
+
 async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -> None:
     """Queue `msg` for every remote member of this channel.
 
@@ -841,12 +904,20 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                 "type": msg.get("type", "text"),
                 "text": msg.get("text", ""),
                 "timestamp": msg.get("timestamp") or now.isoformat(),
+                # Which conversation this belongs to. A direct chat can be
+                # inferred from the pair of people, a group cannot — there the
+                # id is the only thing that says where the message goes. Older
+                # peers ignore the field and keep inferring.
+                "channel_id": channel_id,
             }
             await db.execute(
                 "INSERT OR IGNORE INTO federation_outbox "
                 "(id, domain, payload, attempts, next_attempt, created_at) VALUES (?,?,?,0,?,?)",
                 (
-                    f"{msg['id']}:{r['home_server']}",
+                    # Keyed by recipient, not just domain: a group can hold two
+                    # people on the same peer, and one row per domain would let
+                    # INSERT OR IGNORE silently drop the second delivery.
+                    f"{msg['id']}:{r['home_server']}:{r['remote_username'] or r['username']}",
                     r["home_server"],
                     json.dumps(payload, ensure_ascii=False),
                     now.isoformat(),
@@ -932,6 +1003,115 @@ async def run_outbox_loop() -> None:
             print(f"[federation] outbox loop error: {e}")
 
 
+@router.get("/federation/contacts")
+async def federation_contacts(username: str = Depends(get_current_user)):
+    """People from other servers this user may add to a channel.
+
+    Exactly those they already have a direct conversation with. There is no
+    directory of remote users — `/users` hides the stubs on purpose — so the
+    conversations someone has already accepted are the only honest source for
+    a picker, and they match what the server will allow on the way in.
+    """
+    db = await get_db()
+    cur = await db.execute(
+        """SELECT u.username, u.display_name, u.avatar_path, u.home_server
+           FROM channel_members me
+           JOIN channels c ON c.id = me.channel_id AND c.type = 'direct'
+           JOIN channel_members other ON other.channel_id = c.id AND other.username != me.username
+           JOIN users u ON u.username = other.username
+           WHERE me.username = ? AND u.home_server != '' AND u.blocked = 0
+           ORDER BY u.display_name""",
+        (username,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+@router.post("/federation/channel/sync")
+async def federation_channel_sync(data: dict, peer: str = Depends(require_peer)):
+    """A peer tells us one of our users belongs to a channel of theirs.
+
+    Group federation is a mesh, not a hub: every participating server keeps its
+    own row for the channel under the *same id*, and each of them fans a local
+    message out to all the other members' servers. That only works if everyone
+    agrees on the id and on who is in the room, which is what this call
+    establishes.
+
+    Direct chats do not come through here — they are opened by redeeming an
+    invite, and the pair of people is enough to identify them.
+    """
+    import uuid as _uuid
+    from routes.channels import _ensure_unique_slug
+
+    channel_id = (data.get("channel_id") or "").strip()
+    for_user = (data.get("for_user") or "").strip().lower()
+    members = data.get("members") or []
+    if not channel_id or not for_user:
+        raise HTTPException(status_code=400, detail="channel_id и for_user обязательны")
+
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (for_user,))
+    local = await cur.fetchone()
+    if not local or local["home_server"] or local["blocked"]:
+        raise HTTPException(status_code=404, detail="Получатель не найден")
+
+    # The channel is theirs. We never let a peer claim one that lives here or
+    # that another domain already owns — the id would collide with a real
+    # conversation and messages would land in it.
+    cur = await db.execute("SELECT home_server FROM channels WHERE id = ?", (channel_id,))
+    existing = await cur.fetchone()
+    if existing and (existing["home_server"] or "") != peer:
+        raise HTTPException(status_code=409, detail="Канал уже существует и принадлежит другому серверу")
+
+    now = now_iso()
+    name = (data.get("name") or "").strip()[:100]
+    if not existing:
+        slug = await _ensure_unique_slug(db, f"fed-{channel_id[:8]}")
+        await db.execute(
+            "INSERT INTO channels (id, name, slug, type, description, created_by, created_at, home_server) "
+            "VALUES (?,?,?,'private',?,?,?,?)",
+            (channel_id, name, slug, (data.get("description") or "").strip()[:500],
+             remote_id(peer, (data.get("created_by") or "").strip().lower() or "unknown"), now, peer),
+        )
+    else:
+        await db.execute("UPDATE channels SET name = ? WHERE id = ?", (name, channel_id))
+
+    # Everyone in the room gets a row here: our own user as themselves, people
+    # on the owner's server and on any third server as stubs. Without the third
+    # parties our fan-out would silently skip them.
+    await db.execute(
+        "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?,?,'member',?)",
+        (channel_id, for_user, now),
+    )
+    for m in members:
+        bare = (m.get("username") or "").strip().lower()
+        home = _normalize_domain(m.get("home_server") or peer)
+        if not bare:
+            continue
+        if home == SERVER_DOMAIN:
+            # Someone of ours, named from the peer's point of view.
+            uid = bare
+            cur = await db.execute("SELECT 1 FROM users WHERE username = ? AND home_server = ''", (uid,))
+            if not await cur.fetchone():
+                continue
+        else:
+            uid = await ensure_remote_user(home, bare, m.get("display_name", ""), m.get("avatar_url", ""))
+        await db.execute(
+            "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?,?,'member',?)",
+            (channel_id, uid, now),
+        )
+    await db.commit()
+
+    # Same shape the local paths use — clients key off "event" and expect the
+    # whole channel, not an id they would have to go and fetch.
+    from routes.channels import _build_channel
+    cur = await db.execute("SELECT * FROM channels WHERE id = ?", (channel_id,))
+    row = await cur.fetchone()
+    if row:
+        ch = await _build_channel(db, row, for_user)
+        await manager.send_to_user(for_user, {"event": "channel_created", "channel": ch})
+    return {"ok": True, "channel_id": channel_id}
+
+
 @router.post("/federation/message")
 async def federation_message(data: dict, peer: str = Depends(require_peer)):
     """Accept a message from a federated peer.
@@ -968,9 +1148,20 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     uid = await ensure_remote_user(
         peer, from_user, data.get("display_name", ""), data.get("avatar_url", "")
     )
-    channel_id = await find_direct(db, to_user, uid)
-    if not channel_id:
-        raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+    # A group names its channel; a direct chat is still inferred from the pair,
+    # both because older peers send nothing else and because there is exactly
+    # one such conversation. The claim of membership is never taken on trust:
+    # the sender must already be in the channel here, which only happens after
+    # a sync we accepted.
+    claimed = (data.get("channel_id") or "").strip()
+    if claimed:
+        channel_id = await _shared_channel(db, claimed, to_user, uid)
+        if not channel_id:
+            raise HTTPException(status_code=403, detail="Канал недоступен — участие не подтверждено")
+    else:
+        channel_id = await find_direct(db, to_user, uid)
+        if not channel_id:
+            raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
 
     # A block is enforced silently: we accept the message so the sender's
     # server stops retrying, but nothing is stored or shown.
@@ -1044,6 +1235,22 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
 # conversation between the two people, which only a redeemed invite creates.
 
 
+async def _shared_channel(db, channel_id: str, local_user: str, remote_uid: str) -> str | None:
+    """The channel both of them actually belong to, or None.
+
+    Membership is checked for the sender as well as the recipient. Without that
+    a peer could name any channel id it happened to learn and post into a
+    conversation its user was never part of — the id travels in the message and
+    is not a secret.
+    """
+    cur = await db.execute(
+        "SELECT COUNT(*) FROM channel_members WHERE channel_id = ? AND username IN (?, ?)",
+        (channel_id, local_user, remote_uid),
+    )
+    row = await cur.fetchone()
+    return channel_id if row and row[0] == 2 else None
+
+
 async def remote_peer_of(db, username: str) -> str | None:
     """Domain this user lives on, or None if they are local to us."""
     cur = await db.execute("SELECT home_server FROM users WHERE username = ?", (username,))
@@ -1063,9 +1270,21 @@ async def push_call_event(domain: str, path: str, payload: dict) -> bool:
         return False
 
 
-async def _authorised_channel(db, local_user: str, remote_uid: str) -> str | None:
-    """The conversation that authorises these two to reach each other."""
+async def _authorised_channel(
+    db, local_user: str, remote_uid: str, channel_id: str = ""
+) -> str | None:
+    """The conversation that authorises these two to reach each other.
+
+    A direct chat authorises a one-to-one call. For a group call the room is
+    the named channel, and what has to be true is that both of them are in it —
+    people meet in a group without ever having opened a private conversation,
+    so requiring one would make federated group calls impossible.
+    """
     from routes.channels import find_direct
+    if channel_id:
+        shared = await _shared_channel(db, channel_id, local_user, remote_uid)
+        if shared:
+            return shared
     return await find_direct(db, local_user, remote_uid)
 
 
@@ -1140,8 +1359,8 @@ async def federation_call_conference(data: dict, peer: str = Depends(require_pee
         raise HTTPException(status_code=404, detail="Получатель не найден")
 
     uid = await ensure_remote_user(peer, inviter, data.get("inviter_name", ""))
-    if not await _authorised_channel(db, callee, uid):
-        raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+    if not await _authorised_channel(db, callee, uid, (data.get("channel_id") or "").strip()):
+        raise HTTPException(status_code=403, detail="Нет общего канала или диалога")
 
     await manager.send_to_user(callee, {
         "event": "call_started",

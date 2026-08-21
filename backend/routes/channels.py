@@ -1,4 +1,4 @@
-"""Zweig Messenger — Channel management (CRUD, members, slug routing)."""
+"""ChaosHelper Messenger — Channel management (CRUD, members, slug routing)."""
 
 import uuid
 import os
@@ -65,6 +65,7 @@ async def _count_unread(db, channel_id: str, username: str) -> int:
     )
     row = await cursor.fetchone()
     return row[0]
+
 
 async def _build_channel(db, row, username: str) -> dict:
     c = dict(row)
@@ -251,16 +252,32 @@ async def create_channel(data: dict, username: str = Depends(get_current_user)):
 
         # Add invited members
         for p in data.get("members", []):
-            if p != username:
-                await db.execute(
-                    "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
-                    (ch_id, p, now),
+            if p == username:
+                continue
+            # Same rule as adding later: someone from another server may join
+            # only if this user already has a conversation with them.
+            cur_m = await db.execute("SELECT home_server FROM users WHERE username = ?", (p,))
+            row_m = await cur_m.fetchone()
+            if not row_m:
+                continue
+            if row_m["home_server"] and not await find_direct(db, username, p):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Сначала откройте личный диалог с этим человеком",
                 )
+            await db.execute(
+                "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
+                (ch_id, p, now),
+            )
 
         await db.commit()
 
         c3 = await db.execute("SELECT * FROM channels WHERE id = ?", (ch_id,))
         ch = await _build_channel(db, await c3.fetchone(), username)
+        # A channel born with members from other servers has to be announced to
+        # them straight away, or their first message would have nowhere to land.
+        from routes.federation import sync_channel_to_peers
+        await sync_channel_to_peers(db, ch_id)
         # Notify all members
         for m in ch["members"]:
             if m != username:
@@ -331,12 +348,29 @@ async def update_channel(slug: str, data: dict, username: str = Depends(get_curr
         await db.execute(f"UPDATE channels SET {', '.join(updates)} WHERE id = ?", params)
 
     # Add/remove members
+    membership_changed = False
     if "add_members" in data:
         for p in data["add_members"]:
+            # Someone from another server can be added, but only if this user
+            # already has a conversation with them. There is no directory of
+            # remote people by design, so an existing direct chat is the one
+            # thing that proves they were legitimately introduced — without it
+            # any username@domain string would pull a stranger into the room.
+            cur_m = await db.execute("SELECT home_server FROM users WHERE username = ?", (p,))
+            row_m = await cur_m.fetchone()
+            if not row_m:
+                continue
+            if row_m["home_server"]:
+                if not await find_direct(db, username, p):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Сначала откройте личный диалог с этим человеком",
+                    )
             await db.execute(
                 "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
                 (ch["id"], p, now_iso()),
             )
+            membership_changed = True
 
     removed_users = []
     if "remove_members" in data:
@@ -347,8 +381,16 @@ async def update_channel(slug: str, data: dict, username: str = Depends(get_curr
                     (ch["id"], p),
                 )
                 removed_users.append(p)
+                membership_changed = True
 
     await db.commit()
+
+    # Every participating server keeps its own row for this channel, so a
+    # membership change here has to reach all of them or their fan-out will
+    # skip whoever they do not know about.
+    if membership_changed:
+        from routes.federation import sync_channel_to_peers
+        await sync_channel_to_peers(db, ch["id"])
 
     # Notify kicked users
     for kicked_user in removed_users:

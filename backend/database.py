@@ -1,5 +1,5 @@
 """
-Zweig Messenger — Database layer.
+ChaosHelper Messenger — Database layer.
 SQLite + aiosqlite, WAL mode, singleton async connection.
 """
 
@@ -9,10 +9,7 @@ import aiosqlite
 from pathlib import Path
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
-# Servers deployed before the rename carry the old file name; keep using it
-# rather than silently starting from an empty database next to it.
-_LEGACY_DB = DATA_DIR / "chaoshelper.db"
-DB_PATH = _LEGACY_DB if _LEGACY_DB.exists() else DATA_DIR / "zweig.db"
+DB_PATH = DATA_DIR / "chaoshelper.db"
 _db: aiosqlite.Connection | None = None
 
 
@@ -485,6 +482,17 @@ async def init_db():
     user_cols = [r[1] for r in await pragma_fed.fetchall()]
     if "home_server" not in user_cols:
         await db.execute("ALTER TABLE users ADD COLUMN home_server TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
+    # ---------- Migration: home_server on channels (federated group channels) ----------
+    # Empty = the channel lives here. Otherwise the domain that owns it, and
+    # this row is our mirror: the same channel id on every participating
+    # server, so a message can name the conversation it belongs to instead of
+    # being inferred from the pair of people involved.
+    pragma_ch_fed = await db.execute("PRAGMA table_info(channels)")
+    ch_fed_cols = [r[1] for r in await pragma_ch_fed.fetchall()]
+    if "home_server" not in ch_fed_cols:
+        await db.execute("ALTER TABLE channels ADD COLUMN home_server TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
     # ---------- Migration: per-user "cleared" boundary on a conversation ----------

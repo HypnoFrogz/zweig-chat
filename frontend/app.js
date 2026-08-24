@@ -384,6 +384,18 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'emoji.search': 'Поиск эмодзи…',
+        'emoji.recent': 'Недавние',
+        'emoji.nothing': 'Ничего не найдено',
+        'emoji.cat.smileys': 'Смайлики',
+        'emoji.cat.gestures': 'Жесты',
+        'emoji.cat.people': 'Люди',
+        'emoji.cat.nature': 'Природа',
+        'emoji.cat.food': 'Еда',
+        'emoji.cat.activities': 'Занятия',
+        'emoji.cat.travel': 'Путешествия',
+        'emoji.cat.objects': 'Предметы',
+        'emoji.cat.symbols': 'Символы',
     },
     en: {
         'login.subtitle': 'Messenger',
@@ -567,6 +579,18 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'emoji.search': 'Search emoji…',
+        'emoji.recent': 'Recent',
+        'emoji.nothing': 'Nothing found',
+        'emoji.cat.smileys': 'Smileys',
+        'emoji.cat.gestures': 'Gestures',
+        'emoji.cat.people': 'People',
+        'emoji.cat.nature': 'Nature',
+        'emoji.cat.food': 'Food',
+        'emoji.cat.activities': 'Activities',
+        'emoji.cat.travel': 'Travel',
+        'emoji.cat.objects': 'Objects',
+        'emoji.cat.symbols': 'Symbols',
     }
 };
 
@@ -1258,12 +1282,17 @@ function renderSidebarItem(ch) {
         const avatarContent = peer.avatar
             ? `<img src="${srv(peer.avatar)}">`
             : name.charAt(0).toUpperCase();
-        const domainTag = peer.domain ? `<span class="dm-domain" title="${esc(peer.domain)}">${esc(peer.domain)}</span>` : '';
+        // Сервер собеседника — отдельной строкой под именем. В одну строку он не
+        // помещается: имя обрезается по ширине сайдбара и съедает подпись целиком,
+        // оставляя от неё пустой прямоугольник.
+        const nameCell = peer.domain
+            ? `<span class="sidebar-item-name two-line"><span class="sidebar-dm-title">${esc(name)}</span><span class="dm-domain" title="${esc(peer.domain)}">${esc(peer.domain)}</span></span>`
+            : `<span class="sidebar-item-name">${esc(name)}</span>`;
         return `<div class="sidebar-item ${active}" draggable="true" data-channel-id="${ch.id}"
                      onclick="openChannel('${ch.slug}')"
                      ondragstart="onDragStart(event, '${ch.id}')" ondragend="onDragEnd(event)">
             <div class="sidebar-dm-avatar">${avatarContent}</div>
-            <span class="sidebar-item-name">${esc(name)}${domainTag}</span>
+            ${nameCell}
             <span class="sidebar-dm-status ${isOnline ? 'online' : 'offline'}"></span>
             ${badge}
             ${menuBtn}
@@ -2014,23 +2043,22 @@ function selectMentionAt(idx) {
 }
 
 // ── Emoji Picker ──────────────────────────────────────────────
-const EMOJI_DATA = {
-    'smileys': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😗','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','😮‍💨','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🫤','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
-    'gestures': ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄'],
-    'people': ['👶','👧','🧒','👦','👩','🧑','👨','👩‍🦱','🧑‍🦱','👨‍🦱','👩‍🦰','🧑‍🦰','👨‍🦰','👱‍♀️','👱','👱‍♂️','👩‍🦳','🧑‍🦳','👨‍🦳','👩‍🦲','🧑‍🦲','👨‍🦲','🧔‍♀️','🧔','🧔‍♂️','👵','🧓','👴','👲','👳‍♀️','👳','👳‍♂️','🧕','👮‍♀️','👮','👮‍♂️','👷‍♀️','👷','👷‍♂️','💂‍♀️','💂','💂‍♂️','🕵️‍♀️','🕵️','🕵️‍♂️','👩‍⚕️','🧑‍⚕️','👨‍⚕️','👩‍🌾','🧑‍🌾','👨‍🌾'],
-    'nature': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🪸','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒'],
-    'food': ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🫘','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪'],
-    'activities': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤸','⛹️','🤺','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🎮','🕹️'],
-    'travel': ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🛵','🏍️','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','🛞','⛽','🚨','🚥','🚦','🛑','🚧','⚓','🛟','⛵','🛶','🚤','🛳️','⛴️','🛥️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🌍','🌎','🌏','🌐','🗺️','🧭','🏔️','⛰️','🌋','🗻','🏕️','🏖️','🏜️','🏝️','🏞️'],
-    'objects': ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒️','🛠️','⛏️','🪚','🔩','⚙️','🪤','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','🪬','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','🩻','🩼','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🪥','🪒','🧴','🧷','🧹','🧺','🔑','🗝️','🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','🪧','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📗','📘','📙','📚','📖','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓'],
-    'symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🚭','❗','❕','❓','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❇️','✳️','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','♿','🅿️','🛗','🈳','🈂️','🛂','🛃','🛄','🛅','🚹','🚺','🚼','⚧️','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','⏏️','▶️','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','⏫','⏬','◀️','🔼','🔽','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↪️','↩️','⤴️','⤵️','🔀','🔁','🔂','🔄','🔃','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','💱','™️','©️','®️','〰️','➰','➿','🔚','🔙','🔛','🔝','🔜','✔️','☑️','🔘','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','🔸','🔹','🔶','🔷','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜','🟫','🔈','🔇','🔉','🔊','🔔','🔕','📣','📢','💬','💭','🗯️','♠️','♣️','♥️','♦️','🃏','🎴','🀄','🕐','🕑','🕒','🕓','🕔','🕕','🕖','🕗','🕘','🕙','🕚','🕛'],
-};
+// EMOJI_DATA и EMOJI_KEYWORDS лежат в emoji-index.js: индекс поиска занимает
+// под 70 КБ сгенерированного текста, и в общем коде ему делать нечего.
 const EMOJI_CAT_ICONS = { smileys:'😀', gestures:'👋', people:'👤', nature:'🐶', food:'🍎', activities:'⚽', travel:'🚗', objects:'💡', symbols:'❤️' };
-const EMOJI_CAT_NAMES = { smileys:'Smileys', gestures:'Gestures', people:'People', nature:'Nature', food:'Food', activities:'Activities', travel:'Travel', objects:'Objects', symbols:'Symbols' };
+
+// Что открыто в палитре сейчас. Вынесено из аргументов renderEmojiPicker,
+// потому что каркас теперь рисуется один раз, а меняется только сетка.
+let emojiCat = '';
+let emojiQuery = '';
+
+function emojiCatName(cat) { return t('emoji.cat.' + cat); }
 
 function toggleEmojiPicker() {
     const picker = document.getElementById('emoji-picker');
     if (picker.style.display === 'none') {
+        emojiCat = '';
+        emojiQuery = '';
         renderEmojiPicker();
         picker.style.display = 'flex';
     } else {
@@ -2038,50 +2066,82 @@ function toggleEmojiPicker() {
     }
 }
 
-function renderEmojiPicker(filter = '', activeCat = null) {
+// Каркас палитры. Рисуется один раз за открытие: если перерисовывать его на
+// каждое нажатие клавиши, поле поиска пересоздаётся и теряет и фокус, и текст,
+// а нажатая вкладка исчезает из DOM прямо посреди обработки клика — и общий
+// обработчик документа, не найдя её внутри .emoji-picker, закрывает палитру.
+function renderEmojiPicker() {
     const picker = document.getElementById('emoji-picker');
-    const recent = JSON.parse(localStorage.getItem('ch_recent_emoji') || '[]');
-
-    let tabs = Object.keys(EMOJI_DATA).map(cat => {
-        const active = activeCat === cat ? 'active' : '';
-        return `<button class="emoji-cat-tab ${active}" onclick="filterEmojiCategory('${cat}')" title="${EMOJI_CAT_NAMES[cat]}">${EMOJI_CAT_ICONS[cat]}</button>`;
-    }).join('');
-
-    let grid = '';
-    if (filter) {
-        // Show all matching
-        Object.values(EMOJI_DATA).flat().forEach(em => {
-            grid += `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`;
-        });
-    } else if (activeCat) {
-        (EMOJI_DATA[activeCat] || []).forEach(em => {
-            grid += `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`;
-        });
-    } else {
-        // Show recent + smileys
-        if (recent.length > 0) {
-            grid += '<div class="emoji-section-label">Recent</div>';
-            recent.forEach(em => { grid += `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`; });
-            grid += '<div class="emoji-section-label">' + EMOJI_CAT_NAMES.smileys + '</div>';
-        }
-        EMOJI_DATA.smileys.forEach(em => {
-            grid += `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`;
-        });
-    }
+    const tabs = Object.keys(EMOJI_DATA).map(cat =>
+        `<button class="emoji-cat-tab" data-cat="${cat}" onclick="filterEmojiCategory('${cat}')" title="${esc(emojiCatName(cat))}">${EMOJI_CAT_ICONS[cat]}</button>`
+    ).join('');
 
     picker.innerHTML = `
         <div class="emoji-search-bar">
-            <input type="text" class="emoji-search" placeholder="Search..." oninput="onEmojiSearch(this.value)">
+            <input type="text" class="emoji-search" id="emoji-search" placeholder="${esc(t('emoji.search'))}" oninput="onEmojiSearch(this.value)">
         </div>
         <div class="emoji-tabs">${tabs}</div>
-        <div class="emoji-grid">${grid}</div>
+        <div class="emoji-grid" id="emoji-grid"></div>
     `;
+    updateEmojiGrid();
 }
 
-function filterEmojiCategory(cat) { renderEmojiPicker('', cat); }
+// Совпадение по началу слова, а не по вхождению: «серд» находит «сердце», но
+// «cat» не вытаскивает «multiplication». Все слова запроса должны совпасть.
+function emojiTokens(q) {
+    return q.toLowerCase().replace(/ё/g, 'е').split(/\s+/).filter(Boolean);
+}
+
+function emojiMatches(em, tokens) {
+    const words = (EMOJI_KEYWORDS[em] || '').replace(/ё/g, 'е').split(' ');
+    return tokens.every(tok => words.some(w => w.startsWith(tok)));
+}
+
+function emojiCell(em) {
+    return `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`;
+}
+
+function updateEmojiGrid() {
+    const grid = document.getElementById('emoji-grid');
+    if (!grid) return;
+
+    document.querySelectorAll('.emoji-cat-tab').forEach(b => {
+        b.classList.toggle('active', !emojiQuery && b.dataset.cat === emojiCat);
+    });
+
+    let html = '';
+    if (emojiQuery) {
+        const tokens = emojiTokens(emojiQuery);
+        const hits = Object.values(EMOJI_DATA).flat().filter(em => emojiMatches(em, tokens));
+        html = hits.length
+            ? hits.map(emojiCell).join('')
+            : `<div class="emoji-empty">${esc(t('emoji.nothing'))}</div>`;
+    } else if (emojiCat) {
+        html = (EMOJI_DATA[emojiCat] || []).map(emojiCell).join('');
+    } else {
+        const recent = JSON.parse(localStorage.getItem('ch_recent_emoji') || '[]');
+        if (recent.length > 0) {
+            html += `<div class="emoji-section-label">${esc(t('emoji.recent'))}</div>`;
+            html += recent.map(emojiCell).join('');
+            html += `<div class="emoji-section-label">${esc(emojiCatName('smileys'))}</div>`;
+        }
+        html += EMOJI_DATA.smileys.map(emojiCell).join('');
+    }
+    grid.innerHTML = html;
+    grid.scrollTop = 0;
+}
+
+function filterEmojiCategory(cat) {
+    emojiCat = cat;
+    emojiQuery = '';
+    const input = document.getElementById('emoji-search');
+    if (input) input.value = '';
+    updateEmojiGrid();
+}
+
 function onEmojiSearch(q) {
-    // Simple: just switch to showing category with most results — or show all
-    renderEmojiPicker(q);
+    emojiQuery = q.trim();
+    updateEmojiGrid();
 }
 
 function insertEmoji(emoji) {

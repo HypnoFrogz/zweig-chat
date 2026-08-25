@@ -14,7 +14,7 @@
     <!-- Fonts are served from this server: a deployment in a closed network has
          no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=47">
+    <link rel="stylesheet" href="/style.css?v=48">
 </head>
 <body>
 
@@ -895,10 +895,18 @@
                 <span class="material-icons-round input-icon">description</span>
                 <input type="text" id="ch-settings-desc" placeholder="Описание" data-i18n-placeholder="channel.desc">
             </div>
+            <!-- Редкое обслуживающее действие: в подвале рядом с «Сохранить» оно
+                 и мешает, и выглядит опаснее, чем есть. -->
+            <div class="settings-row" id="ch-settings-resync-row" style="display:none">
+                <div class="settings-row-text">
+                    <div class="settings-row-title" data-i18n="channel.federation">Federation</div>
+                    <div class="settings-row-hint" data-i18n="channel.resyncHint">Send the member list to the members’ servers.</div>
+                </div>
+                <button class="btn-action" id="ch-settings-resync-btn" onclick="resyncChannel()" data-i18n="channel.resync">Sync</button>
+            </div>
         </div>
-        <div class="modal-footer" style="justify-content:space-between;">
-            <div style="display:flex;gap:8px;">
-                <button class="btn-action" id="ch-settings-resync-btn" onclick="resyncChannel()" data-i18n="channel.resync" style="display:none">Resync</button>
+        <div class="modal-footer modal-footer-split">
+            <div class="modal-footer-side">
                 <button class="btn-action btn-danger" id="ch-settings-delete-btn" onclick="deleteCurrentChannel()" data-i18n="channel.delete">Delete</button>
                 <button class="btn-action btn-danger" id="ch-settings-leave-btn" onclick="leaveCurrentChannel()" data-i18n="channel.leave">Leave</button>
             </div>
@@ -1389,6 +1397,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=51"></script>
+<script src="/app.js?v=52"></script>
 </body>
 </html>

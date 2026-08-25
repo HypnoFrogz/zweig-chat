@@ -882,6 +882,7 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
                     resp = await peer_post(domain, "/api/federation/channel/sync", payload)
                     if resp.status_code != 200:
                         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+                    await _rearm_channel_outbox(db, domain, channel_id)
                 except Exception as e:
                     # Молча терять состав канала нельзя: у соседа не появится ни
                     # канала, ни возможности принять в него сообщение. Кладём в
@@ -945,6 +946,27 @@ async def push_profile_to_peers(db, username: str) -> None:
         print(f"[federation] push_profile_to_peers failed: {e}")
 
 
+async def _rearm_channel_outbox(db, domain: str, channel_id: str) -> None:
+    """Вернуть в очередь сообщения, отвергнутые до появления зеркала канала.
+
+    Сосед отвечает 403 на сообщение в канал, о котором не знает, и доставка
+    считает такой отказ окончательным — справедливо, пока причина не устранена.
+    Синхронизация состава её и устраняет, так что отвергнутое имеет смысл
+    отправить ещё раз: иначе переписка, случившаяся до починки, пропадает.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        await db.execute(
+            "UPDATE federation_outbox SET attempts = 0, next_attempt = ?, last_error = '' "
+            "WHERE delivered_at = '' AND next_attempt = '' AND domain = ? AND channel_id = ?",
+            (now, domain, channel_id),
+        )
+        await db.commit()
+        asyncio.create_task(_flush_soon())
+    except Exception as e:
+        print(f"[federation] re-arming outbox for {domain} failed: {e}")
+
+
 async def _queue_channel_sync(db, domain: str, payload: dict) -> None:
     """Отложить состав канала на повтор через общий outbox.
 
@@ -956,9 +978,10 @@ async def _queue_channel_sync(db, domain: str, payload: dict) -> None:
     try:
         await db.execute("DELETE FROM federation_outbox WHERE id = ?", (key,))
         await db.execute(
-            "INSERT INTO federation_outbox (id, domain, path, payload, attempts, next_attempt, created_at) "
-            "VALUES (?,?,?,?,0,?,?)",
-            (key, domain, "/api/federation/channel/sync",
+            "INSERT INTO federation_outbox "
+            "(id, domain, path, channel_id, payload, attempts, next_attempt, created_at) "
+            "VALUES (?,?,?,?,?,0,?,?)",
+            (key, domain, "/api/federation/channel/sync", payload["channel_id"],
              json.dumps(payload, ensure_ascii=False), now, now),
         )
         await db.commit()
@@ -1008,14 +1031,16 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                 "channel_id": channel_id,
             }
             await db.execute(
-                "INSERT OR IGNORE INTO federation_outbox "
-                "(id, domain, payload, attempts, next_attempt, created_at) VALUES (?,?,?,0,?,?)",
+                    "INSERT OR IGNORE INTO federation_outbox "
+                "(id, domain, channel_id, payload, attempts, next_attempt, created_at) "
+                "VALUES (?,?,?,?,0,?,?)",
                 (
                     # Keyed by recipient, not just domain: a group can hold two
                     # people on the same peer, and one row per domain would let
                     # INSERT OR IGNORE silently drop the second delivery.
                     f"{msg['id']}:{r['home_server']}:{r['remote_username'] or r['username']}",
                     r["home_server"],
+                    channel_id,
                     json.dumps(payload, ensure_ascii=False),
                     now.isoformat(),
                     now.isoformat(),

@@ -385,7 +385,9 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
-        'channel.resync': 'Пересинхронизировать с федерацией',
+        'channel.resync': 'Синхронизировать',
+        'channel.federation': 'Федерация',
+        'channel.resyncHint': 'Разослать состав серверам участников, если канал у них не появился.',
         'channel.resynced': 'Состав канала разослан серверам участников',
         'chat.delete': 'Удалить чат',
         'chat.deleteBody': 'Чат исчезнет только у вас. У собеседника переписка останется. Если он напишет снова, чат вернётся — но уже без старых сообщений.',
@@ -589,7 +591,9 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
-        'channel.resync': 'Resync with federation',
+        'channel.resync': 'Sync',
+        'channel.federation': 'Federation',
+        'channel.resyncHint': 'Send the member list to the members\u2019 servers \u2014 if the channel never showed up there.',
         'channel.resynced': 'Membership sent to the members\u2019 servers',
         'chat.delete': 'Delete chat',
         'chat.deleteBody': 'The chat disappears for you only. The other person keeps it. If they write again, the chat comes back — without the old messages.',
@@ -2903,8 +2907,8 @@ function showChannelSettingsDialog() {
     // с участниками с других серверов. Кнопка нужна, когда рассылка состава не
     // дошла и сосед не знает о канале вовсе.
     const hasRemote = (currentChannel.member_details || []).some(m => m.home_server);
-    const resyncBtn = document.getElementById('ch-settings-resync-btn');
-    if (resyncBtn) resyncBtn.style.display = (hasRemote && canDelete) ? '' : 'none';
+    const resyncRow = document.getElementById('ch-settings-resync-row');
+    if (resyncRow) resyncRow.style.display = (hasRemote && canDelete) ? '' : 'none';
 }
 function closeChannelSettingsDialog() { document.getElementById('channel-settings-dialog').style.display = 'none'; }
 async function saveChannelSettings() {
@@ -2919,9 +2923,15 @@ async function saveChannelSettings() {
 }
 async function resyncChannel() {
     if (!currentChannel) return;
-    const res = await apiFetch(`/channels/${currentChannel.slug}/federation/resync`, { method: 'POST' });
-    if (!res || !res.ok) return;
-    showToast(t('channel.resynced'), 'success');
+    const btn = document.getElementById('ch-settings-resync-btn');
+    if (btn) btn.disabled = true;
+    try {
+        const res = await apiFetch(`/channels/${currentChannel.slug}/federation/resync`, { method: 'POST' });
+        if (!res || !res.ok) return;
+        showToast(t('channel.resynced'), 'success');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 async function deleteCurrentChannel() {

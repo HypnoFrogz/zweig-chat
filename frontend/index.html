@@ -14,7 +14,7 @@
     <!-- Fonts are served from this server: a deployment in a closed network has
          no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=46">
+    <link rel="stylesheet" href="/style.css?v=47">
 </head>
 <body>
 
@@ -969,6 +969,31 @@
 </div>
 
 <!-- Invite to call modal -->
+<div id="add-members-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeAddMembersModal()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="channel.addMembers">Add members</span>
+            <button class="btn-icon" onclick="closeAddMembersModal()">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <div class="input-group">
+                <span class="material-icons-round input-icon">search</span>
+                <input type="text" id="add-members-search" placeholder="Search by name..." data-i18n-placeholder="call.searchPlaceholder" oninput="filterAddMembersList(this.value)">
+            </div>
+            <div id="add-members-list" class="member-checklist"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-action btn-accent" id="add-members-btn" onclick="submitAddMembers()">
+                <span class="material-icons-round">person_add</span>
+                <span data-i18n="channel.addMembers">Add members</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <div id="invite-call-modal" class="modal" style="display:none">
     <div class="modal-backdrop" onclick="closeInviteCallModal()"></div>
     <div class="modal-content modal-small">
@@ -1363,6 +1388,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=49"></script>
+<script src="/app.js?v=50"></script>
 </body>
 </html>

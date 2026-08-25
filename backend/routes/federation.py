@@ -875,12 +875,42 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
                     "created_by": ch["created_by"] or "",
                     "members": members,
                 }
+                # Путь именно с /api: _peer_url ничего не подставляет, а без
+                # префикса запрос уходит в nginx на статику — тот отвечает
+                # страницей, и зеркало канала не создаётся никогда.
                 try:
-                    await peer_post(domain, "/federation/channel/sync", payload)
+                    resp = await peer_post(domain, "/api/federation/channel/sync", payload)
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
                 except Exception as e:
+                    # Молча терять состав канала нельзя: у соседа не появится ни
+                    # канала, ни возможности принять в него сообщение. Кладём в
+                    # ту же очередь, что и сообщения, и повторяем с отступом.
                     print(f"[federation] channel sync to {domain} failed: {e}")
+                    await _queue_channel_sync(db, domain, payload)
     except Exception as e:
         print(f"[federation] sync_channel_to_peers failed: {e}")
+
+
+async def _queue_channel_sync(db, domain: str, payload: dict) -> None:
+    """Отложить состав канала на повтор через общий outbox.
+
+    Ключ строки — канал, сосед и адресат, а не момент времени: свежая картина
+    состава заменяет прежнюю, накапливать историю попыток незачем.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    key = f"sync:{payload['channel_id']}:{domain}:{payload['for_user']}"
+    try:
+        await db.execute("DELETE FROM federation_outbox WHERE id = ?", (key,))
+        await db.execute(
+            "INSERT INTO federation_outbox (id, domain, path, payload, attempts, next_attempt, created_at) "
+            "VALUES (?,?,?,?,0,?,?)",
+            (key, domain, "/api/federation/channel/sync",
+             json.dumps(payload, ensure_ascii=False), now, now),
+        )
+        await db.commit()
+    except Exception as e:
+        print(f"[federation] queueing channel sync to {domain} failed: {e}")
 
 
 async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -> None:
@@ -951,7 +981,10 @@ async def _deliver_one(db, row: dict) -> None:
     attempts = row["attempts"] + 1
     now = datetime.now(timezone.utc)
     try:
-        resp = await peer_post(row["domain"], "/api/federation/message", json.loads(row["payload"]))
+        # Очередь возит не только сообщения: строка знает свой путь. Пустой —
+        # это ряд, созданный до появления колонки, и он всегда про сообщение.
+        path = row.get("path") or "/api/federation/message"
+        resp = await peer_post(row["domain"], path, json.loads(row["payload"]))
         # 4xx other than 429 means the peer will never accept it — retrying
         # would just burn attempts, so stop and keep the error for diagnosis.
         if resp.status_code == 200:

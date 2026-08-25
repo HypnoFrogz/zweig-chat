@@ -898,6 +898,7 @@
         </div>
         <div class="modal-footer" style="justify-content:space-between;">
             <div style="display:flex;gap:8px;">
+                <button class="btn-action" id="ch-settings-resync-btn" onclick="resyncChannel()" data-i18n="channel.resync" style="display:none">Resync</button>
                 <button class="btn-action btn-danger" id="ch-settings-delete-btn" onclick="deleteCurrentChannel()" data-i18n="channel.delete">Delete</button>
                 <button class="btn-action btn-danger" id="ch-settings-leave-btn" onclick="leaveCurrentChannel()" data-i18n="channel.leave">Leave</button>
             </div>
@@ -1388,6 +1389,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=50"></script>
+<script src="/app.js?v=51"></script>
 </body>
 </html>

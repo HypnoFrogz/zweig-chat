@@ -607,6 +607,49 @@ docker compose restart backend
 
 Схема БД мигрируется автоматически при каждом запуске — ручные миграции не нужны.
 
+### Обновление одной командой, с откатом
+
+`git pull && docker compose up -d --build` не проверяет, поднялся ли сервер
+после обновления. [deploy/zweig-update.sh](deploy/zweig-update.sh) делает то же
+самое, но ждёт `200` от эндпоинта здоровья и **возвращает предыдущий коммит**,
+если сервер не отозвался.
+
+Что и как обновлять на этой машине, описывается один раз в
+`/etc/zweig-update.conf` (образец — [deploy/zweig-update.conf.example](deploy/zweig-update.conf.example)):
+каталог, набор compose-файлов, службы, адрес проверки здоровья.
+
+```bash
+sudo install -m 755 deploy/zweig-update.sh /usr/local/bin/zweig-update.sh
+```
+
+```bash
+sudo cp deploy/zweig-update.conf.example /etc/zweig-update.conf   # и заполнить
+```
+
+```bash
+sudo zweig-update.sh --check    # посмотреть состояние, ничего не меняя
+sudo zweig-update.sh            # обновить
+```
+
+### Обновление с другой машины
+
+Если установок несколько, ходить в консоль каждой не обязательно.
+[deploy/install-deploy-access.sh](deploy/install-deploy-access.sh) заводит
+пользователя `zweig-deploy`, кладёт ему ваш публичный ключ и разрешает через
+sudo запускать ровно один файл — `zweig-update.sh`, и ничего больше:
+
+```bash
+sudo ./deploy/install-deploy-access.sh "ssh-ed25519 AAAA... вы@машина"
+```
+
+```bash
+ssh zweig-deploy@сервер sudo /usr/local/bin/zweig-update.sh
+```
+
+Ключ, а не пароль: доступ отзывается на одной машине удалением строки из
+`~zweig-deploy/.ssh/authorized_keys`. Украденный ключ даёт возможность обновить
+сервер — и ничего сверх того.
+
 ---
 
 ## Лицензия

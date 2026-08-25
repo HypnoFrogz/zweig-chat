@@ -998,6 +998,10 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
     if not SERVER_DOMAIN:
         return
     try:
+        cur = await db.execute("SELECT type FROM channels WHERE id = ?", (channel_id,))
+        ch_row = await cur.fetchone()
+        is_direct = bool(ch_row) and ch_row["type"] == "direct"
+
         cur = await db.execute(
             "SELECT u.username, u.home_server, u.remote_username FROM channel_members cm "
             "JOIN users u ON u.username = cm.username "
@@ -1024,12 +1028,15 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                 "type": msg.get("type", "text"),
                 "text": msg.get("text", ""),
                 "timestamp": msg.get("timestamp") or now.isoformat(),
-                # Which conversation this belongs to. A direct chat can be
-                # inferred from the pair of people, a group cannot — there the
-                # id is the only thing that says where the message goes. Older
-                # peers ignore the field and keep inferring.
-                "channel_id": channel_id,
             }
+            # Куда именно легло сообщение. У группового канала id общий на всех
+            # серверах — только он и говорит, о каком разговоре речь. У личного
+            # диалога общего id нет: каждая сторона завела свой при погашении
+            # приглашения, и сосед такой id у себя не найдёт. Поэтому для ЛС
+            # его не отправляем — там разговор однозначно определяется парой
+            # собеседников.
+            if not is_direct:
+                payload["channel_id"] = channel_id
             # Вложение едет ссылкой на наш сервер, а не файлом: копировать
             # мегабайты на каждый сервер незачем, а раздаёт их nginx и так.
             # Ссылка обязана быть абсолютной — у соседа «/uploads/…» указывает
@@ -1043,7 +1050,7 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                     "type": att.get("type", "file"),
                 }
             await db.execute(
-                    "INSERT OR IGNORE INTO federation_outbox "
+                "INSERT OR IGNORE INTO federation_outbox "
                 "(id, domain, channel_id, payload, attempts, next_attempt, created_at) "
                 "VALUES (?,?,?,?,0,?,?)",
                 (
@@ -1126,8 +1133,39 @@ async def _flush_soon() -> None:
         print(f"[federation] immediate flush failed: {e}")
 
 
+async def _rearm_abandoned() -> None:
+    """Дать ещё одну попытку тому, от чего доставка отказалась.
+
+    Отказ с 4xx считается окончательным — и это верно, пока причина на той
+    стороне. Но причиной бывала наша же ошибка: сосед отвергал сообщение,
+    потому что не знал канала или получал id, которого у него быть не могло.
+    После выкатки такие строки должны поехать, а не остаться лежать навсегда.
+
+    Повтор безопасен: сообщение опознаётся по своему id, и сосед вставляет его
+    через INSERT OR IGNORE. Берём только свежие — недельной давности отказ уже
+    ничего не спасёт.
+    """
+    if not SERVER_DOMAIN:
+        return
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=7)).isoformat()
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "UPDATE federation_outbox SET attempts = 0, next_attempt = ?, last_error = '' "
+            "WHERE delivered_at = '' AND next_attempt = '' AND created_at >= ?",
+            (now.isoformat(), cutoff),
+        )
+        await db.commit()
+        if cur.rowcount:
+            print(f"[federation] outbox: возвращено в очередь {cur.rowcount} отложенных отправок")
+    except Exception as e:
+        print(f"[federation] outbox re-arm failed: {e}")
+
+
 async def run_outbox_loop() -> None:
     """Background task — retry queued messages until they land or expire."""
+    await _rearm_abandoned()
     while True:
         try:
             await asyncio.sleep(_OUTBOX_TICK_SEC)
@@ -1326,14 +1364,19 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     # the sender must already be in the channel here, which only happens after
     # a sync we accepted.
     claimed = (data.get("channel_id") or "").strip()
-    if claimed:
-        channel_id = await _shared_channel(db, claimed, to_user, uid)
-        if not channel_id:
-            raise HTTPException(status_code=403, detail="Канал недоступен — участие не подтверждено")
-    else:
+    channel_id = await _shared_channel(db, claimed, to_user, uid) if claimed else None
+    if not channel_id:
+        # Названного канала у нас нет — но личный диалог с этим человеком может
+        # быть: у ЛС на каждом сервере свой id, и сосед прислал нам свой. Такой
+        # запасной путь ведёт ровно в диалог этих двоих, где оба и так состоят,
+        # так что чужого канала им не подсунуть.
         channel_id = await find_direct(db, to_user, uid)
-        if not channel_id:
-            raise HTTPException(status_code=403, detail="Диалог не открыт — нужно приглашение")
+    if not channel_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Канал недоступен — участие не подтверждено" if claimed
+                   else "Диалог не открыт — нужно приглашение",
+        )
 
     # A block is enforced silently: we accept the message so the sender's
     # server stops retrying, but nothing is stored or shown.

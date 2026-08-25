@@ -397,6 +397,7 @@ TABLES = [
     """CREATE TABLE IF NOT EXISTS federation_outbox (
         id           TEXT PRIMARY KEY,
         domain       TEXT NOT NULL,
+        path         TEXT NOT NULL DEFAULT '',
         payload      TEXT NOT NULL,
         attempts     INTEGER NOT NULL DEFAULT 0,
         next_attempt TEXT NOT NULL DEFAULT '',
@@ -519,6 +520,16 @@ async def init_db():
         if col not in call_cols:
             await db.execute(f"ALTER TABLE calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
     await db.commit()
+
+    # ---------- Migration: path on the federation outbox ----------
+    # Очередь начиналась как «только сообщения», и путь был вшит в доставку.
+    # Теперь через неё же повторяется состав канала, и строка должна знать, куда
+    # её везти. Пустое значение — ряд из прежних времён, он всегда про сообщение.
+    pragma_outbox = await db.execute("PRAGMA table_info(federation_outbox)")
+    outbox_cols = [r[1] for r in await pragma_outbox.fetchall()]
+    if "path" not in outbox_cols:
+        await db.execute("ALTER TABLE federation_outbox ADD COLUMN path TEXT NOT NULL DEFAULT ''")
+        await db.commit()
 
     # ---------- Migration: add remote_username to users (federation) ----------
     # username is the primary key and the namespace is shared with local

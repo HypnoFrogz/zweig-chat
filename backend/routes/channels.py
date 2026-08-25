@@ -411,6 +411,37 @@ async def update_channel(slug: str, data: dict, username: str = Depends(get_curr
     return updated_ch
 
 
+@router.post("/channels/{slug}/federation/resync")
+async def resync_channel(slug: str, username: str = Depends(get_current_user)):
+    """Заново разослать состав канала участвующим серверам.
+
+    Состав уходит соседям при каждом изменении членства, и повторить это иначе
+    можно было только тронув членство — то есть выкинув человека и вернув
+    обратно. Нужно, когда рассылка не дошла: сосед лежал, отвечал ошибкой или,
+    как было до 25 августа, вовсе не получал запрос.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        """SELECT c.*, cm.role AS my_role FROM channels c
+           JOIN channel_members cm ON c.id = cm.channel_id
+           WHERE c.slug = ? AND cm.username = ?""",
+        (slug, username),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    ch = dict(row)
+    if ch.pop("my_role") not in ("owner", "admin"):
+        from helpers import get_current_user_info
+        user_info = await get_current_user_info(username)
+        if user_info.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    from routes.federation import sync_channel_to_peers
+    await sync_channel_to_peers(db, ch["id"])
+    return {"ok": True}
+
+
 @router.delete("/channels/{slug}")
 async def delete_channel(slug: str, username: str = Depends(get_current_user)):
     db = await get_db()

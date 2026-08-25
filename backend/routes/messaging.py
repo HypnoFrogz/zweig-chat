@@ -304,14 +304,33 @@ async def send_message_rest(conv_id: str, data: dict, username: str = Depends(ge
 
 # === WebSocket ===
 
+def _client_kind(websocket: WebSocket, declared: str) -> str:
+    """Мобильное приложение это или браузер.
+
+    Новые сборки говорят прямо (`?client=mobile`), у прежних спрашивать нечего
+    — но они ходят через dart:io, и его user-agent ни с одним браузером не
+    спутать. Ошибка в пользу браузера безопасна: человек получит лишний пуш,
+    а не останется без него.
+    """
+    declared = (declared or "").strip().lower()
+    if declared in ("mobile", "android", "ios"):
+        return "mobile"
+    if declared in ("web", "desktop"):
+        return "web"
+    ua = (websocket.headers.get("user-agent") or "").lower()
+    return "mobile" if ua.startswith("dart/") or "flutter" in ua else "web"
+
+
 @router.websocket("/ws/messaging")
-async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
+async def messaging_websocket(
+    websocket: WebSocket, token: str = Query(...), client: str = Query(default="")
+):
     username = decode_token_from_string(token)
     if not username:
         await websocket.close(code=4003, reason="Unauthorized")
         return
 
-    await manager.connect(username, websocket)
+    await manager.connect(username, websocket, kind=_client_kind(websocket, client))
     display_name = _get_display_name(username)
 
     try:

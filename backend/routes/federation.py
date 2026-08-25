@@ -1402,25 +1402,27 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     # Уведомление ровно тем же путём, что и у своего сообщения: FCM/APNs для
     # приложений, веб-пуш запасным. Раньше здесь был только веб-пуш, и на
     # телефон межсерверное сообщение не приходило вовсе.
-    if not manager.is_online(to_user):
-        from fcm_sender import send_message_notification
-        from routes.push import send_push_to_user
-        body = (text or "")[:100] or (att.get("name") if att else "") or "Новое сообщение"
+    from fcm_sender import send_message_notification
+    from routes.push import send_push_to_user
+    body = (text or "")[:100] or (att.get("name") if att else "") or "Новое сообщение"
+    title = (ch["name"] if ch and ch["name"] else display)
+    delivered = False
+    if not manager.has_mobile(to_user):
         delivered = await send_message_notification(
             recipient=to_user,
             sender_name=display,
             text=body,
             channel_slug=slug,
-            channel_name=(ch["name"] if ch and ch["name"] else display),
+            channel_name=title,
         )
-        if not delivered:
-            await send_push_to_user(to_user, {
-                "type": "message",
-                "title": (ch["name"] if ch and ch["name"] else display),
-                "body": body,
-                "conv_id": slug,
-                "badge": 1,
-            })
+    if not delivered and not manager.is_online(to_user):
+        await send_push_to_user(to_user, {
+            "type": "message",
+            "title": title,
+            "body": body,
+            "conv_id": slug,
+            "badge": 1,
+        })
 
     return {"ok": True}
 

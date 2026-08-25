@@ -15,17 +15,27 @@ class ConnectionManager:
         self.active_connections: dict[str, list[WebSocket]] = {}
         # username → last_seen ISO string
         self.last_seen: dict[str, str] = {}
+        # WebSocket → вид клиента ('mobile' | 'web'). Нужен уведомлениям: пуш
+        # на телефон имеет смысл, пока приложение не открыто, а открытая
+        # вкладка в браузере об этом ничего не говорит.
+        self.conn_kind: dict[WebSocket, str] = {}
 
-    async def connect(self, username: str, websocket: WebSocket):
+    async def connect(self, username: str, websocket: WebSocket, kind: str = "web"):
         await websocket.accept()
         if username not in self.active_connections:
             self.active_connections[username] = []
         self.active_connections[username].append(websocket)
+        self.conn_kind[websocket] = kind if kind in ("mobile", "web") else "web"
         # Broadcast only if this is the first connection (was offline)
         if len(self.active_connections[username]) == 1:
             await self.broadcast_presence(username, online=True)
 
     async def disconnect(self, username: str, websocket):
+        if websocket is not None:
+            self.conn_kind.pop(websocket, None)
+        else:
+            for ws in self.active_connections.get(username, []):
+                self.conn_kind.pop(ws, None)
         if username in self.active_connections:
             if websocket is not None:
                 try:
@@ -42,6 +52,18 @@ class ConnectionManager:
 
     def is_online(self, username: str) -> bool:
         return bool(self.active_connections.get(username))
+
+    def has_mobile(self, username: str) -> bool:
+        """Открыто ли у человека мобильное приложение прямо сейчас.
+
+        Уведомление на телефон не нужно, только когда приложение открыто и
+        сообщение и так видно. Открытая вкладка в браузере — не повод молчать:
+        телефон при этом лежит в кармане, и человек ждёт от него сигнала.
+        """
+        return any(
+            self.conn_kind.get(ws) == "mobile"
+            for ws in self.active_connections.get(username, [])
+        )
 
     async def broadcast_presence(self, username: str, online: bool):
         data = {

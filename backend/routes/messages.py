@@ -231,7 +231,14 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     from fcm_sender import send_message_notification
     from routes.push import send_push_to_user
     for member in members:
-        if member != username and not manager.is_online(member):
+        if member == username:
+            continue
+        # Телефону сигнал нужен, пока приложение на нём закрыто, — открытая
+        # вкладка в браузере этому не помеха: она стоит на другом столе, а то и
+        # в другом городе. Раньше здесь стояло общее «человек онлайн», и тот,
+        # кто держал веб открытым, не получал уведомлений на телефон вовсе.
+        delivered = False
+        if not manager.has_mobile(member):
             delivered = await send_message_notification(
                 recipient=member,
                 sender_name=display_name,
@@ -239,17 +246,18 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
                 channel_slug=ch["slug"],
                 channel_name=ch.get("name") or display_name,
             )
-            # Web Push only as a fallback. Someone running both the app and the
-            # PWA is subscribed on both channels and would otherwise be told
-            # about the same message twice.
-            if not delivered:
-                await send_push_to_user(member, {
-                    "type": "message",
-                    "title": ch.get("name") or display_name,
-                    "body": (text or "")[:100] or "Новое сообщение",
-                    "conv_id": ch["slug"],
-                    "badge": 1,
-                })
+        # Web Push — только когда не подключено вообще ничего. Показывать
+        # системное уведомление поверх открытой вкладки, где сообщение и так
+        # видно, незачем; и тот, у кого есть и приложение, и PWA, иначе узнал
+        # бы об одном сообщении дважды.
+        if not delivered and not manager.is_online(member):
+            await send_push_to_user(member, {
+                "type": "message",
+                "title": ch.get("name") or display_name,
+                "body": (text or "")[:100] or "Новое сообщение",
+                "conv_id": ch["slug"],
+                "badge": 1,
+            })
 
     return msg
 
@@ -611,7 +619,12 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     from fcm_sender import send_message_notification
     from routes.push import send_push_to_user
     for member in members:
-        if member != username and not manager.is_online(member):
+        if member == username:
+            continue
+        # То же правило, что и в REST-пути выше: телефон молчит, только когда
+        # приложение на нём открыто.
+        delivered = False
+        if not manager.has_mobile(member):
             delivered = await send_message_notification(
                 recipient=member,
                 sender_name=display_name,
@@ -619,15 +632,14 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
                 channel_slug=ch_slug,
                 channel_name=ch_name,
             )
-            # Same fallback rule as the REST path above.
-            if not delivered:
-                await send_push_to_user(member, {
-                    "type": "message",
-                    "title": ch_name,
-                    "body": (text or "")[:100] or "Новое сообщение",
-                    "conv_id": ch_slug,
-                    "badge": 1,
-                })
+        if not delivered and not manager.is_online(member):
+            await send_push_to_user(member, {
+                "type": "message",
+                "title": ch_name,
+                "body": (text or "")[:100] or "Новое сообщение",
+                "conv_id": ch_slug,
+                "badge": 1,
+            })
 
 
 async def _ws_typing(data: dict, username: str, display_name: str):

@@ -2322,7 +2322,9 @@ async function connectWebSocket() {
         wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         wsHost = location.host;
     }
-    ws = new WebSocket(`${wsProto}//${wsHost}/api/ws/messaging?token=${token}`);
+    // client=web: открытая вкладка не отменяет уведомление на телефон, и
+    // сервер должен видеть разницу между ней и запущенным приложением.
+    ws = new WebSocket(`${wsProto}//${wsHost}/api/ws/messaging?token=${token}&client=web`);
     ws.onopen = () => {
         clearTimeout(wsReconnectTimer);
         wsPingInterval = setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ event: 'ping' })); }, 25000);

@@ -1140,6 +1140,16 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     font-size: 13px;
 }
 .member-check-item:hover { background: var(--msg-hover); }
+/* Строка выбора человека: имя и логин в строку, сервер — подписью снизу. */
+.picker-person { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.picker-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-login { color: var(--text2); }
+.picker-domain { font-size: 11px; color: var(--text3); }
+.panel-add-members {
+    width: calc(100% - 16px);
+    margin: 8px;
+    justify-content: center;
+}
 
 /* Forward message modal */
 .forward-channel-list {

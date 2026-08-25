@@ -666,16 +666,30 @@ async def list_invites(username: str = Depends(get_current_user)):
 
 @router.delete("/invites/{token}")
 async def revoke_invite(token: str, username: str = Depends(get_current_user)):
-    """Revoke one of your invites. A leaked link is useless afterwards."""
+    """Отозвать своё приглашение, а уже недействующее — убрать из списка.
+
+    Два шага, а не один, потому что защищает именно первый: отозванная ссылка
+    перестаёт работать, даже если её уже кому-то отправили. Строку после этого
+    держать незачем — случайно созданная ссылка иначе остаётся в списке
+    навсегда, — поэтому повторное удаление стирает её насовсем. Просроченные и
+    исчерпанные удаляются сразу: отзывать в них нечего.
+    """
     db = await get_db()
     cur = await db.execute(
-        "SELECT 1 FROM federation_invites WHERE token = ? AND owner = ?", (token, username)
+        "SELECT * FROM federation_invites WHERE token = ? AND owner = ?", (token, username)
     )
-    if not await cur.fetchone():
+    row = await cur.fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Приглашение не найдено")
-    await db.execute("UPDATE federation_invites SET revoked = 1 WHERE token = ?", (token,))
+
+    if _invite_status(dict(row)) == "active":
+        await db.execute("UPDATE federation_invites SET revoked = 1 WHERE token = ?", (token,))
+        await db.commit()
+        return {"ok": True, "deleted": False}
+
+    await db.execute("DELETE FROM federation_invites WHERE token = ?", (token,))
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": True}
 
 
 @router.post("/invites/redeem")

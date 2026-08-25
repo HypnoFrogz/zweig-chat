@@ -47,6 +47,7 @@ let currentUserAvatar = '';
 let currentChannel = null;
 let channels = [];
 let allUsers = [];
+let fedContacts = [];   // люди с других серверов, с кем уже есть диалог
 let onlineUsers = {};
 let currentPage = 'messaging';
 let currentPath = '';
@@ -384,6 +385,13 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'chat.delete': 'Удалить чат',
+        'chat.deleteBody': 'Чат исчезнет только у вас. У собеседника переписка останется. Если он напишет снова, чат вернётся — но уже без старых сообщений.',
+        'channel.addMembers': 'Добавить участников',
+        'channel.membersAdded': 'Участники добавлены',
+        'fed.serverLabel': 'на сервере',
+        'fed.deleteLink': 'Удалить ссылку',
+        'fed.deleted': 'Ссылка удалена',
         'emoji.search': 'Поиск эмодзи…',
         'emoji.recent': 'Недавние',
         'emoji.nothing': 'Ничего не найдено',
@@ -579,6 +587,13 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'chat.delete': 'Delete chat',
+        'chat.deleteBody': 'The chat disappears for you only. The other person keeps it. If they write again, the chat comes back — without the old messages.',
+        'channel.addMembers': 'Add members',
+        'channel.membersAdded': 'Members added',
+        'fed.serverLabel': 'on server',
+        'fed.deleteLink': 'Delete link',
+        'fed.deleted': 'Link deleted',
         'emoji.search': 'Search emoji…',
         'emoji.recent': 'Recent',
         'emoji.nothing': 'Nothing found',
@@ -685,7 +700,14 @@ async function apiFetch(url, opts = {}) {
         logout();
         return null;
     }
-    if (res.status === 403) { showToast(t('toast.accessDenied'), 'error'); return null; }
+    if (res.status === 403) {
+        // Причина отказа лежит в detail — «нет прав» вместо неё превращает
+        // осмысленный ответ сервера в загадку.
+        let detail = '';
+        try { detail = (await res.clone().json())?.detail || ''; } catch (e) { /* не JSON */ }
+        showToast(detail || t('toast.accessDenied'), 'error');
+        return null;
+    }
     return res;
 }
 
@@ -1047,7 +1069,7 @@ async function confirmNewCategory() {
     wrapper.remove();
     if (!name) return;
     try {
-        const res = await apiFetch('/chat-folders', { method: 'POST', body: JSON.stringify({ name }) });
+        const res = await apiFetch('/chat-folders', { method: 'POST', body: { name } });
         if (res && res.ok) {
             const folder = await res.json();
             categories.push({ id: folder.id, name: folder.name, collapsed: false, channelIds: [], _channelSlugs: [] });
@@ -1100,7 +1122,7 @@ function renameCategory(catId) {
                 if (val && val !== cat.name) {
                     cat.name = val;
                     saveCategories();
-                    try { await apiFetch(`/chat-folders/${catId}`, { method: 'PUT', body: JSON.stringify({ name: val }) }); } catch {}
+                    try { await apiFetch(`/chat-folders/${catId}`, { method: 'PUT', body: { name: val } }); } catch {}
                 }
                 renderSidebar();
             };
@@ -1144,7 +1166,7 @@ async function onCategoryDrop(e, catId) {
         if (cat && !cat.channelIds.includes(channelId)) cat.channelIds.push(channelId);
         // Sync with server
         if (slug) {
-            try { await apiFetch(`/chat-folders/${catId}/channels`, { method: 'POST', body: JSON.stringify({ channel_slug: slug }) }); } catch {}
+            try { await apiFetch(`/chat-folders/${catId}/channels`, { method: 'POST', body: { channel_slug: slug } }); } catch {}
         }
     } else {
         // Remove from all server folders
@@ -1319,10 +1341,15 @@ function showChannelContextMenu(e, slug) {
     const ch = channels.find(c => c.slug === slug);
     if (!ch) return;
 
-    const isOwner = ch.created_by === currentUser;
+    // Роль берём из членства, а не из created_by: сервер спрашивает именно её.
+    // В личном диалоге оба участника — 'member', и создатель тоже: удалить такой
+    // чат «у всех» нельзя, DELETE /channels ответит 403.
+    const myMember = (ch.member_details || []).find(m => m.username === currentUser);
+    const myChRole = myMember ? myMember.role : (ch.created_by === currentUser ? 'owner' : 'member');
+    const isOwner = myChRole === 'owner';
     const isAdmin = userRole === 'admin';
-    const canDelete = isOwner || isAdmin;
     const isDM = ch.type === 'direct';
+    const canDelete = !isDM && (isOwner || isAdmin);
 
     let items = '';
     // Move to folder options
@@ -1343,7 +1370,10 @@ function showChannelContextMenu(e, slug) {
     if (!isDM && !isOwner) {
         items += `<div class="ctx-item" onclick="leaveChannel('${slug}')"><span class="material-icons-round">logout</span> ${t('channel.leave')}</div>`;
     }
-    if (canDelete) {
+    if (isDM) {
+        // Одностороннее удаление: переписка пропадает только у нас.
+        items += `<div class="ctx-item ctx-danger" onclick="clearChat('${slug}')"><span class="material-icons-round">delete</span> ${t('chat.delete')}</div>`;
+    } else if (canDelete) {
         items += `<div class="ctx-item ctx-danger" onclick="deleteChannel('${slug}')"><span class="material-icons-round">delete</span> ${t('channel.delete')}</div>`;
     }
 
@@ -1371,7 +1401,7 @@ async function moveChannelToFolder(channelId, slug, folderId) {
     saveCategories();
     renderSidebar();
     // Sync with server
-    try { await apiFetch(`/chat-folders/${folderId}/channels`, { method: 'POST', body: JSON.stringify({ channel_slug: slug }) }); } catch {}
+    try { await apiFetch(`/chat-folders/${folderId}/channels`, { method: 'POST', body: { channel_slug: slug } }); } catch {}
 }
 
 async function removeChannelFromFolders(channelId, slug) {
@@ -1392,29 +1422,41 @@ function openChannelSettings(slug) {
     openChannel(slug).then(() => showChannelSettingsDialog());
 }
 
+// Закрыть открытый чат, если удалили или покинули именно его.
+function closeChannelView(slug) {
+    if (!currentChannel || (slug && currentChannel.slug !== slug)) return;
+    currentChannel = null;
+    document.getElementById('msg-empty-state').style.display = 'flex';
+    document.getElementById('msg-messages').style.display = 'none';
+    document.getElementById('msg-input-area').style.display = 'none';
+}
+
 async function deleteChannel(slug) {
     hideContextMenu();
-    if (!confirm(t('channel.delete') + '?')) return;
-    await apiFetch(`/channels/${slug}`, { method: 'DELETE' });
-    if (currentChannel && currentChannel.slug === slug) {
-        currentChannel = null;
-        document.getElementById('msg-empty-state').style.display = 'flex';
-        document.getElementById('msg-messages').style.display = 'none';
-        document.getElementById('msg-input-area').style.display = 'none';
-    }
+    if (!confirm(t('channel.deleteConfirm'))) return;
+    const res = await apiFetch(`/channels/${slug}`, { method: 'DELETE' });
+    if (!res || !res.ok) return;
+    closeChannelView(slug);
+    await loadChannels();
+}
+
+// Удаление личного диалога. У собеседника чат и история остаются: сервер лишь
+// запоминает момент, с которого нам перестают показывать переписку.
+async function clearChat(slug) {
+    hideContextMenu();
+    if (!confirm(t('chat.deleteBody'))) return;
+    const res = await apiFetch(`/channels/${slug}/clear`, { method: 'POST' });
+    if (!res || !res.ok) return;
+    closeChannelView(slug);
     await loadChannels();
 }
 
 async function leaveChannel(slug) {
     hideContextMenu();
     if (!confirm(t('channel.leaveConfirm'))) return;
-    await apiFetch(`/channels/${slug}/leave`, { method: 'POST' });
-    if (currentChannel && currentChannel.slug === slug) {
-        currentChannel = null;
-        document.getElementById('msg-empty-state').style.display = 'flex';
-        document.getElementById('msg-messages').style.display = 'none';
-        document.getElementById('msg-input-area').style.display = 'none';
-    }
+    const res = await apiFetch(`/channels/${slug}/leave`, { method: 'POST' });
+    if (!res || !res.ok) return;
+    closeChannelView(slug);
     await loadChannels();
 }
 
@@ -1424,6 +1466,40 @@ async function loadUsers() {
     allUsers = await res.json();
     const pres = await apiFetch('/presence');
     if (pres && pres.ok) onlineUsers = await pres.json();
+    loadFedContacts();
+}
+
+// Люди с других серверов приходят отдельным списком: /users скрывает их
+// намеренно, иначе чужие учётки попадали бы в справочник организации. Добавить
+// в канал сервер разрешит ровно тех, с кем уже открыт личный диалог, — этот
+// список именно их и возвращает.
+async function loadFedContacts() {
+    try {
+        const res = await apiFetch('/federation/contacts');
+        fedContacts = (res && res.ok) ? await res.json() : [];
+    } catch (e) {
+        fedContacts = [];
+    }
+}
+
+// Кандидаты для добавления в канал: свои плюс знакомые с других серверов.
+function pickerCandidates(exclude = []) {
+    const skip = new Set([currentUser, ...exclude]);
+    return [...allUsers, ...fedContacts].filter(u => !skip.has(u.username));
+}
+
+// Строка выбора участника. У человека с другого сервера под именем виден его
+// сервер — иначе два одинаковых имени в списке различить нельзя.
+function pickerRow(u) {
+    const name = u.display_name || u.username;
+    const search = `${(u.display_name || '').toLowerCase()} ${(u.nickname || '').toLowerCase()} ${(u.home_server || '').toLowerCase()}`;
+    const domain = u.home_server
+        ? `<span class="picker-domain">${esc(t('fed.serverLabel'))} ${esc(u.home_server)}</span>`
+        : '';
+    return `<label class="member-check-item" data-username="${esc(u.username)}" data-name="${esc(search)}">
+        <input type="checkbox" value="${esc(u.username)}">
+        <span class="picker-person"><span class="picker-line">${esc(name)} <span class="picker-login">@${esc(u.username)}</span></span>${domain}</span>
+    </label>`;
 }
 
 // ── Channel management ─────────────────────────────────────────
@@ -2496,9 +2572,7 @@ function showNewChatDialog() {
     document.getElementById('newchat-slug-preview').textContent = '-';
     const list = document.getElementById('newchat-members-list');
     const searchHtml = `<input type="text" class="newchat-search-input" placeholder="${t('search.people')}" oninput="filterNewChatMemberList(this.value)">`;
-    const membersHtml = allUsers.filter(u => u.username !== currentUser).map(u =>
-        `<label class="member-check-item" data-username="${u.username}" data-name="${(u.display_name||'').toLowerCase()} ${(u.nickname||'').toLowerCase()}"><input type="checkbox" value="${u.username}"> ${esc(u.display_name)} (@${u.username})</label>`
-    ).join('');
+    const membersHtml = pickerCandidates().map(pickerRow).join('');
     list.innerHTML = searchHtml + `<div id="newchat-member-items">${membersHtml}</div>`;
     document.getElementById('newchat-channel-name').oninput = async function() {
         const name = this.value.trim();
@@ -2656,8 +2730,15 @@ async function loadRightPanelMembers() {
     const myChRole = myMember ? myMember.role : 'member';
     const canKick = myChRole === 'owner' || myChRole === 'admin' || userRole === 'admin';
     const isChannel = currentChannel.type !== 'direct';
+    const canAdd = isChannel && canKick;
 
-    body.innerHTML = memberList.map(m => {
+    const addBtn = canAdd
+        ? `<button class="btn-action panel-add-members" onclick="showAddMembersModal()">
+               <span class="material-icons-round">person_add</span> ${esc(t('channel.addMembers'))}
+           </button>`
+        : '';
+
+    body.innerHTML = addBtn + memberList.map(m => {
         const isOnline = onlineUsers[m.username]?.online;
         const av = m.avatar_path ? `<img src="${srv(m.avatar_path)}">` : m.display_name.charAt(0).toUpperCase();
         const roleBadge = m.role === 'owner' ? ' <span class="admin-badge admin">owner</span>' : (m.role === 'admin' ? ' <span class="admin-badge admin">admin</span>' : '');
@@ -2673,6 +2754,55 @@ async function loadRightPanelMembers() {
             ${kickBtn}
         </div>`;
     }).join('');
+}
+
+// Добавление участников в уже созданный канал — и своих, и людей с других
+// серверов. Публичный канал или закрытый, роли не играет: право спрашивается
+// то же, что и на исключение.
+function showAddMembersModal() {
+    if (!currentChannel || currentChannel.type === 'direct') return;
+    const already = (currentChannel.member_details || []).map(m => m.username);
+    const candidates = pickerCandidates(already);
+    const list = document.getElementById('add-members-list');
+    list.innerHTML = candidates.length
+        ? candidates.map(pickerRow).join('')
+        : `<div class="fed-empty">${esc(t('fed.none'))}</div>`;
+    document.getElementById('add-members-search').value = '';
+    document.getElementById('add-members-modal').style.display = 'flex';
+}
+
+function closeAddMembersModal() {
+    document.getElementById('add-members-modal').style.display = 'none';
+}
+
+function filterAddMembersList(query) {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('#add-members-list .member-check-item').forEach(el => {
+        const name = el.dataset.name || '';
+        const uname = (el.dataset.username || '').toLowerCase();
+        el.style.display = (name.includes(q) || uname.includes(q)) ? '' : 'none';
+    });
+}
+
+async function submitAddMembers() {
+    if (!currentChannel) return;
+    const picked = Array.from(document.querySelectorAll('#add-members-list input:checked')).map(c => c.value);
+    if (!picked.length) { closeAddMembersModal(); return; }
+    const btn = document.getElementById('add-members-btn');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch(`/channels/${currentChannel.slug}`, {
+            method: 'PUT',
+            body: { add_members: picked },
+        });
+        if (!res || !res.ok) return;
+        closeAddMembersModal();
+        currentChannel.member_details = null;
+        await loadRightPanelMembers();
+        showToast(t('channel.membersAdded'), 'success');
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 async function kickMember(username) {
@@ -2778,22 +2908,18 @@ async function saveChannelSettings() {
 }
 async function deleteCurrentChannel() {
     if (!currentChannel || !confirm(t('channel.deleteConfirm'))) return;
-    await apiFetch(`/channels/${currentChannel.slug}`, { method: 'DELETE' });
+    const res = await apiFetch(`/channels/${currentChannel.slug}`, { method: 'DELETE' });
+    if (!res || !res.ok) return;
     closeChannelSettingsDialog();
-    currentChannel = null;
-    document.getElementById('msg-empty-state').style.display = 'flex';
-    document.getElementById('msg-messages').style.display = 'none';
-    document.getElementById('msg-input-area').style.display = 'none';
+    closeChannelView();
     await loadChannels();
 }
 async function leaveCurrentChannel() {
     if (!currentChannel || !confirm(t('channel.leaveConfirm'))) return;
-    await apiFetch(`/channels/${currentChannel.slug}/leave`, { method: 'POST' });
+    const res = await apiFetch(`/channels/${currentChannel.slug}/leave`, { method: 'POST' });
+    if (!res || !res.ok) return;
     closeChannelSettingsDialog();
-    currentChannel = null;
-    document.getElementById('msg-empty-state').style.display = 'flex';
-    document.getElementById('msg-messages').style.display = 'none';
-    document.getElementById('msg-input-area').style.display = 'none';
+    closeChannelView();
     await loadChannels();
 }
 
@@ -5949,9 +6075,13 @@ function renderInvites(items) {
                 <button class="btn-icon" title="${esc(t('fed.copy'))}" onclick="copyInvite('${esc(inv.url)}')">
                     <span class="material-icons-round">content_copy</span>
                 </button>
-                ${canRevoke ? `<button class="btn-icon" title="${esc(t('fed.revoke'))}" onclick="revokeInvite('${esc(inv.token)}')">
-                    <span class="material-icons-round">link_off</span>
-                </button>` : ''}
+                ${canRevoke
+                    ? `<button class="btn-icon" title="${esc(t('fed.revoke'))}" onclick="revokeInvite('${esc(inv.token)}')">
+                        <span class="material-icons-round">link_off</span>
+                       </button>`
+                    : `<button class="btn-icon" title="${esc(t('fed.deleteLink'))}" onclick="revokeInvite('${esc(inv.token)}')">
+                        <span class="material-icons-round" style="color:var(--danger)">delete</span>
+                       </button>`}
             </div>
         </div>`;
     }).join('');
@@ -5976,10 +6106,14 @@ async function createInviteLink() {
     loadInvites();
 }
 
+// Один и тот же вызов: действующую ссылку он отзывает, уже недействующую —
+// стирает из списка. Сервер сообщает в ответе, что именно сделал.
 async function revokeInvite(token) {
     const res = await apiFetch(`/invites/${encodeURIComponent(token)}`, { method: 'DELETE' });
-    if (res && res.ok) { showToast(t('fed.revoked'), 'success'); loadInvites(); }
-    else showToast(t('toast.error'), 'error');
+    if (!res || !res.ok) { showToast(t('toast.error'), 'error'); return; }
+    const data = await res.json().catch(() => ({}));
+    showToast(t(data.deleted ? 'fed.deleted' : 'fed.revoked'), 'success');
+    loadInvites();
 }
 
 async function redeemInviteLink() {

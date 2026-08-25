@@ -398,6 +398,7 @@ TABLES = [
         id           TEXT PRIMARY KEY,
         domain       TEXT NOT NULL,
         path         TEXT NOT NULL DEFAULT '',
+        channel_id   TEXT NOT NULL DEFAULT '',
         payload      TEXT NOT NULL,
         attempts     INTEGER NOT NULL DEFAULT 0,
         next_attempt TEXT NOT NULL DEFAULT '',
@@ -530,6 +531,23 @@ async def init_db():
     if "path" not in outbox_cols:
         await db.execute("ALTER TABLE federation_outbox ADD COLUMN path TEXT NOT NULL DEFAULT ''")
         await db.commit()
+    if "channel_id" not in outbox_cols:
+        # Разговор, к которому относится строка. Нужен, чтобы после удачной
+        # синхронизации состава вернуть в работу сообщения, которые сосед
+        # отверг, пока не знал об этом канале.
+        await db.execute("ALTER TABLE federation_outbox ADD COLUMN channel_id TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+        # Заполняем задним числом из тела запроса: строки, застрявшие до этой
+        # миграции, — как раз те, ради которых колонка и заводится. json_extract
+        # есть не в каждой сборке SQLite, и падать из-за него на старте нельзя.
+        try:
+            await db.execute(
+                "UPDATE federation_outbox SET channel_id = "
+                "COALESCE(json_extract(payload, '$.channel_id'), '') WHERE channel_id = ''"
+            )
+            await db.commit()
+        except Exception as e:
+            print(f"[db] outbox channel_id backfill skipped: {e}")
 
     # ---------- Migration: add remote_username to users (federation) ----------
     # username is the primary key and the namespace is shared with local

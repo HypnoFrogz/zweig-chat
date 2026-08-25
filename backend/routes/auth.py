@@ -293,6 +293,10 @@ async def update_me(data: dict, username: str = Depends(get_current_user)):
         "event": "user_updated",
         "user": user_data,
     })
+    # И соседям по федерации: у них наша карточка живёт своей копией и сама
+    # обновиться не может.
+    from routes.federation import push_profile_to_peers
+    await push_profile_to_peers(db, username)
 
     return user_data
 
@@ -329,6 +333,8 @@ async def upload_avatar(
         "event": "user_updated",
         "user": _user_public(dict(user)),
     })
+    from routes.federation import push_profile_to_peers
+    await push_profile_to_peers(db, username)
 
     return {"avatar_path": avatar_path}
 

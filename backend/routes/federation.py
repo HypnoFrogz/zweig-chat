@@ -892,6 +892,59 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
         print(f"[federation] sync_channel_to_peers failed: {e}")
 
 
+async def push_profile_to_peers(db, username: str) -> None:
+    """Разослать соседям новое имя, ник и аватар нашего пользователя.
+
+    Без этого удалённая карточка застывает на том, чем была в момент, когда
+    сосед впервые о человеке услышал: имя приходит попутно с сообщениями, и
+    смена имени доезжает только со следующим из них — а до тех пор собеседник
+    подписан по-старому у всех, кто на другом сервере.
+
+    Соседи — те, с кем есть хоть один общий разговор. Каталога пользователей
+    федерация не держит, и рассылать профиль дальше этого круга незачем.
+    Никогда не поднимает исключений: правка своего профиля не должна падать
+    из-за недоступного соседа.
+    """
+    if not SERVER_DOMAIN:
+        return
+    try:
+        cur = await db.execute(
+            "SELECT display_name, nickname, avatar_path, home_server FROM users WHERE username = ?",
+            (username,),
+        )
+        me = await cur.fetchone()
+        if not me or me["home_server"]:
+            return  # чужой профиль не нам рассылать
+
+        cur = await db.execute(
+            "SELECT DISTINCT u.home_server FROM channel_members mine "
+            "JOIN channel_members other ON other.channel_id = mine.channel_id "
+            "  AND other.username != mine.username "
+            "JOIN users u ON u.username = other.username "
+            "WHERE mine.username = ? AND u.home_server != ''",
+            (username,),
+        )
+        domains = [r["home_server"] for r in await cur.fetchall()]
+        if not domains:
+            return
+
+        payload = {
+            "username": username,
+            "display_name": me["display_name"] or username,
+            "nickname": me["nickname"] or "",
+            "avatar_url": _absolute_url(me["avatar_path"] or ""),
+        }
+        for domain in domains:
+            try:
+                resp = await peer_post(domain, "/api/federation/profile", payload)
+                if resp.status_code != 200:
+                    print(f"[federation] profile push to {domain}: HTTP {resp.status_code}")
+            except Exception as e:
+                print(f"[federation] profile push to {domain} failed: {e}")
+    except Exception as e:
+        print(f"[federation] push_profile_to_peers failed: {e}")
+
+
 async def _queue_channel_sync(db, domain: str, payload: dict) -> None:
     """Отложить состав канала на повтор через общий outbox.
 
@@ -1157,6 +1210,41 @@ async def federation_channel_sync(data: dict, peer: str = Depends(require_peer))
         ch = await _build_channel(db, row, for_user)
         await manager.send_to_user(for_user, {"event": "channel_created", "channel": ch})
     return {"ok": True, "channel_id": channel_id}
+
+
+@router.post("/federation/profile")
+async def federation_profile(data: dict, peer: str = Depends(require_peer)):
+    """Сосед сообщает, что у его пользователя сменились имя, ник или аватар.
+
+    Обновляем только тех, кого уже знаем: заводить человека по такому поводу
+    значило бы принимать чужой каталог пользователей, которого федерация
+    намеренно не имеет.
+    """
+    bare = (data.get("username") or "").strip().lower()
+    if not bare:
+        raise HTTPException(status_code=400, detail="username обязателен")
+
+    db = await get_db()
+    uid = remote_id(peer, bare)
+    cur = await db.execute("SELECT 1 FROM users WHERE username = ?", (uid,))
+    if not await cur.fetchone():
+        return {"ok": True, "unknown": True}
+
+    await ensure_remote_user(peer, bare, data.get("display_name", ""), data.get("avatar_url", ""))
+    await db.execute(
+        "UPDATE users SET nickname = ? WHERE username = ?",
+        ((data.get("nickname") or "").strip()[:50], uid),
+    )
+    await db.commit()
+
+    # Открытым клиентам — тем же событием, что и правку своего профиля: списки
+    # и шапки чатов слушают именно его.
+    from routes.auth import _user_public
+    cur = await db.execute("SELECT * FROM users WHERE username = ?", (uid,))
+    row = await cur.fetchone()
+    if row:
+        await manager.broadcast_all({"event": "user_updated", "user": _user_public(dict(row))})
+    return {"ok": True}
 
 
 @router.post("/federation/message")

@@ -1030,6 +1030,18 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                 # peers ignore the field and keep inferring.
                 "channel_id": channel_id,
             }
+            # Вложение едет ссылкой на наш сервер, а не файлом: копировать
+            # мегабайты на каждый сервер незачем, а раздаёт их nginx и так.
+            # Ссылка обязана быть абсолютной — у соседа «/uploads/…» указывает
+            # на его собственную машину, где этого файла нет.
+            att = msg.get("file")
+            if att:
+                payload["file"] = {
+                    "name": att.get("name", ""),
+                    "url": _absolute_url(att.get("url", "")),
+                    "size": att.get("size", 0),
+                    "type": att.get("type", "file"),
+                }
             await db.execute(
                     "INSERT OR IGNORE INTO federation_outbox "
                 "(id, domain, channel_id, payload, attempts, next_attempt, created_at) "
@@ -1334,18 +1346,34 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
 
     # INSERT OR IGNORE makes redelivery harmless — the sender owns the id, and
     # retries after a timeout are expected.
+    # Вложение соседа — ссылка на его сервер. Храним как есть: файл живёт там,
+    # и тянуть его копию сюда значило бы разводить два владельца у одних данных.
+    att = data.get("file") if isinstance(data.get("file"), dict) else None
+    file_data = None
+    if att and (att.get("url") or "").startswith(("http://", "https://")):
+        att = {
+            "name": (att.get("name") or "")[:200],
+            "url": att["url"],
+            "size": att.get("size") or 0,
+            "type": (att.get("type") or "file")[:20],
+        }
+        file_data = json.dumps(att, ensure_ascii=False)
+    else:
+        att = None
+
     cur = await db.execute(
-        "INSERT OR IGNORE INTO messages (id, channel_id, sender, sender_name, type, text, timestamp) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (msg_id, channel_id, uid, display, msg_type, text, now),
+        "INSERT OR IGNORE INTO messages (id, channel_id, sender, sender_name, type, text, file_data, timestamp) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (msg_id, channel_id, uid, display, msg_type, text, file_data, now),
     )
     if cur.rowcount == 0:
         return {"ok": True, "duplicate": True}
 
+    lm_text = text or (att.get("name") if att else "") or ""
     await db.execute(
         "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, "
         "last_msg_timestamp = ? WHERE id = ?",
-        (text, uid, display, now, channel_id),
+        (lm_text, uid, display, now, channel_id),
     )
     await db.commit()
 
@@ -1361,6 +1389,7 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
         "sender_avatar": data.get("avatar_url", ""),
         "type": msg_type,
         "text": text,
+        "file": att,
         "timestamp": now,
         "read_by": [],
         "reactions": [],
@@ -1370,15 +1399,28 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     members = await _get_members(db, channel_id)
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": slug, "message": msg})
 
+    # Уведомление ровно тем же путём, что и у своего сообщения: FCM/APNs для
+    # приложений, веб-пуш запасным. Раньше здесь был только веб-пуш, и на
+    # телефон межсерверное сообщение не приходило вовсе.
     if not manager.is_online(to_user):
+        from fcm_sender import send_message_notification
         from routes.push import send_push_to_user
-        await send_push_to_user(to_user, {
-            "type": "message",
-            "title": display,
-            "body": (text or "")[:100] or "Новое сообщение",
-            "conv_id": slug,
-            "badge": 1,
-        })
+        body = (text or "")[:100] or (att.get("name") if att else "") or "Новое сообщение"
+        delivered = await send_message_notification(
+            recipient=to_user,
+            sender_name=display,
+            text=body,
+            channel_slug=slug,
+            channel_name=(ch["name"] if ch and ch["name"] else display),
+        )
+        if not delivered:
+            await send_push_to_user(to_user, {
+                "type": "message",
+                "title": (ch["name"] if ch and ch["name"] else display),
+                "body": body,
+                "conv_id": slug,
+                "badge": 1,
+            })
 
     return {"ok": True}
 

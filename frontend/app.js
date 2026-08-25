@@ -1712,7 +1712,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
                 <div class="msg-body">
                     ${actions}
                     ${replyPreview}
-                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msg.text)} ${editedBadge}${checkmarks}</div>
+                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))} ${editedBadge}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
@@ -1726,7 +1726,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
                         <span class="msg-time">${time}</span>${editedBadge}
                     </div>
                     ${replyPreview}
-                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msg.text)}${checkmarks}</div>
+                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
@@ -1755,6 +1755,15 @@ function scrollToMessage(msgId) {
         el.classList.add('msg-highlight');
         setTimeout(() => el.classList.remove('msg-highlight'), 2000);
     }
+}
+
+// Текст у сообщения-вложения нередко совпадает с именем файла: мобильный
+// клиент подставляет туда имя. Показывать его отдельной строкой над самим
+// файлом незачем — читается как дубль, а у картинки ещё и мешает.
+function msgTextFor(msg) {
+    const name = msg.file && msg.file.name;
+    if (name && (msg.text || '').trim() === name) return '';
+    return msg.text;
 }
 
 function renderMsgFile(msg) {
@@ -2073,7 +2082,7 @@ async function openThread(msgId) {
                 <span class="msg-sender">${esc(msg.sender_name || msg.sender)}</span>
                 <span class="msg-time">${time}</span>
             </div>
-            <div class="msg-text">${formatMsgText(msg.text)}</div>
+            <div class="msg-text">${formatMsgText(msgTextFor(msg))}</div>
         </div>`;
     });
     body.innerHTML = html;

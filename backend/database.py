@@ -394,6 +394,19 @@ TABLES = [
     #
     # id is "<message_id>:<domain>" — one row per message per destination, so
     # re-queueing the same message is a no-op and retries cannot fan out.
+    # Отложенная отправка. Живёт на сервере, а не в клиенте: назначивший
+    # закроет ноутбук, а сообщение должно уйти вовремя.
+    """CREATE TABLE IF NOT EXISTS scheduled_messages (
+        id          TEXT PRIMARY KEY,
+        channel_id  TEXT NOT NULL,
+        sender      TEXT NOT NULL,
+        payload     TEXT NOT NULL,
+        send_at     TEXT NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending',
+        created_at  TEXT NOT NULL DEFAULT '',
+        sent_at     TEXT NOT NULL DEFAULT '',
+        last_error  TEXT NOT NULL DEFAULT ''
+    )""",
     # Сообщение, удалённое одним человеком у себя. Строка вместо колонки:
     # у одного сообщения таких людей может быть сколько угодно, а у большинства
     # сообщений — ни одного.
@@ -435,6 +448,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_federation_invites_owner ON federation_invites(owner)",
     "CREATE INDEX IF NOT EXISTS idx_federation_outbox_pending ON federation_outbox(delivered_at, next_attempt)",
     "CREATE INDEX IF NOT EXISTS idx_message_hidden_user ON message_hidden(username)",
+    "CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled_messages(status, send_at)",
     # ChaosTracker indexes
     "CREATE INDEX IF NOT EXISTS idx_task_project_members ON task_project_members(username)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)",

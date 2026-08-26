@@ -1,7 +1,9 @@
 """Zweig Messenger — Messages (send, edit, delete, search, WebSocket)."""
 
+import asyncio
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from helpers import get_current_user, get_display_name, decode_token_from_string, now_iso
 from database import get_db
@@ -156,6 +158,16 @@ async def get_messages(
 async def send_message(slug: str, data: dict, username: str = Depends(get_current_user)):
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
+    return await deliver_message(db, ch, username, data)
+
+
+async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
+    """Положить сообщение в канал и разослать его всем, кому положено.
+
+    Вынесено из обработчика, потому что отправитель бывает не только живой:
+    отложенное сообщение уходит тем же путём, и повторять здесь федерацию,
+    уведомления и счётчики значило бы однажды забыть про одно из них.
+    """
     display_name = await get_display_name(username)
 
     text = data.get("text", "").strip()
@@ -270,6 +282,162 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
             })
 
     return msg
+
+
+# ── Отложенная отправка ──────────────────────────────────────────────────────
+#
+# Назначенное сообщение хранится на сервере целиком и уходит тем же путём, что
+# и живое: клиент к этому моменту может быть закрыт, а получатель ждёт обычного
+# сообщения с обычным уведомлением, а не особенного.
+
+SCHEDULE_TICK_SEC = 20.0
+SCHEDULE_MAX_AHEAD_DAYS = 365
+
+
+@router.post("/channels/{slug}/messages/schedule")
+async def schedule_message(slug: str, data: dict, username: str = Depends(get_current_user)):
+    """Назначить отправку сообщения на будущее."""
+    db = await get_db()
+    ch = await _get_channel_by_slug(db, slug, username)
+
+    send_at_raw = (data.get("send_at") or "").strip()
+    if not send_at_raw:
+        raise HTTPException(status_code=400, detail="Укажите время отправки")
+    try:
+        send_at = datetime.fromisoformat(send_at_raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Некорректное время отправки")
+    if send_at.tzinfo is None:
+        send_at = send_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    if send_at <= now:
+        raise HTTPException(status_code=400, detail="Это время уже прошло")
+    if send_at > now + timedelta(days=SCHEDULE_MAX_AHEAD_DAYS):
+        raise HTTPException(status_code=400, detail="Слишком далёкая дата")
+
+    text = (data.get("text") or "").strip()
+    msg_type = data.get("type", "text")
+    if not text and msg_type == "text":
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+
+    payload = {
+        "text": text,
+        "type": msg_type,
+        "reply_to": data.get("reply_to"),
+    }
+    if data.get("file"):
+        payload["file"] = data["file"]
+
+    sched_id = str(uuid.uuid4())
+    await db.execute(
+        "INSERT INTO scheduled_messages (id, channel_id, sender, payload, send_at, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (sched_id, ch["id"], username, json.dumps(payload, ensure_ascii=False),
+         send_at.isoformat(), now.isoformat()),
+    )
+    await db.commit()
+    return {"id": sched_id, "send_at": send_at.isoformat(), "status": "pending"}
+
+
+@router.get("/channels/{slug}/messages/scheduled")
+async def list_scheduled(slug: str, username: str = Depends(get_current_user)):
+    """Свои назначенные сообщения в этом канале, ближайшие сверху."""
+    db = await get_db()
+    ch = await _get_channel_by_slug(db, slug, username)
+    cursor = await db.execute(
+        "SELECT id, payload, send_at, created_at FROM scheduled_messages "
+        "WHERE channel_id = ? AND sender = ? AND status = 'pending' ORDER BY send_at",
+        (ch["id"], username),
+    )
+    out = []
+    for r in await cursor.fetchall():
+        payload = json.loads(r["payload"])
+        out.append({
+            "id": r["id"],
+            "send_at": r["send_at"],
+            "text": payload.get("text", ""),
+            "type": payload.get("type", "text"),
+            "file": payload.get("file"),
+        })
+    return out
+
+
+@router.delete("/messages/scheduled/{sched_id}")
+async def cancel_scheduled(sched_id: str, username: str = Depends(get_current_user)):
+    """Отменить назначенную отправку. Чужую отменить нельзя."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT sender, status FROM scheduled_messages WHERE id = ?", (sched_id,)
+    )
+    row = await cursor.fetchone()
+    if not row or row["sender"] != username:
+        raise HTTPException(status_code=404, detail="Отправка не найдена")
+    if row["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Это сообщение уже отправлено")
+    await db.execute("UPDATE scheduled_messages SET status = 'cancelled' WHERE id = ?", (sched_id,))
+    await db.commit()
+    return {"ok": True}
+
+
+async def send_due_scheduled() -> int:
+    """Отправить всё, чему настало время. Возвращает число отправленных.
+
+    Отметку «отправлено» ставим до самой отправки: если она упадёт на середине,
+    сообщение не должно уйти дважды при следующем тике. Потеря хуже дубля
+    ровно один раз, а дубль в переписке — навсегда.
+    """
+    db = await get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    cursor = await db.execute(
+        "SELECT * FROM scheduled_messages WHERE status = 'pending' AND send_at <= ? "
+        "ORDER BY send_at LIMIT 50",
+        (now,),
+    )
+    due = [dict(r) for r in await cursor.fetchall()]
+    sent = 0
+    for row in due:
+        await db.execute(
+            "UPDATE scheduled_messages SET status = 'sent', sent_at = ? WHERE id = ?",
+            (now, row["id"]),
+        )
+        await db.commit()
+        try:
+            cur = await db.execute("SELECT * FROM channels WHERE id = ?", (row["channel_id"],))
+            ch_row = await cur.fetchone()
+            if not ch_row:
+                raise RuntimeError("канал больше не существует")
+            # Отправитель мог за это время выйти из канала — тогда отправлять
+            # нечего и некуда: он больше не участник этого разговора.
+            cur = await db.execute(
+                "SELECT 1 FROM channel_members WHERE channel_id = ? AND username = ?",
+                (row["channel_id"], row["sender"]),
+            )
+            if not await cur.fetchone():
+                raise RuntimeError("отправитель больше не участник канала")
+
+            await deliver_message(db, dict(ch_row), row["sender"], json.loads(row["payload"]))
+            sent += 1
+        except Exception as e:
+            await db.execute(
+                "UPDATE scheduled_messages SET status = 'failed', last_error = ? WHERE id = ?",
+                (str(e)[:200], row["id"]),
+            )
+            await db.commit()
+            print(f"[schedule] {row['id']} не отправлено: {e}")
+    return sent
+
+
+async def run_schedule_loop() -> None:
+    """Фоновая задача — раз в двадцать секунд смотрит, не пора ли отправлять."""
+    while True:
+        try:
+            await asyncio.sleep(SCHEDULE_TICK_SEC)
+            await send_due_scheduled()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[schedule] loop error: {e}")
 
 
 @router.put("/channels/{slug}/messages/{msg_id}")

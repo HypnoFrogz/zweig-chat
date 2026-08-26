@@ -386,6 +386,13 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'msg.scheduleTitle': 'Отправить позже',
+        'msg.scheduleWhen': 'Когда отправить',
+        'msg.scheduleSubmit': 'Назначить',
+        'msg.scheduleEmpty': 'Напишите сообщение — и назначьте, когда его отправить.',
+        'msg.schedulePending': 'Уже назначены',
+        'msg.scheduleLoading': 'Загрузка…',
+        'msg.scheduled': 'Отправка назначена',
         'msg.deleteTitle': 'Удалить сообщение',
         'msg.deleteBody': 'Удалить у себя — сообщение исчезнет только из вашей переписки. У всех — исчезнет у каждого участника.',
         'msg.deleteForMe': 'У себя',
@@ -604,6 +611,13 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'msg.scheduleTitle': 'Send later',
+        'msg.scheduleWhen': 'When to send',
+        'msg.scheduleSubmit': 'Schedule',
+        'msg.scheduleEmpty': 'Write a message first, then choose when to send it.',
+        'msg.schedulePending': 'Already scheduled',
+        'msg.scheduleLoading': 'Loading…',
+        'msg.scheduled': 'Sending scheduled',
         'msg.deleteTitle': 'Delete message',
         'msg.deleteBody': 'For me — it disappears from your view only. For everyone — it disappears for every participant.',
         'msg.deleteForMe': 'For me',
@@ -2008,6 +2022,97 @@ async function confirmDeleteMessage(msgId, scope) {
     // менялся только от `message_deleted`, и при оборванном соединении нажатие
     // не давало вообще ничего — со стороны это и есть «удаление не работает».
     onMessageDeleted({ message_id: msgId });
+}
+
+// ── Отложенная отправка ───────────────────────────────────────
+// Назначенное живёт на сервере: браузер можно закрыть, сообщение всё равно
+// уйдёт вовремя и придёт получателю обычным, с обычным уведомлением.
+
+function scheduleDefaultValue() {
+    // Через час, в местном времени — datetime-local другого не понимает.
+    const d = new Date(Date.now() + 3600e3 - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+}
+
+async function showScheduleDialog() {
+    if (!currentChannel) return;
+    const input = document.getElementById('msg-input');
+    const text = (input.value || '').trim();
+    const ov = document.createElement('div');
+    ov.className = 'modal';
+    ov.id = 'schedule-modal';
+    ov.style.display = 'flex';
+    ov.innerHTML = `
+        <div class="modal-backdrop" onclick="closeScheduleDialog()"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <span class="modal-title">${esc(t('msg.scheduleTitle'))}</span>
+                <button class="btn-icon" onclick="closeScheduleDialog()"><span class="material-icons-round">close</span></button>
+            </div>
+            <div class="modal-body modal-body-col">
+                ${text ? `<div class="schedule-preview">${esc(text.slice(0, 200))}</div>`
+                       : `<p class="muted-text">${esc(t('msg.scheduleEmpty'))}</p>`}
+                <label class="muted-text">${esc(t('msg.scheduleWhen'))}
+                    <input type="datetime-local" id="schedule-at" value="${scheduleDefaultValue()}" style="width:100%">
+                </label>
+                <div id="schedule-list" class="muted-text">${esc(t('msg.scheduleLoading'))}</div>
+            </div>
+            <div class="modal-footer modal-footer-split">
+                <button class="btn-action" onclick="closeScheduleDialog()">${esc(t('msg.cancel'))}</button>
+                <button class="btn-action btn-accent" id="schedule-btn" onclick="submitSchedule()" ${text ? '' : 'disabled'}>${esc(t('msg.scheduleSubmit'))}</button>
+            </div>
+        </div>`;
+    document.body.appendChild(ov);
+    loadScheduled();
+}
+
+function closeScheduleDialog() {
+    const el = document.getElementById('schedule-modal');
+    if (el) el.remove();
+}
+
+async function loadScheduled() {
+    const box = document.getElementById('schedule-list');
+    if (!box || !currentChannel) return;
+    const res = await apiFetch(`/channels/${currentChannel.slug}/messages/scheduled`);
+    if (!res || !res.ok) { box.textContent = ''; return; }
+    const items = await res.json();
+    box.innerHTML = items.length
+        ? `<div class="schedule-title">${esc(t('msg.schedulePending'))}</div>` + items.map(it => `
+            <div class="schedule-row">
+                <span class="schedule-when">${esc(new Date(it.send_at).toLocaleString())}</span>
+                <span class="schedule-text">${esc((it.text || '').slice(0, 60)) || '—'}</span>
+                <button class="btn-icon-xs" title="${esc(t('msg.cancel'))}" onclick="cancelScheduled('${it.id}')"><span class="material-icons-round">close</span></button>
+            </div>`).join('')
+        : '';
+}
+
+async function submitSchedule() {
+    const input = document.getElementById('msg-input');
+    const text = (input.value || '').trim();
+    const at = document.getElementById('schedule-at').value;
+    if (!text || !at) return;
+    const btn = document.getElementById('schedule-btn');
+    if (btn) btn.disabled = true;
+    // datetime-local отдаёт местное время без зоны — переводим в момент, а не
+    // в строку, иначе сервер поймёт его как UTC и отправит не тогда.
+    const sendAt = new Date(at).toISOString();
+    const res = await apiFetch(`/channels/${currentChannel.slug}/messages/schedule`, {
+        method: 'POST',
+        body: { text, type: 'text', send_at: sendAt },
+    });
+    if (btn) btn.disabled = false;
+    if (!res || !res.ok) return;
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    showToast(t('msg.scheduled'), 'success');
+    loadScheduled();
+}
+
+async function cancelScheduled(id) {
+    const res = await apiFetch(`/messages/scheduled/${id}`, { method: 'DELETE' });
+    if (!res || !res.ok) return;
+    loadScheduled();
 }
 
 // ── Reply ──────────────────────────────────────────────────────

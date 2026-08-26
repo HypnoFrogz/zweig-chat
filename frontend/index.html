@@ -14,7 +14,7 @@
     <!-- Fonts are served from this server: a deployment in a closed network has
          no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=51">
+    <link rel="stylesheet" href="/style.css?v=52">
 </head>
 <body>
 
@@ -222,6 +222,9 @@
                     <input type="file" id="chat-file-input" hidden onchange="uploadChatFile(this.files)">
                     <button class="btn-icon" onclick="toggleEmojiPicker()" title="Emoji">
                         <span class="material-icons-round">mood</span>
+                    </button>
+                    <button class="btn-icon" onclick="showScheduleDialog()" title="Отправить позже" data-i18n-title="msg.scheduleTitle">
+                        <span class="material-icons-round">schedule</span>
                     </button>
                     <div class="msg-input-wrapper">
                         <textarea id="msg-input" class="msg-input" placeholder="Write a message..." rows="1" data-i18n-placeholder="msg.placeholder"></textarea>
@@ -1401,6 +1404,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=59"></script>
+<script src="/app.js?v=60"></script>
 </body>
 </html>

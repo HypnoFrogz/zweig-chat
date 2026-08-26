@@ -1167,6 +1167,15 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 }
 .member-check-item:hover { background: var(--msg-hover); }
 /* Пояснение в диалоге: почему выбор именно такой. */
+.schedule-preview {
+    padding: 8px 10px; border-radius: var(--radius-sm);
+    background: var(--bg2); border: 1px solid var(--border);
+    font-size: 13px; max-height: 90px; overflow: auto; white-space: pre-wrap;
+}
+.schedule-title { font-size: 12px; font-weight: 600; margin: 6px 0 4px; color: var(--text3); }
+.schedule-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; }
+.schedule-when { color: var(--text2); white-space: nowrap; }
+.schedule-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted-text { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text2); }
 .checkbox-row {
     display: flex; align-items: center; gap: 8px;

@@ -11,6 +11,7 @@ from fcm_sender import init_firebase
 from routes.auth import router as auth_router
 from routes.channels import router as channels_router
 from routes.messages import router as messages_router
+from routes import messages as messages_module
 from routes.admin import router as admin_router
 from routes.files import router as files_router
 from routes.videocall import router as videocall_router
@@ -36,8 +37,10 @@ async def lifespan(app: FastAPI):
     outbox_task = asyncio.create_task(federation.run_outbox_loop())
     # Обмен присутствием с соседями: биение раз в минуту и уборка протухшего.
     presence_task = asyncio.create_task(federation.run_presence_loop())
+    # Отложенные сообщения: раз в двадцать секунд проверяем, не пора ли.
+    schedule_task = asyncio.create_task(messages_module.run_schedule_loop())
     yield
-    for task in (cleanup_task, outbox_task, presence_task):
+    for task in (cleanup_task, outbox_task, presence_task, schedule_task):
         task.cancel()
         try:
             await task

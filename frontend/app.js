@@ -387,6 +387,8 @@ const I18N = {
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
         'msg.scheduleTitle': 'Отправить позже',
+        'msg.scheduleIn': 'через',
+        'msg.schedulePast': 'это время уже прошло',
         'msg.scheduleWhen': 'Когда отправить',
         'msg.scheduleSubmit': 'Назначить',
         'msg.scheduleEmpty': 'Напишите сообщение — и назначьте, когда его отправить.',
@@ -612,6 +614,8 @@ const I18N = {
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
         'msg.scheduleTitle': 'Send later',
+        'msg.scheduleIn': 'in',
+        'msg.schedulePast': 'that moment has passed',
         'msg.scheduleWhen': 'When to send',
         'msg.scheduleSubmit': 'Schedule',
         'msg.scheduleEmpty': 'Write a message first, then choose when to send it.',
@@ -1975,6 +1979,7 @@ async function saveEditMessage() {
 // Спросить, у кого удалять. «У всех» предлагается только тому, кому это
 // позволено, — своё сообщение или админ; чужое можно убрать лишь у себя.
 function deleteMessage(msgId) {
+    closeDeleteMsgModal();
     // Своё сообщение видно по разметке: загруженной ленты в переменной нет,
     // она живёт только в DOM.
     const row = document.querySelector(`.msg-row[data-id="${msgId}"]`);
@@ -2029,13 +2034,47 @@ async function confirmDeleteMessage(msgId, scope) {
 // уйдёт вовремя и придёт получателю обычным, с обычным уведомлением.
 
 function scheduleDefaultValue() {
-    // Через час, в местном времени — datetime-local другого не понимает.
-    const d = new Date(Date.now() + 3600e3 - new Date().getTimezoneOffset() * 60000);
+    // Через пять минут, в местном времени — datetime-local другого не понимает.
+    // Не через час: в поле правят обычно только минуты, и с часовым запасом
+    // «через пару минут» превращается в «через час с лишним», а человек узнаёт
+    // об этом, не дождавшись отправки.
+    const d = new Date(Date.now() + 5 * 60e3 - new Date().getTimezoneOffset() * 60000);
     return d.toISOString().slice(0, 16);
+}
+
+// Насколько это позже, чем сейчас. Подпись под полем ловит именно ту ошибку,
+// которую поле провоцирует: перепутанный час видно до нажатия, а не после.
+function scheduleDistanceText() {
+    const at = document.getElementById('schedule-at');
+    if (!at || !at.value) return '';
+    const diff = new Date(at.value).getTime() - Date.now();
+    if (Number.isNaN(diff)) return '';
+    if (diff <= 0) return t('msg.schedulePast');
+    const mins = Math.round(diff / 60000);
+    if (mins < 60) return `${t('msg.scheduleIn')} ${mins} ${plural(mins, 'минуту', 'минуты', 'минут')}`;
+    const hours = Math.round(diff / 3600000);
+    if (hours < 48) return `${t('msg.scheduleIn')} ${hours} ${plural(hours, 'час', 'часа', 'часов')}`;
+    const days = Math.round(diff / 86400000);
+    return `${t('msg.scheduleIn')} ${days} ${plural(days, 'день', 'дня', 'дней')}`;
+}
+
+function plural(n, one, few, many) {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+    return many;
+}
+
+function updateScheduleDistance() {
+    const el = document.getElementById('schedule-distance');
+    if (el) el.textContent = scheduleDistanceText();
 }
 
 async function showScheduleDialog() {
     if (!currentChannel) return;
+    // Второе окно поверх первого выглядит как одно, но правки уходят в
+    // невидимое: getElementById возвращает самый ранний экземпляр.
+    closeScheduleDialog();
     const input = document.getElementById('msg-input');
     const text = (input.value || '').trim();
     const ov = document.createElement('div');
@@ -2053,8 +2092,9 @@ async function showScheduleDialog() {
                 ${text ? `<div class="schedule-preview">${esc(text.slice(0, 200))}</div>`
                        : `<p class="muted-text">${esc(t('msg.scheduleEmpty'))}</p>`}
                 <label class="muted-text">${esc(t('msg.scheduleWhen'))}
-                    <input type="datetime-local" id="schedule-at" value="${scheduleDefaultValue()}" style="width:100%">
+                    <input type="datetime-local" id="schedule-at" value="${scheduleDefaultValue()}" style="width:100%" oninput="updateScheduleDistance()">
                 </label>
+                <div id="schedule-distance" class="schedule-distance"></div>
                 <div id="schedule-list" class="muted-text">${esc(t('msg.scheduleLoading'))}</div>
             </div>
             <div class="modal-footer modal-footer-split">
@@ -2063,6 +2103,7 @@ async function showScheduleDialog() {
             </div>
         </div>`;
     document.body.appendChild(ov);
+    updateScheduleDistance();
     loadScheduled();
 }
 

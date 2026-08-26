@@ -104,8 +104,12 @@ async def _count_unread(db, channel_id: str, username: str) -> int:
            AND NOT EXISTS (
                SELECT 1 FROM message_reads mr
                WHERE mr.message_id = m.id AND mr.username = ?
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM message_hidden mh
+               WHERE mh.message_id = m.id AND mh.username = ?
            )""",
-        (channel_id, username, since, username),
+        (channel_id, username, since, username, username),
     )
     row = await cursor.fetchone()
     return row[0]

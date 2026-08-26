@@ -386,6 +386,11 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'msg.deleteTitle': 'Удалить сообщение',
+        'msg.deleteBody': 'Удалить у себя — сообщение исчезнет только из вашей переписки. У всех — исчезнет у каждого участника.',
+        'msg.deleteForMe': 'У себя',
+        'msg.deleteForAll': 'У всех',
+        'msg.cancel': 'Отмена',
         'channel.shareHistory': 'Открыть доступ к прежней переписке',
         'channel.mute': 'Заглушить',
         'channel.unmute': 'Включить звук',
@@ -599,6 +604,11 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'msg.deleteTitle': 'Delete message',
+        'msg.deleteBody': 'For me — it disappears from your view only. For everyone — it disappears for every participant.',
+        'msg.deleteForMe': 'For me',
+        'msg.deleteForAll': 'For everyone',
+        'msg.cancel': 'Cancel',
         'channel.shareHistory': 'Give access to the earlier messages',
         'channel.mute': 'Mute',
         'channel.unmute': 'Unmute',
@@ -1715,10 +1725,10 @@ function renderMessages(messages, scroll = true, prepend = false) {
         actionBtns += `<button class="msg-action-btn" onclick="togglePin('${msg.id}')" title="${isPinned ? 'Unpin' : 'Pin'}"><span class="material-icons-round">${isPinned ? 'push_pin' : 'push_pin'}</span></button>`;
         if (isOwn) {
             actionBtns += `<button class="msg-action-btn" onclick="startEditMessage('${msg.id}')"><span class="material-icons-round">edit</span></button>`;
-            actionBtns += `<button class="msg-action-btn" onclick="deleteMessage('${msg.id}')"><span class="material-icons-round">delete</span></button>`;
-        } else if (userRole === 'admin') {
-            actionBtns += `<button class="msg-action-btn" onclick="deleteMessage('${msg.id}')"><span class="material-icons-round">delete</span></button>`;
         }
+        // Кнопка есть у любого сообщения: «у себя» доступно всем и никого не
+        // задевает, а «у всех» появится в окне только тому, кому положено.
+        actionBtns += `<button class="msg-action-btn" onclick="deleteMessage('${msg.id}')"><span class="material-icons-round">delete</span></button>`;
         const actions = `<div class="msg-actions">${actionBtns}</div>`;
 
         // Checkmarks for own messages
@@ -1948,9 +1958,46 @@ async function saveEditMessage() {
     autoResizeTextarea(input);
 }
 
-async function deleteMessage(msgId) {
+// Спросить, у кого удалять. «У всех» предлагается только тому, кому это
+// позволено, — своё сообщение или админ; чужое можно убрать лишь у себя.
+function deleteMessage(msgId) {
+    // Своё сообщение видно по разметке: загруженной ленты в переменной нет,
+    // она живёт только в DOM.
+    const row = document.querySelector(`.msg-row[data-id="${msgId}"]`);
+    const isOwn = !!row && row.classList.contains('msg-own');
+    const canDeleteForAll = isOwn || userRole === 'admin';
+    const ov = document.createElement('div');
+    ov.className = 'modal';
+    ov.id = 'delete-msg-modal';
+    ov.style.display = 'flex';
+    ov.innerHTML = `
+        <div class="modal-backdrop" onclick="closeDeleteMsgModal()"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <span class="modal-title">${esc(t('msg.deleteTitle'))}</span>
+                <button class="btn-icon" onclick="closeDeleteMsgModal()"><span class="material-icons-round">close</span></button>
+            </div>
+            <div class="modal-body"><p class="muted-text">${esc(t('msg.deleteBody'))}</p></div>
+            <div class="modal-footer modal-footer-split">
+                <button class="btn-action" onclick="closeDeleteMsgModal()">${esc(t('msg.cancel'))}</button>
+                <div class="modal-footer-side">
+                    <button class="btn-action" onclick="confirmDeleteMessage('${msgId}','me')">${esc(t('msg.deleteForMe'))}</button>
+                    ${canDeleteForAll ? `<button class="btn-action btn-danger" onclick="confirmDeleteMessage('${msgId}','all')">${esc(t('msg.deleteForAll'))}</button>` : ''}
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(ov);
+}
+
+function closeDeleteMsgModal() {
+    const el = document.getElementById('delete-msg-modal');
+    if (el) el.remove();
+}
+
+async function confirmDeleteMessage(msgId, scope) {
+    closeDeleteMsgModal();
     if (!currentChannel) return;
-    const res = await apiFetch(`/channels/${currentChannel.slug}/messages/${msgId}`, { method: 'DELETE' });
+    const res = await apiFetch(`/channels/${currentChannel.slug}/messages/${msgId}?scope=${scope}`, { method: 'DELETE' });
     if (!res) return;   // 401/403 уже объяснены пользователю словами сервера
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));

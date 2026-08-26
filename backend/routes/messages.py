@@ -115,20 +115,23 @@ async def get_messages(
             cursor = await db.execute(
                 """SELECT * FROM messages
                    WHERE channel_id = ? AND timestamp < ? AND timestamp > ?
+                     AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
                    ORDER BY timestamp DESC LIMIT ?""",
-                (ch["id"], before_row["timestamp"], since, limit),
+                (ch["id"], before_row["timestamp"], since, username, limit),
             )
         else:
             cursor = await db.execute(
                 """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
+                     AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
                    ORDER BY timestamp DESC LIMIT ?""",
-                (ch["id"], since, limit),
+                (ch["id"], since, username, limit),
             )
     else:
         cursor = await db.execute(
             """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
+                 AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
                ORDER BY timestamp DESC LIMIT ?""",
-            (ch["id"], since, limit),
+            (ch["id"], since, username, limit),
         )
 
     rows = list(reversed(await cursor.fetchall()))
@@ -307,7 +310,18 @@ async def edit_message(slug: str, msg_id: str, data: dict, username: str = Depen
 
 
 @router.delete("/channels/{slug}/messages/{msg_id}")
-async def delete_message(slug: str, msg_id: str, username: str = Depends(get_current_user)):
+async def delete_message(
+    slug: str,
+    msg_id: str,
+    scope: str = Query("all"),
+    username: str = Depends(get_current_user),
+):
+    """Удалить сообщение — у всех или только у себя.
+
+    `scope=me` не трогает чужие экраны: сообщение просто перестаёт
+    показываться тому, кто его спрятал. Права на это не нужны никакие — речь
+    о своей же ленте, а не о чужой переписке.
+    """
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
 
@@ -317,6 +331,22 @@ async def delete_message(slug: str, msg_id: str, username: str = Depends(get_cur
     msg_row = await cursor.fetchone()
     if not msg_row:
         raise HTTPException(status_code=404, detail="Message not found")
+
+    if scope == "me":
+        await db.execute(
+            "INSERT OR IGNORE INTO message_hidden (message_id, username, hidden_at) VALUES (?,?,?)",
+            (msg_id, username, now_iso()),
+        )
+        await db.commit()
+        # Событие — только себе: у остальных ничего не изменилось. Клиенты
+        # обрабатывают его давно, поэтому сообщение исчезает и на телефоне.
+        await manager.send_to_user(username, {
+            "event": "message_deleted",
+            "channel_id": ch["id"],
+            "message_id": msg_id,
+            "scope": "me",
+        })
+        return {"ok": True, "scope": "me"}
 
     # Can delete own messages, or admin can delete any
     if msg_row["sender"] != username:
@@ -412,6 +442,7 @@ async def search_messages(
            JOIN channel_members cm ON cm.channel_id = c.id AND cm.username = ?
            WHERE LOWER(m.text) LIKE LOWER(?)
              AND m.timestamp > MAX(cm.cleared_at, cm.history_from)
+             AND m.id NOT IN (SELECT message_id FROM message_hidden WHERE username = cm.username)
            ORDER BY m.timestamp DESC LIMIT ?""",
         (username, f"%{q}%", limit),
     )
@@ -842,8 +873,9 @@ async def get_pinned_messages(slug: str, username: str = Depends(get_current_use
     since = await visible_from(db, ch["id"], username)
     cursor = await db.execute(
         "SELECT * FROM messages WHERE channel_id = ? AND is_pinned = 1 AND timestamp > ? "
+        "AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?) "
         "ORDER BY pinned_at ASC",
-        (ch["id"], since),
+        (ch["id"], since, username),
     )
     rows = await cursor.fetchall()
     return [await _build_message(db, r) for r in rows]

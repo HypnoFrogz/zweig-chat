@@ -103,10 +103,10 @@ async def get_messages(
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
 
-    # Everything up to the moment this user deleted the chat for themselves
-    # stays hidden from them — the other side is unaffected.
-    from routes.channels import cleared_at
-    since = await cleared_at(db, ch["id"], username)
+    # Граница видимости: либо человек сам удалил у себя чат, либо его добавили
+    # без доступа к истории. Раньше здесь учитывалось только первое.
+    from routes.channels import visible_from
+    since = await visible_from(db, ch["id"], username)
 
     if before:
         bc = await db.execute("SELECT timestamp FROM messages WHERE id = ?", (before,))
@@ -403,10 +403,15 @@ async def search_messages(
     """Search messages across all user's channels."""
     db = await get_db()
     cursor = await db.execute(
+        # Поиск обязан уважать те же границы, что и лента: иначе он показывает
+        # то, что человеку решили не показывать — и удалённое им самим, и
+        # историю канала, куда его добавили без неё. MAX двух пустых строк
+        # даёт пустую, а её любой момент времени больше.
         """SELECT m.*, c.slug as channel_slug, c.name as channel_name FROM messages m
            JOIN channels c ON c.id = m.channel_id
            JOIN channel_members cm ON cm.channel_id = c.id AND cm.username = ?
            WHERE LOWER(m.text) LIKE LOWER(?)
+             AND m.timestamp > MAX(cm.cleared_at, cm.history_from)
            ORDER BY m.timestamp DESC LIMIT ?""",
         (username, f"%{q}%", limit),
     )
@@ -832,9 +837,13 @@ async def get_thread(
 async def get_pinned_messages(slug: str, username: str = Depends(get_current_user)):
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
+    from routes.channels import visible_from
+
+    since = await visible_from(db, ch["id"], username)
     cursor = await db.execute(
-        "SELECT * FROM messages WHERE channel_id = ? AND is_pinned = 1 ORDER BY pinned_at ASC",
-        (ch["id"],),
+        "SELECT * FROM messages WHERE channel_id = ? AND is_pinned = 1 AND timestamp > ? "
+        "ORDER BY pinned_at ASC",
+        (ch["id"], since),
     )
     rows = await cursor.fetchall()
     return [await _build_message(db, r) for r in rows]

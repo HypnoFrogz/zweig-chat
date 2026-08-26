@@ -394,6 +394,15 @@ TABLES = [
     #
     # id is "<message_id>:<domain>" — one row per message per destination, so
     # re-queueing the same message is a no-op and retries cannot fan out.
+    # Сообщение, удалённое одним человеком у себя. Строка вместо колонки:
+    # у одного сообщения таких людей может быть сколько угодно, а у большинства
+    # сообщений — ни одного.
+    """CREATE TABLE IF NOT EXISTS message_hidden (
+        message_id TEXT NOT NULL,
+        username   TEXT NOT NULL,
+        hidden_at  TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (message_id, username)
+    )""",
     """CREATE TABLE IF NOT EXISTS federation_outbox (
         id           TEXT PRIMARY KEY,
         domain       TEXT NOT NULL,
@@ -425,6 +434,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_user_sessions_revoked ON user_sessions(revoked_at)",
     "CREATE INDEX IF NOT EXISTS idx_federation_invites_owner ON federation_invites(owner)",
     "CREATE INDEX IF NOT EXISTS idx_federation_outbox_pending ON federation_outbox(delivered_at, next_attempt)",
+    "CREATE INDEX IF NOT EXISTS idx_message_hidden_user ON message_hidden(username)",
     # ChaosTracker indexes
     "CREATE INDEX IF NOT EXISTS idx_task_project_members ON task_project_members(username)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status)",

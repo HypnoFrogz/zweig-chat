@@ -558,15 +558,24 @@ async def leave_channel(slug: str, username: str = Depends(get_current_user)):
     )
     await db.commit()
 
+    # Соседям нужно знать новый состав: у них своя копия канала, и без этого
+    # ушедший остаётся в ней навсегда — вместе с рассылкой сообщений ему.
+    from routes.federation import sync_channel_to_peers
+    await sync_channel_to_peers(db, ch["id"])
+
     display_name = await get_display_name(username)
     members = await _get_members(db, ch["id"])
-    await manager.send_to_channel(members, {
+    event = {
         "event": "member_left",
         "channel_id": ch["id"],
         "slug": slug,
         "username": username,
         "display_name": display_name,
-    })
+    }
+    await manager.send_to_channel(members, event)
+    # И самому ушедшему: он уже не в составе, значит рассылка по участникам его
+    # не застанет, а его остальные устройства всё ещё показывают этот канал.
+    await manager.send_to_user(username, event)
     return {"ok": True}
 
 

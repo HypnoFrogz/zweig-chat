@@ -854,6 +854,13 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
         for domain in domains:
             # Each peer is addressed in its own names: their own people by bare
             # username, everyone else qualified by the domain they live on.
+            roster = [
+                {
+                    "username": r["remote_username"] or r["username"],
+                    "home_server": r["home_server"] or SERVER_DOMAIN,
+                }
+                for r in rows
+            ]
             members = []
             for r in rows:
                 if r["home_server"] == domain:
@@ -874,6 +881,11 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
                     "description": ch["description"] or "",
                     "created_by": ch["created_by"] or "",
                     "members": members,
+                    # Полный состав, включая людей самого соседа. По нему он
+                    # может не только добавить недостающих, но и убрать ушедших:
+                    # `members` для этого не годится — там нет его собственных
+                    # пользователей, и «отсутствует» неотличимо от «не про него».
+                    "roster": roster,
                 }
                 # Путь именно с /api: _peer_url ничего не подставляет, а без
                 # префикса запрос уходит в nginx на статику — тот отвечает
@@ -1274,6 +1286,34 @@ async def federation_channel_sync(data: dict, peer: str = Depends(require_peer))
             "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?,?,'member',?)",
             (channel_id, uid, now),
         )
+
+    # Кого в составе больше нет — убрать. Без этого ушедший остаётся в зеркале
+    # навсегда, и мы продолжаем слать ему сообщения. Владелец канала присылает
+    # полный список; сосед постарше его не пришлёт — тогда ничего не удаляем,
+    # это безопаснее, чем вычистить канал по недоразумению.
+    roster = data.get("roster")
+    if isinstance(roster, list) and roster:
+        keep = {for_user}
+        for m in roster:
+            bare = (m.get("username") or "").strip().lower()
+            home = _normalize_domain(m.get("home_server") or peer)
+            if not bare:
+                continue
+            keep.add(bare if home == SERVER_DOMAIN else remote_id(home, bare))
+        cur = await db.execute(
+            "SELECT username FROM channel_members WHERE channel_id = ?", (channel_id,)
+        )
+        gone = [r["username"] for r in await cur.fetchall() if r["username"] not in keep]
+        for username_gone in gone:
+            await db.execute(
+                "DELETE FROM channel_members WHERE channel_id = ? AND username = ?",
+                (channel_id, username_gone),
+            )
+            await manager.send_to_user(username_gone, {
+                "event": "member_left",
+                "channel_id": channel_id,
+                "username": username_gone,
+            })
     await db.commit()
 
     # Same shape the local paths use — clients key off "event" and expect the

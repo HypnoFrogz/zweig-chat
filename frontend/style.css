@@ -1172,6 +1172,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     background: var(--bg2); border: 1px solid var(--border);
     font-size: 13px; max-height: 90px; overflow: auto; white-space: pre-wrap;
 }
+.schedule-distance { font-size: 12px; color: var(--accent); min-height: 16px; }
 .schedule-title { font-size: 12px; font-weight: 600; margin: 6px 0 4px; color: var(--text3); }
 .schedule-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; }
 .schedule-when { color: var(--text2); white-space: nowrap; }

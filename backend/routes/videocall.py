@@ -727,13 +727,24 @@ async def invite_to_call(data: dict, username: str = Depends(get_current_user)):
         return {"error": "Channel not found"}
     ch = dict(ch_row)
 
-    # Check active call exists
-    cursor = await db.execute("SELECT * FROM active_calls WHERE channel_id = ?", (ch["id"],))
+    # Комната берётся из идущего звонка — общего по каналу либо адресного, в
+    # котором мы сейчас участвуем. Второй случай и есть «позвать третьего в
+    # разговор на двоих»: у адресного звонка своя строка и своя комната, в
+    # active_calls его никогда не было.
+    cursor = await db.execute("SELECT room_name FROM active_calls WHERE channel_id = ?", (ch["id"],))
     call_row = await cursor.fetchone()
-    if not call_row:
-        return {"error": "No active call in this channel"}
-
-    room_name = call_row["room_name"]
+    if call_row:
+        room_name = call_row["room_name"]
+    else:
+        cursor = await db.execute(
+            "SELECT room_name FROM calls WHERE channel_id = ? AND status = 'active' "
+            "AND ? IN (caller_username, callee_username) ORDER BY created_at DESC LIMIT 1",
+            (ch["id"], username),
+        )
+        call_row = await cursor.fetchone()
+        if not call_row:
+            raise HTTPException(status_code=409, detail="В этом чате сейчас нет идущего звонка")
+        room_name = call_row["room_name"]
     display_name = await get_display_name(username)
 
     from routes.federation import remote_peer_of, push_call_event

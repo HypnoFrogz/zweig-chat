@@ -57,6 +57,7 @@ let ws = null;
 let wsReconnectTimer = null;
 let livekitRoom = null;
 let activeCallId = null;
+let groupCallSlug = '';   // канал общего звонка: у него нет call_id, а завершать его нужно по каналу
 let incomingCallData = null;
 let incomingCallTimeoutTimer = null;
 // ── Push Notifications (Web Push / PWA) ──────────────────────────────────────
@@ -385,6 +386,8 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'call.invited': 'Приглашено',
+        'call.unreachable': 'не доставлено',
         'channel.resync': 'Синхронизировать',
         'channel.federation': 'Федерация',
         'channel.resyncHint': 'Разослать состав серверам участников, если канал у них не появился.',
@@ -591,6 +594,8 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'call.invited': 'Invited',
+        'call.unreachable': 'undelivered',
         'channel.resync': 'Sync',
         'channel.federation': 'Federation',
         'channel.resyncHint': 'Send the member list to the members\u2019 servers \u2014 if the channel never showed up there.',
@@ -3351,10 +3356,11 @@ let callParticipants = new Map(); // identity → { name, isMuted, hasVideo }
 async function startVideoCall() {
     if (!currentChannel) return;
     if (livekitRoom) { showToast(t('call.alreadyInCall'), 'error'); return; }
-    if (currentChannel.type !== 'direct') {
-        showToast('Адресный звонок доступен только в личном чате', 'error');
-        return;
-    }
+    // В группе звонок общий: он не адресован никому конкретно, участники
+    // подключаются сами. Адресная модель хороша для двоих и на группу не
+    // ложится — звонить пятерым по очереди никто не станет.
+    if (currentChannel.type !== 'direct') return startGroupCall();
+
     const members = currentChannel.members || [];
     const callee = members.find(m => m !== currentUser);
     if (!callee) {
@@ -3382,6 +3388,20 @@ async function startVideoCall() {
     activeCallId = data.call_id || null;
     await joinLivekitRoom(data.livekit_token, data.room_name, data.livekit_url);
 }
+// Общий звонок в канале. Комната одна на канал, сервер сам рассылает всем
+// участникам приглашение с их личными токенами.
+async function startGroupCall() {
+    const res = await apiFetch('/videocall/start', {
+        method: 'POST',
+        body: { channel_slug: currentChannel.slug },
+    });
+    if (!res || !res.ok) { showToast(t('call.connectionFailed'), 'error'); return; }
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
+    groupCallSlug = currentChannel.slug;
+    await joinLivekitRoom(data.token, data.room_name, data.url);
+}
+
 async function checkActiveCall() {
     if (!currentChannel) return;
     const res = await apiFetch(`/channels/${currentChannel.slug}/call`);
@@ -3395,11 +3415,25 @@ async function joinActiveCall() {
     const joinBtn = document.getElementById('btn-call-join');
     if (joinBtn.dataset.token && joinBtn.dataset.room) {
         if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
+        groupCallSlug = joinBtn.dataset.slug || (currentChannel ? currentChannel.slug : '');
         await joinLivekitRoom(joinBtn.dataset.token, joinBtn.dataset.room, joinBtn.dataset.url);
     }
 }
 function onCallStarted(data) {
     const caller = data.caller_username || data.started_by;
+    // Кнопка «Вступить» показывалась только при открытии канала: у того, кто
+    // уже сидел в чате, звонок начинался незаметно. Показываем сразу, как
+    // только он начался, — и тем, кто в этот момент занят другим звонком.
+    if (data.room_name && data.livekit_token && currentChannel && data.channel_slug === currentChannel.slug) {
+        const joinBtn = document.getElementById('btn-call-join');
+        if (joinBtn) {
+            joinBtn.style.display = '';
+            joinBtn.dataset.token = data.livekit_token;
+            joinBtn.dataset.room = data.room_name;
+            joinBtn.dataset.url = data.livekit_url || '';
+            joinBtn.dataset.slug = data.channel_slug || '';
+        }
+    }
     if (caller === currentUser || livekitRoom) return;
     setIncomingCallData(data);
 }
@@ -3441,7 +3475,10 @@ function onCallMediaUpdated(data) {
 }
 async function acceptIncomingCall() {
     if (!incomingCallData) return;
-    const callId = incomingCallData.call_id;
+    // Запоминаем приглашение целиком: clearIncomingCallUI обнуляет его, а
+    // общему звонку нужны и комната, и токен, а не только call_id.
+    const pending = incomingCallData;
+    const callId = pending.call_id;
     clearIncomingCallUI();
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
     if (callId) {
@@ -3460,6 +3497,13 @@ async function acceptIncomingCall() {
         } catch (e) {
             showToast('Ошибка сети при принятии звонка', 'error');
         }
+    } else if (pending.room_name && pending.livekit_token) {
+        // Общий звонок в канале: строки в `calls` у него нет, отвечать серверу
+        // нечем и незачем — токен и комната уже присланы, входим прямо в неё.
+        // Раньше эта ветка отсутствовала, и «Ответить» в группе отвечало
+        // «Некорректные данные входящего звонка».
+        groupCallSlug = pending.channel_slug || '';
+        await joinLivekitRoom(pending.livekit_token, pending.room_name, pending.livekit_url);
     } else {
         showToast('Некорректные данные входящего звонка', 'error');
     }
@@ -3775,19 +3819,28 @@ async function toggleCamera() {
 // Tells the server the call is over. A no-op when there is nothing to end, and
 // never throws: a failed request must not stop the local teardown, or the UI is
 // left showing a call that no longer exists.
+// Сказать серверу, что звонок окончен. Адресный завершается по своему id,
+// общий — по каналу: строки в `calls` у него нет, и без этой ветки групповой
+// звонок оставался «идущим» для всех, кто в нём не был. Никогда не бросает
+// исключений: неудача здесь не должна мешать закрыть звонок у себя.
 async function hangUpOnServer() {
-    if (!activeCallId) return;
     try {
-        await apiFetch('/calls/end', { method: 'POST', body: { call_id: activeCallId } });
+        if (activeCallId) {
+            await apiFetch('/calls/end', { method: 'POST', body: { call_id: activeCallId } });
+        } else if (groupCallSlug) {
+            await apiFetch('/videocall/end', {
+                method: 'POST',
+                body: { channel_slug: groupCallSlug, room_name: livekitRoom ? livekitRoom.name : '' },
+            });
+        }
     } catch (err) {
-        console.warn('Could not tell the server the call ended:', err);
+        console.warn('Не удалось сообщить серверу о завершении звонка:', err);
     }
 }
 
 async function endCall() {
-    // Deliberately not requiring livekitRoom: the call must be cancellable
-    // while it is still ringing, which is exactly when the media room may not
-    // be up yet.
+    // Не требуем livekitRoom: звонок должен отменяться и пока он только звонит,
+    // то есть ровно тогда, когда комнаты ещё нет.
     await hangUpOnServer();
     closeCall();
 }
@@ -3796,6 +3849,7 @@ let callStartTime = null;
 
 function closeCall() {
     activeCallId = null;
+    groupCallSlug = '';
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
     // Hide call panel and banner
     const panel = document.getElementById('call-panel');
@@ -3863,28 +3917,17 @@ function startCallTimer() {
 async function showInviteToCall() {
     if (!currentChannel || !livekitRoom) return;
 
-    // Load channel members if not cached
-    if (!currentChannel.member_details || !currentChannel.member_details.length) {
-        const res = await apiFetch(`/channels/${currentChannel.slug}/members`);
-        if (res && res.ok) currentChannel.member_details = await res.json();
-    }
-    const members = currentChannel.member_details || [];
+    // Кто уже в комнате — тех предлагать незачем.
+    const inCall = [livekitRoom.localParticipant.identity];
+    livekitRoom.remoteParticipants.forEach(p => inCall.push(p.identity));
 
-    // Get identities of users already in the call
-    const inCall = new Set();
-    inCall.add(livekitRoom.localParticipant.identity);
-    livekitRoom.remoteParticipants.forEach(p => inCall.add(p.identity));
-
-    // Render member list (excluding those already in call)
+    // Звать можно не только участников канала: в разговоре на двоих их всего
+    // двое, и «добавить третьего» иначе не сделать вовсе.
     const list = document.getElementById('invite-call-list');
-    const available = members.filter(m => !inCall.has(m.username));
-    if (available.length === 0) {
-        list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text3)">All members are already in the call</div>';
-    } else {
-        list.innerHTML = available.map(m =>
-            `<label class="member-check-item" data-username="${m.username}" data-name="${(m.display_name||'').toLowerCase()} ${(m.nickname||'').toLowerCase()}"><input type="checkbox" value="${m.username}"> ${esc(m.display_name)} (@${m.username})</label>`
-        ).join('');
-    }
+    const available = pickerCandidates(inCall);
+    list.innerHTML = available.length
+        ? available.map(pickerRow).join('')
+        : `<div style="padding:16px;text-align:center;color:var(--text3)">${esc(t('fed.none'))}</div>`;
 
     document.getElementById('invite-call-search').value = '';
     document.getElementById('invite-call-modal').style.display = 'flex';
@@ -3901,7 +3944,24 @@ function filterInviteCallList(query) {
     });
 }
 async function sendCallInvites() {
-    showToast('Адресный режим: приглашение участников отключено', 'error');
+    const picked = Array.from(document.querySelectorAll('#invite-call-list input:checked')).map(c => c.value);
+    if (!picked.length) { closeInviteCallModal(); return; }
+    const slug = groupCallSlug || (currentChannel ? currentChannel.slug : '');
+    if (!slug) { showToast(t('toast.error'), 'error'); return; }
+    const res = await apiFetch('/videocall/invite', {
+        method: 'POST',
+        body: { channel_slug: slug, usernames: picked },
+    });
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
+    closeInviteCallModal();
+    const missed = (data.unreachable || []).length;
+    showToast(
+        missed ? `${t('call.invited')}: ${data.invited}, ${t('call.unreachable')}: ${missed}`
+               : `${t('call.invited')}: ${data.invited}`,
+        missed ? 'error' : 'success',
+    );
 }
 
 // ── Ringtone ───────────────────────────────────────────────────

@@ -1740,10 +1740,14 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     # приложений, веб-пуш запасным. Раньше здесь был только веб-пуш, и на
     # телефон межсерверное сообщение не приходило вовсе.
     from fcm_sender import send_message_notification
+    from routes.channels import is_muted
     from routes.push import send_push_to_user
+
     body = (text or "")[:100] or (att.get("name") if att else "") or "Новое сообщение"
     title = (ch["name"] if ch and ch["name"] else display)
     delivered = False
+    if await is_muted(db, channel_id, to_user):
+        return {"ok": True, "muted": True}
     if not manager.has_mobile(to_user):
         delivered = await send_message_notification(
             recipient=to_user,

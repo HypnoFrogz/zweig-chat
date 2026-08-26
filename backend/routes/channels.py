@@ -3,6 +3,7 @@
 import uuid
 import os
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from helpers import get_current_user, get_display_name, slugify, now_iso
@@ -51,6 +52,32 @@ async def cleared_at(db, channel_id: str, username: str) -> str:
     return (row["cleared_at"] if row else "") or ""
 
 
+MUTE_FOREVER = "9999-12-31T00:00:00+00:00"
+
+
+async def muted_until(db, channel_id: str, username: str) -> str:
+    """До какого момента беседа молчит для этого человека ('' — не молчит)."""
+    cursor = await db.execute(
+        "SELECT muted_until FROM channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, username),
+    )
+    row = await cursor.fetchone()
+    return (row["muted_until"] if row else "") or ""
+
+
+async def is_muted(db, channel_id: str, username: str) -> bool:
+    """Молчит ли беседа прямо сейчас.
+
+    Отдельная функция, потому что спрашивают её из трёх разных мест перед
+    каждым уведомлением: заглушённая беседа не должна звенеть ни своим
+    сообщением, ни пришедшим с соседнего сервера, ни пропущенным звонком.
+    """
+    until = await muted_until(db, channel_id, username)
+    if not until:
+        return False
+    return until > now_iso()
+
+
 async def _count_unread(db, channel_id: str, username: str) -> int:
     since = await cleared_at(db, channel_id, username)
     cursor = await db.execute(
@@ -75,6 +102,7 @@ async def _build_channel(db, row, username: str) -> dict:
     # back to showing the raw login.
     c["member_details"] = await _get_member_details(db, c["id"])
     c["unread_count"] = await _count_unread(db, c["id"], username)
+    c["muted_until"] = await muted_until(db, c["id"], username)
     if c.get("last_msg_text") is not None:
         c["last_message"] = {
             "text": c["last_msg_text"],
@@ -508,6 +536,59 @@ async def join_channel(slug: str, username: str = Depends(get_current_user)):
 
     c2 = await db.execute("SELECT * FROM channels WHERE id = ?", (ch["id"],))
     return await _build_channel(db, await c2.fetchone(), username)
+
+
+@router.post("/channels/{slug}/mute")
+async def mute_channel(slug: str, data: dict | None = None, username: str = Depends(get_current_user)):
+    """Заглушить беседу для себя.
+
+    `hours` — на сколько; пусто означает «пока не включу обратно». Тишина
+    касается только уведомлений: непрочитанные считаются по-прежнему, и в
+    списке беседа остаётся на своём месте. Человек не отказывается от
+    переписки, он отказывается от звона.
+    """
+    db = await get_db()
+    from routes.messages import _get_channel_by_slug
+
+    ch = await _get_channel_by_slug(db, slug, username)
+
+    hours = (data or {}).get("hours")
+    if hours in (None, "", 0):
+        until = MUTE_FOREVER
+    else:
+        try:
+            until = (datetime.now(timezone.utc) + timedelta(hours=float(hours))).isoformat()
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="hours: число часов или пусто")
+
+    await db.execute(
+        "UPDATE channel_members SET muted_until = ? WHERE channel_id = ? AND username = ?",
+        (until, ch["id"], username),
+    )
+    await db.commit()
+    # Другим своим устройствам — чтобы список выглядел одинаково везде.
+    await manager.send_to_user(username, {
+        "event": "channel_muted", "channel_id": ch["id"], "slug": slug, "muted_until": until,
+    })
+    return {"ok": True, "muted_until": until}
+
+
+@router.delete("/channels/{slug}/mute")
+async def unmute_channel(slug: str, username: str = Depends(get_current_user)):
+    """Вернуть звук."""
+    db = await get_db()
+    from routes.messages import _get_channel_by_slug
+
+    ch = await _get_channel_by_slug(db, slug, username)
+    await db.execute(
+        "UPDATE channel_members SET muted_until = '' WHERE channel_id = ? AND username = ?",
+        (ch["id"], username),
+    )
+    await db.commit()
+    await manager.send_to_user(username, {
+        "event": "channel_muted", "channel_id": ch["id"], "slug": slug, "muted_until": "",
+    })
+    return {"ok": True}
 
 
 @router.post("/channels/{slug}/clear")

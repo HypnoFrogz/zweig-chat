@@ -212,7 +212,11 @@ async def record_missed_call(db, call: dict) -> None:
         # Уведомление тем же путём, что и у сообщения: приложение покажет его
         # как обычное, ничего не зная про звонки.
         from fcm_sender import send_message_notification
+        from routes.channels import is_muted
         from routes.push import send_push_to_user
+
+        if await is_muted(db, call["channel_id"], callee):
+            return  # запись в переписке осталась, звенеть не о чем
 
         delivered = False
         if not manager.has_mobile(callee):

@@ -510,6 +510,16 @@ async def init_db():
         await db.execute("ALTER TABLE channel_members ADD COLUMN cleared_at TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: беззвучные беседы ----------
+    # Пусто — звук включён. Иначе момент, до которого беседа молчит; «навсегда»
+    # это просто очень далёкая дата, чтобы не заводить отдельного признака и не
+    # разбирать его во всех местах, где проверяется тишина.
+    pragma_mute = await db.execute("PRAGMA table_info(channel_members)")
+    mute_cols = [r[1] for r in await pragma_mute.fetchall()]
+    if "muted_until" not in mute_cols:
+        await db.execute("ALTER TABLE channel_members ADD COLUMN muted_until TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
     # ---------- Migration: federated call columns ----------
     # A call room lives on exactly one server, because its LiveKit token is
     # signed with that server's secret. The other side cannot mint a token, so

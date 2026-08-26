@@ -1122,6 +1122,96 @@ async def push_profile_to_peers(db, username: str) -> None:
         print(f"[federation] push_profile_to_peers failed: {e}")
 
 
+async def queue_message_delete_for_peers(db, channel_id: str, message_id: str) -> None:
+    """Сказать соседям, что сообщение удалено. Никогда не бросает исключений.
+
+    Через ту же очередь, что и сами сообщения: сосед может быть недоступен, а
+    удаление, потерянное из-за минутной сетевой заминки, оставляет у него
+    сообщение навсегда — и хозяин уверен, что стёр его.
+    """
+    if not SERVER_DOMAIN or not message_id:
+        return
+    try:
+        cur = await db.execute(
+            "SELECT DISTINCT u.home_server AS domain FROM channel_members cm "
+            "JOIN users u ON u.username = cm.username "
+            "WHERE cm.channel_id = ? AND u.home_server != ''",
+            (channel_id,),
+        )
+        domains = [r["domain"] for r in await cur.fetchall()]
+        if not domains:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        for domain in domains:
+            await db.execute(
+                "INSERT OR IGNORE INTO federation_outbox "
+                "(id, domain, path, channel_id, payload, attempts, next_attempt, created_at) "
+                "VALUES (?,?,?,?,?,0,?,?)",
+                (
+                    f"del:{message_id}:{domain}",
+                    domain,
+                    "/api/federation/message/delete",
+                    channel_id,
+                    json.dumps({"message_id": message_id}, ensure_ascii=False),
+                    now,
+                    now,
+                ),
+            )
+        await db.commit()
+        asyncio.create_task(_flush_soon())
+    except Exception as e:
+        print(f"[federation] queueing delete for {message_id} failed: {e}")
+
+
+@router.post("/federation/message/delete")
+async def federation_message_delete(data: dict, peer: str = Depends(require_peer)):
+    """Сосед сообщает, что сообщение удалено у него.
+
+    Удаляем только там, где этот сосед участвует в разговоре: id сообщения
+    путешествует вместе с ним и секретом не является, так что без проверки
+    сосед мог бы стирать что угодно, назвав чужой id.
+
+    Отсутствие сообщения — не ошибка: до нас оно могло и не доехать, а
+    доставка повторяется до успеха, и вечно повторять её незачем.
+    """
+    message_id = (data.get("message_id") or "").strip()
+    if not message_id:
+        raise HTTPException(status_code=400, detail="message_id обязателен")
+
+    db = await get_db()
+    cur = await db.execute("SELECT channel_id FROM messages WHERE id = ?", (message_id,))
+    row = await cur.fetchone()
+    if not row:
+        return {"ok": True, "missing": True}
+    channel_id = row["channel_id"]
+
+    cur = await db.execute(
+        "SELECT 1 FROM channel_members cm JOIN users u ON u.username = cm.username "
+        "WHERE cm.channel_id = ? AND u.home_server = ? LIMIT 1",
+        (channel_id, peer),
+    )
+    participates = await cur.fetchone()
+    if not participates:
+        cur = await db.execute("SELECT home_server FROM channels WHERE id = ?", (channel_id,))
+        ch = await cur.fetchone()
+        participates = bool(ch) and (ch["home_server"] or "") == peer
+    if not participates:
+        raise HTTPException(status_code=403, detail="Этот разговор не ваш")
+
+    await db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+    await db.commit()
+
+    from routes.messages import _get_members
+
+    members = await _get_members(db, channel_id)
+    await manager.send_to_channel(members, {
+        "event": "message_deleted",
+        "channel_id": channel_id,
+        "message_id": message_id,
+    })
+    return {"ok": True}
+
+
 async def _rearm_channel_outbox(db, domain: str, channel_id: str) -> None:
     """Вернуть в очередь сообщения, отвергнутые до появления зеркала канала.
 

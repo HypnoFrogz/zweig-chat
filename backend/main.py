@@ -34,8 +34,10 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(videocall.run_calls_cleanup_loop())
     # Retries queued server-to-server messages (no-op without SERVER_DOMAIN).
     outbox_task = asyncio.create_task(federation.run_outbox_loop())
+    # Обмен присутствием с соседями: биение раз в минуту и уборка протухшего.
+    presence_task = asyncio.create_task(federation.run_presence_loop())
     yield
-    for task in (cleanup_task, outbox_task):
+    for task in (cleanup_task, outbox_task, presence_task):
         task.cancel()
         try:
             await task

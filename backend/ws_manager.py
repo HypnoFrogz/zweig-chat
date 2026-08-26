@@ -66,11 +66,26 @@ class ConnectionManager:
         )
 
     async def broadcast_presence(self, username: str, online: bool):
+        await self.broadcast_presence_value(
+            username, online=online, last_seen=self.last_seen.get(username, "")
+        )
+        # Соседям по федерации — тем из них, с кем у этого человека общий
+        # разговор. Импорт внутри: federation тянет ws_manager, и наверху это
+        # был бы круг.
+        try:
+            from routes.federation import push_presence_to_peers
+
+            await push_presence_to_peers(username, online)
+        except Exception as e:  # noqa: BLE001 — присутствие не повод падать
+            print(f"[ws] presence to peers failed: {e}")
+
+    async def broadcast_presence_value(self, username: str, online: bool, last_seen: str = ""):
+        """Разослать своим клиентам чей-то статус — свой он или с чужого сервера."""
         data = {
             "event": "presence",
             "username": username,
             "online": online,
-            "last_seen": self.last_seen.get(username, ""),
+            "last_seen": last_seen,
         }
         for user in list(self.active_connections.keys()):
             if user != username:
@@ -116,7 +131,19 @@ class ConnectionManager:
                 await self.broadcast_presence(username, online=False)
 
     def get_online_users(self) -> dict[str, dict]:
+        """Статусы всех, о ком мы что-то знаем, включая людей с других серверов.
+
+        Клиенту всё равно, чей человек: он спрашивает по имени и получает точку.
+        Поэтому чужое присутствие подмешивается прямо сюда, а не отдаётся
+        отдельной ручкой, которую пришлось бы учить понимать каждый клиент.
+        """
         result = {}
+        try:
+            from routes.federation import remote_presence_snapshot
+
+            result.update(remote_presence_snapshot())
+        except Exception:
+            pass
         all_known = set(self.active_connections.keys()) | set(self.last_seen.keys())
         for username in all_known:
             online = self.is_online(username)

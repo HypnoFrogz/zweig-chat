@@ -79,6 +79,16 @@ class ConnectionManager:
         except Exception as e:  # noqa: BLE001 — присутствие не повод падать
             print(f"[ws] presence to peers failed: {e}")
 
+        if not online:
+            # Звонящий, исчезнувший посреди вызова, оставляет чужой телефон
+            # звонить до таймаута. Проверка отложенная — см. видеозвонки.
+            try:
+                from routes.videocall import on_user_offline
+
+                on_user_offline(username)
+            except Exception as e:  # noqa: BLE001
+                print(f"[ws] offline call check failed: {e}")
+
     async def broadcast_presence_value(self, username: str, online: bool, last_seen: str = ""):
         """Разослать своим клиентам чей-то статус — свой он или с чужого сервера."""
         data = {

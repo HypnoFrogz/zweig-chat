@@ -235,6 +235,61 @@ async def record_missed_call(db, call: dict) -> None:
         print(f"[calls] missed-call note failed: {e}")
 
 
+# Сколько ждать вернувшегося звонящего, прежде чем гасить его звонок. Секунды
+# нужны потому, что связь рвётся и сама: телефон переключился с Wi-Fi на сотовую
+# сеть — сокет умер, человек никуда не делся.
+CALLER_GONE_GRACE_SEC = float(os.getenv("CALL_CALLER_GONE_GRACE_SEC", "20"))
+
+_gone_tasks: set = set()
+
+
+async def _cancel_calls_of_absent_caller(username: str) -> None:
+    """Погасить звонки, которые этот человек начал и бросил, отключившись.
+
+    Иначе у вызываемого телефон звонит до самого таймаута — звонящего уже нет,
+    а трубку всё ещё зовут поднять. Сначала выжидаем: сокет рвётся и при смене
+    сети, и гасить звонок из-за этого было бы хуже, чем подождать.
+    """
+    try:
+        await asyncio.sleep(CALLER_GONE_GRACE_SEC)
+        if manager.is_online(username):
+            return
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT * FROM calls WHERE caller_username = ? AND status = 'ringing'", (username,)
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        for call in rows:
+            ended = now_iso()
+            await db.execute(
+                "UPDATE calls SET status = 'cancelled', ended_at = ?, end_reason = 'caller_gone' WHERE id = ?",
+                (ended, call["id"]),
+            )
+            await db.commit()
+            await _relay_call_state(db, call, "ended", "caller_gone")
+            event = {
+                "event": "call_ended",
+                "call_id": call["id"],
+                "channel_slug": call["channel_slug"],
+                "reason": "caller_gone",
+            }
+            await manager.send_to_user(call["caller_username"], event)
+            await manager.send_to_user(call["callee_username"], event)
+            # Для вызываемого это пропущенный: он ничего не выбирал.
+            await record_missed_call(db, call)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        print(f"[calls] cancelling calls of absent caller failed: {e}")
+
+
+def on_user_offline(username: str) -> None:
+    """Человек отключился — проверить, не остались ли за ним звонящие вызовы."""
+    task = asyncio.create_task(_cancel_calls_of_absent_caller(username))
+    _gone_tasks.add(task)
+    task.add_done_callback(_gone_tasks.discard)
+
+
 async def cleanup_calls_state() -> dict[str, int]:
     """
     Self-healing cleanup for addressed calls:

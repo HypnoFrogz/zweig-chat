@@ -321,6 +321,10 @@ async def delete_message(slug: str, msg_id: str, username: str = Depends(get_cur
     await db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
     await db.commit()
 
+    # У соседей своя копия переписки, и удаление до них само не доедет.
+    from routes.federation import queue_message_delete_for_peers
+    await queue_message_delete_for_peers(db, ch["id"], msg_id)
+
     members = await _get_members(db, ch["id"])
     await manager.send_to_channel(members, {
         "event": "message_deleted",

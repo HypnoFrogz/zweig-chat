@@ -116,6 +116,10 @@ let categories = [];
 let fileViewMode = localStorage.getItem('ch_file_view') || 'list';
 let fileGridSize = parseInt(localStorage.getItem('ch_file_grid_size') || '1');
 let pinnedMessages = [];
+// Режим выбора сообщений: включается пунктом в меню сообщения, живёт до
+// явного выхода. Держим id, а не элементы: лента перерисовывается, элементы
+// исчезают, а выбор должен пережить это.
+let selectedMsgIds = new Set();
 let pinnedBarIndex = 0;
 // ChaosTracker state
 let taskProjects = [];
@@ -396,6 +400,9 @@ const I18N = {
         'msg.scheduleLoading': 'Загрузка…',
         'msg.scheduled': 'Отправка назначена',
         'msg.deleteTitle': 'Удалить сообщение',
+        'msg.select': 'Выбрать',
+        'msg.selected': 'Выбрано',
+        'msg.deleteFailed': 'Не удалось удалить',
         'msg.deleteBody': 'Удалить у себя — сообщение исчезнет только из вашей переписки. У всех — исчезнет у каждого участника.',
         'msg.deleteForMe': 'У себя',
         'msg.deleteForAll': 'У всех',
@@ -623,6 +630,9 @@ const I18N = {
         'msg.scheduleLoading': 'Loading…',
         'msg.scheduled': 'Sending scheduled',
         'msg.deleteTitle': 'Delete message',
+        'msg.select': 'Select',
+        'msg.selected': 'Selected',
+        'msg.deleteFailed': 'Could not delete',
         'msg.deleteBody': 'For me — it disappears from your view only. For everyone — it disappears for every participant.',
         'msg.deleteForMe': 'For me',
         'msg.deleteForAll': 'For everyone',
@@ -1706,6 +1716,10 @@ function updateScrollBtn(container) {
 
 function renderMessages(messages, scroll = true, prepend = false) {
     const container = document.getElementById('msg-messages');
+    if (!container.dataset.selectionBound) {
+        container.addEventListener('click', onMessagesClick, true);
+        container.dataset.selectionBound = '1';
+    }
     let html = '';
     let lastDate = '';
     let lastSender = '';
@@ -1744,6 +1758,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
         if (isOwn) {
             actionBtns += `<button class="msg-action-btn" onclick="startEditMessage('${msg.id}')"><span class="material-icons-round">edit</span></button>`;
         }
+        actionBtns += `<button class="msg-action-btn" onclick="enterSelectMode('${msg.id}')" title="${esc(t('msg.select'))}"><span class="material-icons-round">checklist</span></button>`;
         // Кнопка есть у любого сообщения: «у себя» доступно всем и никого не
         // задевает, а «у всех» появится в окне только тому, кому положено.
         actionBtns += `<button class="msg-action-btn" onclick="deleteMessage('${msg.id}')"><span class="material-icons-round">delete</span></button>`;
@@ -1811,6 +1826,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
     if (prepend) container.insertAdjacentHTML('afterbegin', html);
     else container.insertAdjacentHTML('beforeend', html);
     if (scroll) container.scrollTop = container.scrollHeight;
+    renderSelection();
 }
 
 function renderReactions(msg) {
@@ -2027,6 +2043,125 @@ async function confirmDeleteMessage(msgId, scope) {
     // менялся только от `message_deleted`, и при оборванном соединении нажатие
     // не давало вообще ничего — со стороны это и есть «удаление не работает».
     onMessageDeleted({ message_id: msgId });
+}
+
+// ── Выбор нескольких сообщений ────────────────────────────────
+// Нужен не только удалению: пересылка пачкой опирается на тот же выбор.
+// Поэтому режим отдельный, а действия к нему прикручиваются сверху.
+
+function selectionActive() { return selectedMsgIds.size > 0; }
+
+function enterSelectMode(msgId) {
+    selectedMsgIds.add(msgId);
+    renderSelection();
+}
+
+function toggleMsgSelection(msgId) {
+    if (selectedMsgIds.has(msgId)) selectedMsgIds.delete(msgId);
+    else selectedMsgIds.add(msgId);
+    renderSelection();
+}
+
+function exitSelectMode() {
+    selectedMsgIds.clear();
+    renderSelection();
+}
+
+// Отметки живут классами на строках, а панель — отдельным элементом над
+// лентой. Перерисовка ленты их стирает, поэтому вызывается и после неё.
+function renderSelection() {
+    const container = document.getElementById('msg-messages');
+    if (!container) return;
+    container.classList.toggle('selecting', selectionActive());
+    container.querySelectorAll('.msg-row[data-id]').forEach(row => {
+        row.classList.toggle('selected', selectedMsgIds.has(row.dataset.id));
+    });
+
+    let bar = document.getElementById('selection-bar');
+    if (!selectionActive()) {
+        if (bar) bar.remove();
+        return;
+    }
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'selection-bar';
+        bar.className = 'selection-bar';
+        container.parentNode.insertBefore(bar, container);
+    }
+    bar.innerHTML = `
+        <button class="btn-icon" onclick="exitSelectMode()" title="${esc(t('msg.cancel'))}">
+            <span class="material-icons-round">close</span>
+        </button>
+        <span class="selection-count">${esc(t('msg.selected'))}: ${selectedMsgIds.size}</span>
+        <button class="btn-action btn-danger" onclick="deleteSelectedMessages()">
+            <span class="material-icons-round">delete</span> ${esc(t('channel.delete'))}
+        </button>`;
+}
+
+// Пока идёт выбор, клик по сообщению отмечает его, а не запускает обычное
+// поведение: иначе в режиме выбора нельзя ни выбрать, ни отменить.
+function onMessagesClick(e) {
+    if (!selectionActive()) return;
+    if (e.target.closest('.msg-actions') || e.target.closest('.selection-bar')) return;
+    const row = e.target.closest('.msg-row[data-id]');
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleMsgSelection(row.dataset.id);
+}
+
+// Можно ли удалить выбранное у всех: только если каждое сообщение своё —
+// или мы администратор, которому можно любое.
+function canDeleteSelectedForAll() {
+    if (userRole === 'admin') return true;
+    return [...selectedMsgIds].every(id => {
+        const row = document.querySelector(`.msg-row[data-id="${id}"]`);
+        return !!row && row.classList.contains('msg-own');
+    });
+}
+
+function deleteSelectedMessages() {
+    if (!selectionActive()) return;
+    closeDeleteMsgModal();
+    const count = selectedMsgIds.size;
+    const forAll = canDeleteSelectedForAll();
+    const ov = document.createElement('div');
+    ov.className = 'modal';
+    ov.id = 'delete-msg-modal';
+    ov.style.display = 'flex';
+    ov.innerHTML = `
+        <div class="modal-backdrop" onclick="closeDeleteMsgModal()"></div>
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <span class="modal-title">${esc(t('msg.deleteTitle'))} · ${count}</span>
+                <button class="btn-icon" onclick="closeDeleteMsgModal()"><span class="material-icons-round">close</span></button>
+            </div>
+            <div class="modal-body"><p class="muted-text">${esc(t('msg.deleteBody'))}</p></div>
+            <div class="modal-footer modal-footer-split">
+                <button class="btn-action" onclick="closeDeleteMsgModal()">${esc(t('msg.cancel'))}</button>
+                <div class="modal-footer-side">
+                    <button class="btn-action" onclick="confirmDeleteSelected('me')">${esc(t('msg.deleteForMe'))}</button>
+                    ${forAll ? `<button class="btn-action btn-danger" onclick="confirmDeleteSelected('all')">${esc(t('msg.deleteForAll'))}</button>` : ''}
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(ov);
+}
+
+async function confirmDeleteSelected(scope) {
+    closeDeleteMsgModal();
+    if (!currentChannel) return;
+    const ids = [...selectedMsgIds];
+    exitSelectMode();
+    let failed = 0;
+    // По одному, а не залпом: сервер отвечает на каждое своим отказом, и
+    // потерять его в общей куче значит не узнать, почему часть осталась.
+    for (const id of ids) {
+        const res = await apiFetch(`/channels/${currentChannel.slug}/messages/${id}?scope=${scope}`, { method: 'DELETE' });
+        if (res && res.ok) onMessageDeleted({ message_id: id });
+        else failed += 1;
+    }
+    if (failed) showToast(`${t('msg.deleteFailed')}: ${failed}`, 'error');
 }
 
 // ── Отложенная отправка ───────────────────────────────────────

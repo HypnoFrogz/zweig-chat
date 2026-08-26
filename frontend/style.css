@@ -1172,6 +1172,25 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     background: var(--bg2); border: 1px solid var(--border);
     font-size: 13px; max-height: 90px; overflow: auto; white-space: pre-wrap;
 }
+/* Режим выбора сообщений: панель над лентой и отметка на выбранных строках. */
+.selection-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+.selection-count { flex: 1; font-size: 13px; font-weight: 600; }
+.msg-messages.selecting .msg-row { cursor: pointer; }
+.msg-messages.selecting .msg-row:hover { background: var(--msg-hover); }
+.msg-row.selected { background: var(--accent-bg); }
+.msg-row.selected:hover { background: var(--accent-bg); }
+/* Отметка слева, чтобы не спорить с аватаром и не двигать текст. */
+.msg-messages.selecting .msg-row { position: relative; }
+.msg-row.selected::before {
+    content: 'check_circle';
+    font-family: 'Material Icons Round';
+    position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+    font-size: 18px; color: var(--accent);
+}
 .schedule-distance { font-size: 12px; color: var(--accent); min-height: 16px; }
 .schedule-title { font-size: 12px; font-weight: 600; margin: 6px 0 4px; color: var(--text3); }
 .schedule-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; }

@@ -386,6 +386,7 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'channel.shareHistory': 'Открыть доступ к прежней переписке',
         'channel.mute': 'Заглушить',
         'channel.unmute': 'Включить звук',
         'channel.muted': 'Беседа заглушена',
@@ -598,6 +599,7 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'channel.shareHistory': 'Give access to the earlier messages',
         'channel.mute': 'Mute',
         'channel.unmute': 'Unmute',
         'channel.muted': 'Muted',
@@ -2841,6 +2843,8 @@ function showAddMembersModal() {
         ? candidates.map(pickerRow).join('')
         : `<div class="fed-empty">${esc(t('fed.none'))}</div>`;
     document.getElementById('add-members-search').value = '';
+    const historyBox = document.getElementById('add-members-history');
+    if (historyBox) historyBox.checked = true;
     document.getElementById('add-members-modal').style.display = 'flex';
 }
 
@@ -2864,9 +2868,12 @@ async function submitAddMembers() {
     const btn = document.getElementById('add-members-btn');
     btn.disabled = true;
     try {
+        // Историю по умолчанию открываем — так было всегда. Снятая галочка
+        // закрывает её: человек увидит канал с момента, когда его позвали.
+        const shareHistory = document.getElementById('add-members-history');
         const res = await apiFetch(`/channels/${currentChannel.slug}`, {
             method: 'PUT',
-            body: { add_members: picked },
+            body: { add_members: picked, share_history: !shareHistory || shareHistory.checked },
         });
         if (!res || !res.ok) return;
         closeAddMembersModal();

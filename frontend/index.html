@@ -14,7 +14,7 @@
     <!-- Fonts are served from this server: a deployment in a closed network has
          no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=49">
+    <link rel="stylesheet" href="/style.css?v=50">
 </head>
 <body>
 
@@ -993,6 +993,10 @@
                 <input type="text" id="add-members-search" placeholder="Search by name..." data-i18n-placeholder="call.searchPlaceholder" oninput="filterAddMembersList(this.value)">
             </div>
             <div id="add-members-list" class="member-checklist"></div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="add-members-history" checked>
+                <span data-i18n="channel.shareHistory">Give access to the earlier messages</span>
+            </label>
         </div>
         <div class="modal-footer">
             <button class="btn-action btn-accent" id="add-members-btn" onclick="submitAddMembers()">
@@ -1397,6 +1401,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=57"></script>
+<script src="/app.js?v=58"></script>
 </body>
 </html>

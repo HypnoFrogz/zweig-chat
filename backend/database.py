@@ -510,6 +510,16 @@ async def init_db():
         await db.execute("ALTER TABLE channel_members ADD COLUMN cleared_at TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: с какого момента участнику видна переписка ----------
+    # Пусто — вся история. Иначе момент, раньше которого сообщения ему не
+    # показываются: так добавленный в канал человек не получает доступ к тому,
+    # что обсуждали без него, если добавлявший этого не захотел.
+    pragma_hist = await db.execute("PRAGMA table_info(channel_members)")
+    hist_cols = [r[1] for r in await pragma_hist.fetchall()]
+    if "history_from" not in hist_cols:
+        await db.execute("ALTER TABLE channel_members ADD COLUMN history_from TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
     # ---------- Migration: беззвучные беседы ----------
     # Пусто — звук включён. Иначе момент, до которого беседа молчит; «навсегда»
     # это просто очень далёкая дата, чтобы не заводить отдельного признака и не

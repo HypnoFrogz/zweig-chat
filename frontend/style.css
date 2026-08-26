@@ -1166,6 +1166,10 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     font-size: 13px;
 }
 .member-check-item:hover { background: var(--msg-hover); }
+.checkbox-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text2); cursor: pointer; padding: 4px 2px;
+}
 /* Строка выбора человека: имя и логин в строку, сервер — подписью снизу. */
 .picker-person { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .picker-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -52,6 +52,23 @@ async def cleared_at(db, channel_id: str, username: str) -> str:
     return (row["cleared_at"] if row else "") or ""
 
 
+async def visible_from(db, channel_id: str, username: str) -> str:
+    """Момент, раньше которого переписка этому участнику не показывается.
+
+    Границ две, и обе односторонние: он сам удалил у себя чат (`cleared_at`)
+    либо его добавили без доступа к истории (`history_from`). Берётся поздняя —
+    ни одна из них не должна отменять другую.
+    """
+    cursor = await db.execute(
+        "SELECT cleared_at, history_from FROM channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, username),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return ""
+    return max((row["cleared_at"] or ""), (row["history_from"] or ""))
+
+
 MUTE_FOREVER = "9999-12-31T00:00:00+00:00"
 
 
@@ -79,7 +96,7 @@ async def is_muted(db, channel_id: str, username: str) -> bool:
 
 
 async def _count_unread(db, channel_id: str, username: str) -> int:
-    since = await cleared_at(db, channel_id, username)
+    since = await visible_from(db, channel_id, username)
     cursor = await db.execute(
         """SELECT COUNT(*) FROM messages m
            WHERE m.channel_id = ? AND m.sender != ?
@@ -378,6 +395,10 @@ async def update_channel(slug: str, data: dict, username: str = Depends(get_curr
     # Add/remove members
     membership_changed = False
     if "add_members" in data:
+        # По умолчанию история открыта — так было всегда, и менять это молча
+        # нельзя. Закрывают её осознанно, галочкой при добавлении.
+        share_history = data.get("share_history", True)
+        joined_at_boundary = "" if share_history else now_iso()
         for p in data["add_members"]:
             # Someone from another server can be added, but only if this user
             # already has a conversation with them. There is no directory of
@@ -395,8 +416,9 @@ async def update_channel(slug: str, data: dict, username: str = Depends(get_curr
                         detail="Сначала откройте личный диалог с этим человеком",
                     )
             await db.execute(
-                "INSERT OR IGNORE INTO channel_members (channel_id, username, role, joined_at) VALUES (?, ?, 'member', ?)",
-                (ch["id"], p, now_iso()),
+                "INSERT OR IGNORE INTO channel_members "
+                "(channel_id, username, role, joined_at, history_from) VALUES (?, ?, 'member', ?, ?)",
+                (ch["id"], p, now_iso(), joined_at_boundary),
             )
             membership_changed = True
 

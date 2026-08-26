@@ -386,6 +386,10 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'channel.mute': 'Заглушить',
+        'channel.unmute': 'Включить звук',
+        'channel.muted': 'Беседа заглушена',
+        'channel.unmuted': 'Звук включён',
         'call.invited': 'Приглашено',
         'call.unreachable': 'не доставлено',
         'channel.resync': 'Синхронизировать',
@@ -594,6 +598,10 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'channel.mute': 'Mute',
+        'channel.unmute': 'Unmute',
+        'channel.muted': 'Muted',
+        'channel.unmuted': 'Unmuted',
         'call.invited': 'Invited',
         'call.unreachable': 'undelivered',
         'channel.resync': 'Sync',
@@ -1306,7 +1314,10 @@ function dmPeer(ch) {
 
 function renderSidebarItem(ch) {
     const active = currentChannel && currentChannel.id === ch.id ? 'active' : '';
-    const badge = ch.unread_count > 0 ? `<span class="sidebar-item-badge">${ch.unread_count}</span>` : '';
+    const muteMark = isChannelMuted(ch)
+        ? `<span class="material-icons-round sidebar-item-muted" title="${esc(t('channel.muted'))}">notifications_off</span>`
+        : '';
+    const badge = (ch.unread_count > 0 ? `<span class="sidebar-item-badge${isChannelMuted(ch) ? ' muted' : ''}">${ch.unread_count}</span>` : '') + muteMark;
     const menuBtn = `<button class="sidebar-item-menu btn-icon-xs" onclick="event.stopPropagation(); showChannelContextMenu(event, '${ch.slug}')"><span class="material-icons-round">more_vert</span></button>`;
 
     if (ch.type === 'direct') {
@@ -1383,6 +1394,11 @@ function showChannelContextMenu(e, slug) {
     if (!isDM && !isOwner) {
         items += `<div class="ctx-item" onclick="leaveChannel('${slug}')"><span class="material-icons-round">logout</span> ${t('channel.leave')}</div>`;
     }
+    // Тишина хранится на сервере, поэтому касается всех устройств сразу —
+    // включая телефон, где такого переключателя пока нет.
+    const muted = isChannelMuted(ch);
+    items += `<div class="ctx-item" onclick="${muted ? `unmuteChannel('${slug}')` : `muteChannel('${slug}')`}"><span class="material-icons-round">${muted ? 'notifications_active' : 'notifications_off'}</span> ${t(muted ? 'channel.unmute' : 'channel.mute')}</div>`;
+
     if (isDM) {
         // Одностороннее удаление: переписка пропадает только у нас.
         items += `<div class="ctx-item ctx-danger" onclick="clearChat('${slug}')"><span class="material-icons-round">delete</span> ${t('chat.delete')}</div>`;
@@ -1402,6 +1418,28 @@ function showChannelContextMenu(e, slug) {
     const vh = window.innerHeight;
     menu.style.left = (mx + mw > vw ? Math.max(0, vw - mw - 8) : mx) + 'px';
     menu.style.top = (my + mh > vh ? Math.max(0, vh - mh - 8) : my) + 'px';
+}
+
+// Заглушена ли беседа: сервер отдаёт момент, до которого она молчит.
+function isChannelMuted(ch) {
+    const until = ch && ch.muted_until;
+    return !!until && new Date(until) > new Date();
+}
+
+async function muteChannel(slug) {
+    hideContextMenu();
+    const res = await apiFetch(`/channels/${slug}/mute`, { method: 'POST', body: {} });
+    if (!res || !res.ok) return;
+    showToast(t('channel.muted'), 'success');
+    await loadChannels();
+}
+
+async function unmuteChannel(slug) {
+    hideContextMenu();
+    const res = await apiFetch(`/channels/${slug}/mute`, { method: 'DELETE' });
+    if (!res || !res.ok) return;
+    showToast(t('channel.unmuted'), 'success');
+    await loadChannels();
 }
 
 async function moveChannelToFolder(channelId, slug, folderId) {
@@ -2379,6 +2417,7 @@ function handleWsEvent(data) {
         case 'federation_linked': case 'federation_declined': loadFederation(); break;
         case 'federation_invite_redeemed': onInviteRedeemed(data); break;
         case 'channel_created': case 'channel_updated': case 'channel_deleted': loadChannels(); break;
+        case 'channel_muted': loadChannels(); break;
         case 'member_joined': case 'member_left':
             if (data.event === 'member_left' && data.username === currentUser && currentChannel && currentChannel.id === data.channel_id) {
                 currentChannel = null;

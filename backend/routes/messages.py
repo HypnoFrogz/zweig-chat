@@ -230,8 +230,15 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     # Push notifications to offline members (FCM for native apps + Web Push for PWA)
     from fcm_sender import send_message_notification
     from routes.push import send_push_to_user
+    from routes.channels import is_muted
+
     for member in members:
         if member == username:
+            continue
+        # Заглушённая беседа не звенит ни на одном устройстве: решение принято
+        # человеком один раз и хранится на сервере, а не на том телефоне, где
+        # его нажали.
+        if await is_muted(db, ch["id"], member):
             continue
         # Телефону сигнал нужен, пока приложение на нём закрыто, — открытая
         # вкладка в браузере этому не помеха: она стоит на другом столе, а то и
@@ -622,8 +629,12 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     # Push notifications to offline members (FCM for native apps + Web Push for PWA)
     from fcm_sender import send_message_notification
     from routes.push import send_push_to_user
+    from routes.channels import is_muted
+
     for member in members:
         if member == username:
+            continue
+        if await is_muted(db, channel_id, member):
             continue
         # То же правило, что и в REST-пути выше: телефон молчит, только когда
         # приложение на нём открыто.

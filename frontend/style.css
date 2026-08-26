@@ -398,6 +398,10 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 .sidebar-item.active { background: var(--sidebar-active); color: #fff; font-weight: 500; }
 .sidebar-item-icon { font-size: 18px; opacity: .6; width: 20px; text-align: center; }
 .sidebar-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Заглушённая беседа: значок вместо звона и приглушённый счётчик — она никуда
+   не делась из списка, просто молчит. */
+.sidebar-item-muted { font-size: 15px; opacity: .45; flex-shrink: 0; }
+.sidebar-item-badge.muted { background: var(--border); color: var(--text2); }
 .sidebar-item-badge {
     background: var(--notification);
     color: #fff;

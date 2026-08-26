@@ -1905,7 +1905,17 @@ async function saveEditMessage() {
 
 async function deleteMessage(msgId) {
     if (!currentChannel) return;
-    await apiFetch(`/channels/${currentChannel.slug}/messages/${msgId}`, { method: 'DELETE' });
+    const res = await apiFetch(`/channels/${currentChannel.slug}/messages/${msgId}`, { method: 'DELETE' });
+    if (!res) return;   // 401/403 уже объяснены пользователю словами сервера
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err?.detail || t('toast.error'), 'error');
+        return;
+    }
+    // Убираем сообщение сразу, не дожидаясь события по сокету. Раньше экран
+    // менялся только от `message_deleted`, и при оборванном соединении нажатие
+    // не давало вообще ничего — со стороны это и есть «удаление не работает».
+    onMessageDeleted({ message_id: msgId });
 }
 
 // ── Reply ──────────────────────────────────────────────────────

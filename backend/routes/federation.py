@@ -905,6 +905,170 @@ async def sync_channel_to_peers(db, channel_id: str) -> None:
         print(f"[federation] sync_channel_to_peers failed: {e}")
 
 
+# ── Присутствие ──────────────────────────────────────────────────────────────
+#
+# Кто сейчас на связи — сведения живучие ровно пока их подтверждают. Сосед
+# может упасть, потерять сеть или перезапуститься, и его «онлайн» повиснет
+# навсегда, если верить ему на слово. Поэтому чужое присутствие хранится с
+# сроком годности и обновляется биением: раз в минуту каждый сервер шлёт
+# соседям полный список своих подключённых. Не пришло два раза подряд — люди
+# оттуда гаснут сами.
+#
+# В памяти, а не в базе: после перезапуска верны только те, кто подтвердится
+# ближайшим биением, и восстанавливать тут нечего.
+
+PRESENCE_HEARTBEAT_SEC = float(os.getenv("FEDERATION_PRESENCE_HEARTBEAT_SEC", "60"))
+PRESENCE_TTL_SEC = float(os.getenv("FEDERATION_PRESENCE_TTL_SEC", "150"))
+
+# локальный id удалённого человека → {"online": bool, "last_seen": str, "until": float}
+_remote_presence: dict[str, dict] = {}
+
+
+def remote_presence_snapshot() -> dict[str, dict]:
+    """Присутствие людей с других серверов, у которых не истёк срок годности."""
+    now = time.monotonic()
+    return {
+        uid: {"online": v["online"], "last_seen": v.get("last_seen", "")}
+        for uid, v in _remote_presence.items()
+        if v["until"] > now
+    }
+
+
+async def _presence_audience(db, username: str = "") -> dict[str, list[str]]:
+    """Соседи, которым есть дело до наших людей: домен → наши имена для него.
+
+    «Есть дело» значит общий разговор — личный или канал. Рассылать присутствие
+    дальше этого круга нельзя: сервер не отдаёт пиру список своих пользователей,
+    и присутствие такой же список, только в движении.
+    """
+    sql = (
+        "SELECT DISTINCT u.home_server AS domain, mine.username AS who "
+        "FROM channel_members mine "
+        "JOIN channel_members other ON other.channel_id = mine.channel_id "
+        "  AND other.username != mine.username "
+        "JOIN users me ON me.username = mine.username AND me.home_server = '' "
+        "JOIN users u ON u.username = other.username AND u.home_server != ''"
+    )
+    params: tuple = ()
+    if username:
+        sql += " WHERE mine.username = ?"
+        params = (username,)
+    cur = await db.execute(sql, params)
+    audience: dict[str, list[str]] = {}
+    for r in await cur.fetchall():
+        audience.setdefault(r["domain"], []).append(r["who"])
+    return audience
+
+
+async def push_presence_to_peers(username: str, online: bool) -> None:
+    """Сообщить соседям, что наш человек вошёл или вышел. Никогда не бросает."""
+    if not SERVER_DOMAIN:
+        return
+    try:
+        db = await get_db()
+        audience = await _presence_audience(db, username)
+        if not audience:
+            return
+        payload = {
+            "users": [
+                {
+                    "username": username,
+                    "online": online,
+                    "last_seen": manager.last_seen.get(username, ""),
+                }
+            ]
+        }
+        for domain in audience:
+            try:
+                await peer_post(domain, "/api/federation/presence", payload)
+            except Exception as e:
+                print(f"[federation] presence to {domain} failed: {e}")
+    except Exception as e:
+        print(f"[federation] push_presence_to_peers failed: {e}")
+
+
+async def _presence_heartbeat_once() -> None:
+    """Полный список своих подключённых — каждому заинтересованному соседу.
+
+    Полный, а не изменения: одно потерянное «вышел» иначе оставляет человека
+    вечно горящим, и заметить это некому.
+    """
+    if not SERVER_DOMAIN:
+        return
+    db = await get_db()
+    audience = await _presence_audience(db)
+    for domain, names in audience.items():
+        payload = {
+            "full": True,
+            "users": [
+                {
+                    "username": n,
+                    "online": manager.is_online(n),
+                    "last_seen": manager.last_seen.get(n, ""),
+                }
+                for n in sorted(set(names))
+            ],
+        }
+        try:
+            await peer_post(domain, "/api/federation/presence", payload)
+        except Exception as e:
+            print(f"[federation] presence heartbeat to {domain} failed: {e}")
+
+
+async def run_presence_loop() -> None:
+    """Фоновая задача — биение присутствия и уборка протухшего."""
+    while True:
+        try:
+            await asyncio.sleep(PRESENCE_HEARTBEAT_SEC)
+            if not SERVER_DOMAIN:
+                continue
+            await _presence_heartbeat_once()
+            now = time.monotonic()
+            for uid in [u for u, v in _remote_presence.items() if v["until"] <= now]:
+                # Срок вышел: человек гаснет, и клиентам об этом говорят — иначе
+                # зелёная точка останется висеть до перезагрузки страницы.
+                _remote_presence.pop(uid, None)
+                await manager.broadcast_presence_value(uid, online=False, last_seen="")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[federation] presence loop error: {e}")
+
+
+@router.post("/federation/presence")
+async def federation_presence(data: dict, peer: str = Depends(require_peer)):
+    """Сосед сообщает, кто у него на связи.
+
+    Принимаем только тех, кого уже знаем: присутствие незнакомого человека
+    ничего не значит и завести его карточку не повод.
+    """
+    users = data.get("users")
+    if not isinstance(users, list):
+        raise HTTPException(status_code=400, detail="users обязателен")
+
+    db = await get_db()
+    until = time.monotonic() + PRESENCE_TTL_SEC
+    changed = []
+    for u in users:
+        bare = (u.get("username") or "").strip().lower()
+        if not bare:
+            continue
+        uid = remote_id(peer, bare)
+        cur = await db.execute("SELECT 1 FROM users WHERE username = ?", (uid,))
+        if not await cur.fetchone():
+            continue
+        online = bool(u.get("online"))
+        last_seen = (u.get("last_seen") or "")[:40]
+        was = _remote_presence.get(uid, {}).get("online")
+        _remote_presence[uid] = {"online": online, "last_seen": last_seen, "until": until}
+        if was != online:
+            changed.append((uid, online, last_seen))
+
+    for uid, online, last_seen in changed:
+        await manager.broadcast_presence_value(uid, online=online, last_seen=last_seen)
+    return {"ok": True, "accepted": len(users)}
+
+
 async def push_profile_to_peers(db, username: str) -> None:
     """Разослать соседям новое имя, ник и аватар нашего пользователя.
 

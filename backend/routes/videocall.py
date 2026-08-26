@@ -147,6 +147,94 @@ async def _mark_call_expired_if_needed(db, call_row) -> bool:
     return True
 
 
+async def record_missed_call(db, call: dict) -> None:
+    """Отметить неотвеченный звонок: строка в переписке и уведомление.
+
+    Пропущенный звонок раньше не оставлял следа вовсе: телефон не звонил
+    достаточно долго — и всё, будто никто не звонил. Теперь в чате остаётся
+    запись, а на устройства уходит уведомление.
+
+    Запись — обычное сообщение с человеческим текстом: клиенты, которые не
+    умеют рисовать звонки, покажут его как текст, а не пустой пузырь. Делает
+    это тот сервер, где живёт вызываемый: у каждой стороны своя строка звонка,
+    и каждая отмечает своего человека, не спрашивая соседа.
+
+    Никогда не бросает исключений: уборка звонков не должна падать из-за
+    недоступного пуш-сервиса.
+    """
+    try:
+        callee = call["callee_username"]
+        cur = await db.execute("SELECT home_server FROM users WHERE username = ?", (callee,))
+        row = await cur.fetchone()
+        if not row or row["home_server"]:
+            return  # вызываемый не наш — его отметит его же сервер
+
+        caller = call["caller_username"]
+        caller_name = await get_display_name(caller)
+        now = now_iso()
+        text = f"Пропущенный звонок от {caller_name}"
+        msg_id = str(uuid.uuid4())
+        call_data = json.dumps(
+            {"status": "missed", "call_id": call["id"], "started_by": caller, "started_at": call["created_at"]},
+            ensure_ascii=False,
+        )
+        await db.execute(
+            "INSERT INTO messages (id, channel_id, sender, sender_name, type, text, file_data, call_data, timestamp) "
+            "VALUES (?,?,?,?,'call',?,NULL,?,?)",
+            (msg_id, call["channel_id"], "system", "System", text, call_data, now),
+        )
+        await db.execute(
+            "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, "
+            "last_msg_timestamp = ? WHERE id = ?",
+            (text, "system", "System", now, call["channel_id"]),
+        )
+        await db.commit()
+
+        members = await _get_members(db, call["channel_id"])
+        msg = {
+            "id": msg_id,
+            "channel_id": call["channel_id"],
+            "sender": "system",
+            "sender_name": "System",
+            "type": "call",
+            "text": text,
+            "timestamp": now,
+            "read_by": [],
+            "reactions": [],
+            "reply_count": 0,
+        }
+        await manager.send_to_channel(members, {
+            "event": "new_message",
+            "channel_slug": call["channel_slug"],
+            "message": msg,
+        })
+
+        # Уведомление тем же путём, что и у сообщения: приложение покажет его
+        # как обычное, ничего не зная про звонки.
+        from fcm_sender import send_message_notification
+        from routes.push import send_push_to_user
+
+        delivered = False
+        if not manager.has_mobile(callee):
+            delivered = await send_message_notification(
+                recipient=callee,
+                sender_name=caller_name,
+                text="Пропущенный звонок",
+                channel_slug=call["channel_slug"],
+                channel_name=caller_name,
+            )
+        if not delivered and not manager.is_online(callee):
+            await send_push_to_user(callee, {
+                "type": "message",
+                "title": caller_name,
+                "body": "Пропущенный звонок",
+                "conv_id": call["channel_slug"],
+                "badge": 1,
+            })
+    except Exception as e:
+        print(f"[calls] missed-call note failed: {e}")
+
+
 async def cleanup_calls_state() -> dict[str, int]:
     """
     Self-healing cleanup for addressed calls:
@@ -157,6 +245,13 @@ async def cleanup_calls_state() -> dict[str, int]:
     db = await get_db()
     now_iso_s = now_iso()
 
+    # Сначала выбираем, потом обновляем: после UPDATE уже не узнать, какие
+    # именно звонки протухли в этот раз, а отметить надо ровно их.
+    cur = await db.execute(
+        "SELECT * FROM calls WHERE status = 'ringing' AND expires_at != '' AND expires_at < ?",
+        (now_iso_s,),
+    )
+    expired_rows = [dict(r) for r in await cur.fetchall()]
     cur = await db.execute(
         """UPDATE calls
            SET status = 'missed', ended_at = ?, end_reason = 'timeout'
@@ -187,6 +282,10 @@ async def cleanup_calls_state() -> dict[str, int]:
     deleted_old = cur.rowcount or 0
 
     await db.commit()
+
+    for call in expired_rows:
+        await record_missed_call(db, call)
+
     return {
         "expired_ringing": expired_ringing,
         "stale_active": stale_active,
@@ -482,6 +581,10 @@ async def end_addressed_call(data: dict, username: str = Depends(get_current_use
             (ended, ended, call["channel_id"]),
         )
         await db.commit()
+        # Отменённый до ответа звонок для вызываемого — тоже пропущенный: он о
+        # нём не узнает иначе никак, телефон мог даже не успеть зазвонить.
+        if call["status"] == "ringing" and username == call["caller_username"]:
+            await record_missed_call(db, dict(call))
         await _relay_call_state(db, call, "ended", "ended")
         end_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "ended"}
         await manager.send_to_user(call["caller_username"], end_event)

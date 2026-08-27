@@ -219,8 +219,8 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
         (msg["id"], ch["id"], username, display_name, msg_type, text, file_data, None, reply_to, now),
     )
     await db.execute(
-        "INSERT INTO message_reads (message_id, username) VALUES (?, ?)",
-        (msg["id"], username),
+        "INSERT INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
+        (msg["id"], username, now),
     )
 
     lm_text = text or (msg.get("file", {}).get("name", "File"))
@@ -558,8 +558,8 @@ async def mark_read(slug: str, username: str = Depends(get_current_user)):
     if unread_ids:
         for msg_id in unread_ids:
             await db.execute(
-                "INSERT OR IGNORE INTO message_reads (message_id, username) VALUES (?, ?)",
-                (msg_id, username),
+                "INSERT OR IGNORE INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
+                (msg_id, username, now_iso()),
             )
         await db.commit()
 
@@ -592,14 +592,111 @@ async def _count_unread(db, channel_id: str, username: str) -> int:
     return (await cursor.fetchone())[0]
 
 
+@router.get("/channels/{slug}/attachments")
+async def channel_attachments(
+    slug: str,
+    kind: str = Query("all"),
+    limit: int = Query(100, ge=1, le=500),
+    username: str = Depends(get_current_user),
+):
+    """Вложения беседы — картинки, видео и документы, новые сверху.
+
+    `kind`: `media` — картинки и видео, `files` — всё остальное, `all` — подряд.
+    Границы те же, что у ленты: спрятанное у себя и история, закрытая при
+    добавлении, сюда не попадают — иначе через этот список можно было бы
+    посмотреть то, что человеку решили не показывать.
+    """
+    db = await get_db()
+    ch = await _get_channel_by_slug(db, slug, username)
+    from routes.channels import visible_from
+
+    since = await visible_from(db, ch["id"], username)
+    cursor = await db.execute(
+        """SELECT * FROM messages
+           WHERE channel_id = ? AND file_data IS NOT NULL AND file_data != ''
+             AND timestamp > ?
+             AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
+           ORDER BY timestamp DESC LIMIT ?""",
+        (ch["id"], since, username, limit),
+    )
+
+    out = []
+    for row in await cursor.fetchall():
+        m = dict(row)
+        try:
+            file_info = json.loads(m["file_data"])
+        except (TypeError, ValueError):
+            continue
+        file_type = (file_info.get("type") or "").lower()
+        is_media = file_type in ("image", "video")
+        if kind == "media" and not is_media:
+            continue
+        if kind == "files" and is_media:
+            continue
+        out.append({
+            "message_id": m["id"],
+            "sender": m["sender"],
+            "sender_name": m["sender_name"],
+            "timestamp": m["timestamp"],
+            "file": file_info,
+        })
+    return out
+
+
+@router.get("/channels/{slug}/messages/{msg_id}/reads")
+async def message_reads(slug: str, msg_id: str, username: str = Depends(get_current_user)):
+    """Кто и когда прочитал сообщение.
+
+    Отдаётся всем участникам беседы, но без самого спрашивающего: «я прочитал
+    своё сообщение» — не сведение. Время у старых отметок пустое: колонку
+    завели позже, и подделывать его нечем.
+    """
+    db = await get_db()
+    ch = await _get_channel_by_slug(db, slug, username)
+
+    cursor = await db.execute(
+        "SELECT id FROM messages WHERE id = ? AND channel_id = ?", (msg_id, ch["id"])
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+
+    cursor = await db.execute(
+        """SELECT mr.username, mr.read_at, u.display_name
+           FROM message_reads mr
+           LEFT JOIN users u ON u.username = mr.username
+           WHERE mr.message_id = ? AND mr.username != ?
+           ORDER BY mr.read_at""",
+        (msg_id, username),
+    )
+    return [
+        {
+            "username": r["username"],
+            "display_name": (r["display_name"] or r["username"]),
+            "read_at": r["read_at"] or "",
+        }
+        for r in await cursor.fetchall()
+    ]
+
+
 @router.get("/messages/search")
 async def search_messages(
     q: str = Query(..., min_length=1),
     username: str = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=200),
+    channel: str | None = Query(None),
 ):
-    """Search messages across all user's channels."""
+    """Поиск по сообщениям — по всем беседам или внутри одной.
+
+    `channel` — slug: поиск в открытой переписке отвечает на другой вопрос,
+    чем поиск по всему, и выбирать нужное из общей выдачи на клиенте нельзя:
+    предел в полсотни строк отрезал бы старое ещё до фильтрации.
+    """
     db = await get_db()
+    channel_filter = " AND c.slug = ?" if channel else ""
+    params = [username, f"%{q}%"]
+    if channel:
+        params.append(channel)
+    params.append(limit)
     cursor = await db.execute(
         # Поиск обязан уважать те же границы, что и лента: иначе он показывает
         # то, что человеку решили не показывать — и удалённое им самим, и
@@ -611,8 +708,9 @@ async def search_messages(
            WHERE LOWER(m.text) LIKE LOWER(?)
              AND m.timestamp > MAX(cm.cleared_at, cm.history_from)
              AND m.id NOT IN (SELECT message_id FROM message_hidden WHERE username = cm.username)
+             """ + channel_filter + """
            ORDER BY m.timestamp DESC LIMIT ?""",
-        (username, f"%{q}%", limit),
+        tuple(params),
     )
     rows = await cursor.fetchall()
     results = []

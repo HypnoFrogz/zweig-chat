@@ -82,6 +82,16 @@ async def muted_until(db, channel_id: str, username: str) -> str:
     return (row["muted_until"] if row else "") or ""
 
 
+async def pinned_at(db, channel_id: str, username: str) -> str:
+    """Когда человек закрепил эту беседу у себя ('' — не закреплял)."""
+    cursor = await db.execute(
+        "SELECT pinned_at FROM channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, username),
+    )
+    row = await cursor.fetchone()
+    return (row["pinned_at"] if row else "") or ""
+
+
 async def is_muted(db, channel_id: str, username: str) -> bool:
     """Молчит ли беседа прямо сейчас.
 
@@ -124,6 +134,7 @@ async def _build_channel(db, row, username: str) -> dict:
     c["member_details"] = await _get_member_details(db, c["id"])
     c["unread_count"] = await _count_unread(db, c["id"], username)
     c["muted_until"] = await muted_until(db, c["id"], username)
+    c["pinned_at"] = await pinned_at(db, c["id"], username)
     if c.get("last_msg_text") is not None:
         c["last_message"] = {
             "text": c["last_msg_text"],
@@ -597,6 +608,48 @@ async def mute_channel(slug: str, data: dict | None = None, username: str = Depe
         "event": "channel_muted", "channel_id": ch["id"], "slug": slug, "muted_until": until,
     })
     return {"ok": True, "muted_until": until}
+
+
+@router.post("/channels/{slug}/pin-chat")
+async def pin_chat(slug: str, username: str = Depends(get_current_user)):
+    """Закрепить беседу наверху своего списка.
+
+    Закрепление личное: наверх беседа поднимается только у того, кто её
+    поднял. Порядок между закреплёнными — по времени закрепления, позднее
+    сверху, чтобы только что закреплённое было видно сразу.
+    """
+    db = await get_db()
+    from routes.messages import _get_channel_by_slug
+
+    ch = await _get_channel_by_slug(db, slug, username)
+    when = now_iso()
+    await db.execute(
+        "UPDATE channel_members SET pinned_at = ? WHERE channel_id = ? AND username = ?",
+        (when, ch["id"], username),
+    )
+    await db.commit()
+    await manager.send_to_user(username, {
+        "event": "channel_pinned", "channel_id": ch["id"], "slug": slug, "pinned_at": when,
+    })
+    return {"ok": True, "pinned_at": when}
+
+
+@router.delete("/channels/{slug}/pin-chat")
+async def unpin_chat(slug: str, username: str = Depends(get_current_user)):
+    """Снять закрепление беседы у себя."""
+    db = await get_db()
+    from routes.messages import _get_channel_by_slug
+
+    ch = await _get_channel_by_slug(db, slug, username)
+    await db.execute(
+        "UPDATE channel_members SET pinned_at = '' WHERE channel_id = ? AND username = ?",
+        (ch["id"], username),
+    )
+    await db.commit()
+    await manager.send_to_user(username, {
+        "event": "channel_pinned", "channel_id": ch["id"], "slug": slug, "pinned_at": "",
+    })
+    return {"ok": True, "pinned_at": ""}
 
 
 @router.delete("/channels/{slug}/mute")

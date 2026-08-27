@@ -104,6 +104,16 @@ TABLES = [
         edited_at   TEXT,
         timestamp   TEXT NOT NULL DEFAULT ''
     )""",
+    # Свои имена контактов: видны только тому, кто их поставил.
+    # Отдельная таблица, а не колонка у пользователя: имя принадлежит паре
+    # «кто смотрит — на кого», и у одного человека их столько, сколько
+    # собеседников.
+    """CREATE TABLE IF NOT EXISTS contact_names (
+        owner    TEXT NOT NULL,
+        target   TEXT NOT NULL,
+        name     TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (owner, target)
+    )""",
     # Read receipts
     """CREATE TABLE IF NOT EXISTS message_reads (
         message_id  TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -552,6 +562,27 @@ async def init_db():
     mute_cols = [r[1] for r in await pragma_mute.fetchall()]
     if "muted_until" not in mute_cols:
         await db.execute("ALTER TABLE channel_members ADD COLUMN muted_until TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
+    # ---------- Migration: когда прочитали ----------
+    # Отметка о прочтении хранилась без времени — было известно «кто», но не
+    # «когда», а спрашивают именно второе. Старым отметкам время не выдумываем:
+    # пустое значение честнее подделанного.
+    pragma_reads = await db.execute("PRAGMA table_info(message_reads)")
+    read_cols = [r[1] for r in await pragma_reads.fetchall()]
+    if "read_at" not in read_cols:
+        await db.execute("ALTER TABLE message_reads ADD COLUMN read_at TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
+    # ---------- Migration: закреплённые беседы ----------
+    # Пусто — беседа сортируется по времени последнего сообщения, как и все
+    # остальные. Иначе момент закрепления: закреплённые идут наверху списка,
+    # позднее закреплённое выше. Признак у участника, а не у канала: наверх
+    # беседу поднимает себе каждый сам.
+    pragma_pin = await db.execute("PRAGMA table_info(channel_members)")
+    pin_cols = [r[1] for r in await pragma_pin.fetchall()]
+    if "pinned_at" not in pin_cols:
+        await db.execute("ALTER TABLE channel_members ADD COLUMN pinned_at TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
     # ---------- Migration: federated call columns ----------

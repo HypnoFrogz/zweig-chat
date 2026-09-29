@@ -39,6 +39,64 @@ CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
 CALL_ACTIVE_STALE_SEC = int(os.getenv("CALL_ACTIVE_STALE_SEC", "180"))
 CALL_CLEANUP_INTERVAL_SEC = int(os.getenv("CALL_CLEANUP_INTERVAL_SEC", "30"))
 CALL_RETENTION_DAYS = int(os.getenv("CALL_RETENTION_DAYS", "5"))
+# Сколько ждать, прежде чем считать пустую групповую комнату брошенной.
+# Запас нужен на старте: тот, кто начал звонок, подключается не мгновенно, и
+# без него сверка убивала бы звонок через секунду после начала.
+GROUP_CALL_EMPTY_GRACE_SEC = int(os.getenv("GROUP_CALL_EMPTY_GRACE_SEC", "90"))
+
+
+def _livekit_http_url() -> str:
+    """Адрес серверного API LiveKit. Токены раздаются по ws, API живёт по http."""
+    url = LIVEKIT_URL.strip()
+    if url.startswith("wss://"):
+        return "https://" + url[len("wss://"):]
+    if url.startswith("ws://"):
+        return "http://" + url[len("ws://"):]
+    return url
+
+
+async def room_participants(room_name: str) -> list[str] | None:
+    """Кто сейчас в комнате LiveKit — список имён участников.
+
+    `None` — спросить не удалось: в hosted-режиме секрета для серверного API у
+    нас нет, да и сам LiveKit может быть недоступен. В таком случае верим
+    клиенту на слово, иначе поломка соседнего сервиса заперла бы звонки
+    навсегда.
+
+    Имена, а не счётчик: уходящий участник в момент запроса ещё числится в
+    комнате — LiveKit узнаёт об отключении не мгновенно. Считать по головам
+    значит увидеть единицу вместо нуля и не закрыть звонок.
+    """
+    if LIVEKIT_MODE != "self" or not room_name:
+        return None
+    try:
+        from livekit import api as lk_api
+    except Exception as e:  # пакета нет в образе — не повод падать
+        print(f"[calls.group] livekit-api недоступен: {e}")
+        return None
+    lk = None
+    try:
+        lk = lk_api.LiveKitAPI(
+            url=_livekit_http_url(),
+            api_key=LIVEKIT_API_KEY,
+            api_secret=LIVEKIT_API_SECRET,
+        )
+        rooms = await lk.room.list_rooms(lk_api.ListRoomsRequest(names=[room_name]))
+        if not rooms.rooms or int(rooms.rooms[0].num_participants) == 0:
+            return []  # комнаты нет или она пуста
+        res = await lk.room.list_participants(
+            lk_api.ListParticipantsRequest(room=room_name)
+        )
+        return [p.identity for p in res.participants]
+    except Exception as e:
+        print(f"[calls.group] не удалось спросить LiveKit о комнате {room_name}: {e}")
+        return None
+    finally:
+        if lk is not None:
+            try:
+                await lk.aclose()
+            except Exception:
+                pass
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -352,15 +410,61 @@ async def cleanup_calls_state() -> dict[str, int]:
     }
 
 
+async def reconcile_group_calls() -> int:
+    """Погасить групповые звонки, в комнатах которых никого не осталось.
+
+    Страховка на случай, когда клиент о выходе не сообщил: приложение убили,
+    связь пропала, телефон разрядился. Без неё запись в `active_calls` живёт
+    вечно — плашка «Вступить» висит в канале, люди по ней заходят в пустую
+    комнату по одному и не понимают, почему не слышат друг друга.
+
+    Спрашиваем сам LiveKit: только он знает, есть ли кто в комнате. Если
+    спросить не удалось, ничего не трогаем — лучше лишняя плашка, чем
+    оборванный разговор.
+    """
+    db = await get_db()
+    cur = await db.execute("SELECT * FROM active_calls")
+    rows = [dict(r) for r in await cur.fetchall()]
+    if not rows:
+        return 0
+
+    grace_before = (_now_utc() - timedelta(seconds=GROUP_CALL_EMPTY_GRACE_SEC)).isoformat()
+    ended = 0
+    for row in rows:
+        # Только что начатый звонок не трогаем: тот, кто его начал, ещё
+        # подключается, и в комнате законно никого нет.
+        started_at = row.get("started_at") or ""
+        if started_at and started_at > grace_before:
+            continue
+        people = await room_participants(row["room_name"])
+        if people is None or people:
+            continue
+        c = await db.execute("SELECT * FROM channels WHERE id = ?", (row["channel_id"],))
+        ch_row = await c.fetchone()
+        if not ch_row:
+            await db.execute("DELETE FROM active_calls WHERE channel_id = ?", (row["channel_id"],))
+            await db.commit()
+            ended += 1
+            continue
+        await finish_group_call(db, dict(ch_row), row["room_name"])
+        ended += 1
+    return ended
+
+
 async def run_calls_cleanup_once() -> dict[str, int]:
     try:
         stats = await cleanup_calls_state()
-        if any(stats.values()):
-            print(f"[calls.cleanup] {stats}")
-        return stats
     except Exception as e:
         print(f"[calls.cleanup] failed: {e}")
-        return {"expired_ringing": 0, "stale_active": 0, "deleted_old": 0}
+        stats = {"expired_ringing": 0, "stale_active": 0, "deleted_old": 0}
+    try:
+        stats["group_calls_ended"] = await reconcile_group_calls()
+    except Exception as e:
+        print(f"[calls.group] сверка с LiveKit не удалась: {e}")
+        stats["group_calls_ended"] = 0
+    if any(stats.values()):
+        print(f"[calls.cleanup] {stats}")
+    return stats
 
 
 async def run_calls_cleanup_loop():
@@ -1053,11 +1157,70 @@ async def answer_call(data: dict, username: str = Depends(get_current_user)):
     return {"ok": True}
 
 
+async def finish_group_call(db, ch: dict, room_name: str = "") -> None:
+    """Закрыть групповой звонок в канале: снять плашку и оповестить всех.
+
+    Вынесено отдельно, потому что звонок заканчивается из трёх мест: по уходу
+    последнего участника, по отказу от вызова и по сверке с LiveKit.
+    """
+    await db.execute("DELETE FROM active_calls WHERE channel_id = ?", (ch["id"],))
+
+    cursor2 = await db.execute(
+        """SELECT id, call_data, timestamp FROM messages
+           WHERE channel_id = ? AND type = 'call' AND call_data IS NOT NULL
+           ORDER BY timestamp DESC LIMIT 1""",
+        (ch["id"],),
+    )
+    msg_row = await cursor2.fetchone()
+    if msg_row and msg_row["call_data"]:
+        call = json.loads(msg_row["call_data"])
+        if call.get("status") == "active":
+            call["status"] = "ended"
+            try:
+                start_dt = datetime.fromisoformat(call.get("started_at", msg_row["timestamp"]))
+                call["duration"] = int((datetime.now(timezone.utc) - start_dt).total_seconds())
+            except Exception:
+                call["duration"] = 0
+            await db.execute(
+                "UPDATE messages SET call_data = ?, text = ? WHERE id = ?",
+                (json.dumps(call, ensure_ascii=False),
+                 f"Video call ended ({call['duration']}s)", msg_row["id"]),
+            )
+
+    ended_at = now_iso()
+    await db.execute(
+        """UPDATE call_log SET status = 'ended', ended_at = ?,
+           duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
+           WHERE channel_id = ? AND status = 'active'""",
+        (ended_at, ended_at, ch["id"]),
+    )
+    await db.commit()
+
+    members = await _get_members(db, ch["id"])
+    await manager.send_to_channel(members, {
+        "event": "call_ended",
+        "channel_id": ch["id"],
+        "channel_slug": ch["slug"],
+        "room_name": room_name,
+    })
+
+
 @router.post("/videocall/end")
 async def end_call(data: dict, username: str = Depends(get_current_user)):
-    """End a video call."""
+    """Участник вышел из группового звонка.
+
+    Звонок заканчивается, только когда комната опустела. Раньше здесь всё
+    закрывалось безусловно: веб-клиент звал этот метод на отбое, и уход одного
+    человека гасил разговор остальным. Мобильный клиент, наоборот, не звал
+    его вовсе — и звонок не заканчивался никогда: плашка «Вступить» висела
+    вечно, а входящие попадали в давно пустую комнату поодиночке.
+
+    `force: true` — закрыть в любом случае: этим пользуются администраторы,
+    чтобы погасить зависший звонок.
+    """
     channel_slug = data.get("channel_slug", "") or data.get("conversation_id", "")
     room_name = data.get("room_name", "")
+    force = bool(data.get("force"))
 
     if not channel_slug:
         return {"error": "channel_slug required"}
@@ -1074,52 +1237,26 @@ async def end_call(data: dict, username: str = Depends(get_current_user)):
         return {"error": "Channel not found"}
     ch = dict(ch_row)
 
-    # Remove from active calls
-    await db.execute("DELETE FROM active_calls WHERE channel_id = ?", (ch["id"],))
-
-    # Find active call message and mark ended
-    cursor2 = await db.execute(
-        """SELECT id, call_data, timestamp FROM messages
-           WHERE channel_id = ? AND type = 'call' AND call_data IS NOT NULL
-           ORDER BY timestamp DESC LIMIT 1""",
-        (ch["id"],),
+    cur = await db.execute(
+        "SELECT room_name FROM active_calls WHERE channel_id = ?", (ch["id"],)
     )
-    msg_row = await cursor2.fetchone()
-    if msg_row and msg_row["call_data"]:
-        call = json.loads(msg_row["call_data"])
-        if call.get("status") == "active":
-            call["status"] = "ended"
-            try:
-                start_dt = datetime.fromisoformat(call.get("started_at", msg_row["timestamp"]))
-                duration = int((datetime.now(timezone.utc) - start_dt).total_seconds())
-                call["duration"] = duration
-            except Exception:
-                call["duration"] = 0
+    row = await cur.fetchone()
+    if row is None:
+        return {"ok": True, "ended": False, "reason": "no_active_call"}
+    active_room = row["room_name"] or room_name
 
-            new_text = f"Video call ended ({call['duration']}s)"
-            await db.execute(
-                "UPDATE messages SET call_data = ?, text = ? WHERE id = ?",
-                (json.dumps(call, ensure_ascii=False), new_text, msg_row["id"]),
-            )
+    others = None
+    if not force:
+        people = await room_participants(active_room)
+        # Себя из списка вычёркиваем: мы уже уходим, а LiveKit об этом может
+        # ещё не знать.
+        others = None if people is None else [p for p in people if p != username]
+    if others:
+        # Разговор продолжается без нас — плашку не трогаем.
+        return {"ok": True, "ended": False, "remaining": len(others)}
 
-    ended_at = now_iso()
-    await db.execute(
-        """UPDATE call_log SET status = 'ended', ended_at = ?,
-           duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
-           WHERE channel_id = ? AND status = 'active'""",
-        (ended_at, ended_at, ch["id"]),
-    )
-
-    await db.commit()
-
-    members = await _get_members(db, ch["id"])
-    await manager.send_to_channel(members, {
-        "event": "call_ended",
-        "channel_id": ch["id"],
-        "channel_slug": ch["slug"],
-        "room_name": room_name,
-    })
-    return {"ok": True}
+    await finish_group_call(db, ch, active_room)
+    return {"ok": True, "ended": True, "remaining": 0}
 
 
 @router.get("/videocall/active")

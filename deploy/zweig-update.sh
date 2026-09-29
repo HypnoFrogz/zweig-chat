@@ -38,6 +38,12 @@ GIT_BRANCH="${GIT_BRANCH:-main}"
 
 cd "$REPO_DIR" || die "не открывается $REPO_DIR"
 
+# Скрипт идёт от root (через sudo), а каталог обычно принадлежит обычному
+# пользователю — тому, кто когда-то сделал git clone. С 2.35.2 git в таком
+# каталоге отказывается работать («detected dubious ownership»). Доверяем ровно
+# этому каталогу и только на время вызова: общий конфиг root не трогаем.
+git() { command git -c safe.directory="$REPO_DIR" "$@"; }
+
 # Компоновщик: старая docker-compose и новая docker compose называются по-разному.
 # Ищется лениво — осмотр (--check) должен работать и на машине, где с docker
 # что-то не так: именно тогда за осмотром и приходят.
@@ -121,7 +127,7 @@ log "было: $(current_commit)  $(current_subject)"
 
 log "git pull --ff-only $GIT_REMOTE $GIT_BRANCH"
 if ! git pull --ff-only "$GIT_REMOTE" "$GIT_BRANCH" 2>&1; then
-  die "git pull не прошёл — вероятно, локальные изменения в рабочем каталоге"
+  die "git pull не прошёл — причина в выводе git выше (частые: локальные правки в рабочем каталоге, нет доступа к репозиторию)"
 fi
 
 AFTER="$(git rev-parse HEAD)"

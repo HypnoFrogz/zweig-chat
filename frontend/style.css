@@ -545,6 +545,13 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 .topbar-channel-info { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
 .topbar-channel-info:hover .topbar-channel-name { text-decoration: underline; }
 .topbar-channel-icon { font-size: 18px; color: var(--text2); font-weight: 700; }
+.topbar-channel-icon.is-person {
+    width: 28px; height: 28px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--surface);
+}
+.topbar-channel-icon.is-person img { width: 100%; height: 100%; object-fit: cover; }
+.topbar-channel-icon.is-person .material-icons-round { font-size: 20px; }
 .topbar-channel-name { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-channel-desc { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-actions { display: flex; gap: 4px; }
@@ -886,7 +893,41 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 .member-row:hover .member-kick-btn { opacity: 1; }
 
 /* ═══ USER CARD ═══ */
-.user-card { max-width: 320px; padding: 0; overflow: hidden; }
+.user-card { max-width: 360px; padding: 0; overflow: hidden; }
+.user-card-shared { border-top: 1px solid var(--border); }
+.user-card-tabs { display: flex; }
+.user-card-tab {
+    flex: 1; background: none; border: none; cursor: pointer;
+    padding: 10px 8px; font: inherit; font-size: 13px; font-weight: 600;
+    color: var(--text3); border-bottom: 2px solid transparent;
+}
+.user-card-tab:hover { color: var(--text2); }
+.user-card-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.user-card-tab-count { font-weight: 400; color: var(--text3); }
+.user-card-shared-body { max-height: 300px; overflow-y: auto; padding: 4px; }
+.user-card-shared-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--text3); }
+.user-card-media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.user-card-media-tile {
+    position: relative; aspect-ratio: 1; overflow: hidden; cursor: pointer;
+    background: var(--bg3); border-radius: 4px;
+}
+.user-card-media-tile img, .user-card-media-tile video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.user-card-media-play {
+    position: absolute; inset: 0; margin: auto; width: 32px; height: 32px;
+    font-size: 32px; color: rgba(255,255,255,0.85); pointer-events: none;
+}
+.user-card-file-list { display: flex; flex-direction: column; }
+.user-card-file {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: var(--radius-sm); cursor: pointer;
+}
+.user-card-file:hover { background: var(--bg3); }
+.user-card-file > .material-icons-round { color: var(--accent); font-size: 22px; }
+.user-card-file-info { min-width: 0; flex: 1; }
+.user-card-file-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-card-file-meta { font-size: 11px; color: var(--text3); }
 .user-card-close { position: absolute; top: 8px; right: 8px; z-index: 2; }
 .user-card-header {
     background: linear-gradient(135deg, var(--accent), var(--online));
@@ -1672,6 +1713,52 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 .call-ctrl-btn:active { transform: scale(0.95); }
 .call-ctrl-hangup { background: var(--danger) !important; color: #fff; }
 .call-ctrl-btn.muted { background: var(--danger); color: #fff; }
+.call-ctrl-btn.sharing { background: var(--online); color: #fff; }
+
+/* Демонстрация экрана: во всю ширину сетки, картинка целиком, без обрезки. */
+.call-video-item.is-screen { grid-column: 1 / -1; aspect-ratio: 16/9; cursor: zoom-in; }
+.call-video-item.is-screen video { object-fit: contain; background: #000; }
+.call-video-item.is-screen:fullscreen { aspect-ratio: auto; cursor: zoom-out; border-radius: 0; }
+.call-video-item-name .material-icons-round { font-size: 13px; vertical-align: -2px; margin-right: 4px; }
+
+/* Окно выбора источника в десктопном приложении */
+.screen-picker-modal { z-index: 2000; }
+.screen-picker {
+    width: min(760px, calc(100vw - 32px)); max-width: none; max-height: calc(100vh - 48px);
+    display: flex; flex-direction: column; padding: 0; overflow: hidden;
+}
+.screen-picker-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 6px; }
+.screen-picker-header h3 { margin: 0; font-size: 17px; }
+.screen-picker-warning {
+    margin: 6px 16px; padding: 10px 12px; border-radius: var(--radius-sm);
+    background: var(--accent-bg); font-size: 13px; display: flex; gap: 12px; align-items: center;
+}
+.screen-picker-body { overflow-y: auto; padding: 4px 16px 12px; flex: 1; min-height: 0; }
+.screen-picker-section { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); margin: 12px 0 8px; }
+.screen-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.screen-picker-item {
+    background: var(--bg3); border: 2px solid transparent; border-radius: var(--radius);
+    padding: 6px; cursor: pointer; color: var(--text); font: inherit; text-align: left; min-width: 0;
+}
+.screen-picker-item:hover { border-color: var(--border); }
+.screen-picker-item.selected { border-color: var(--accent); background: var(--accent-bg); }
+.screen-picker-thumb {
+    aspect-ratio: 16/10; background: #111; border-radius: 6px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+}
+.screen-picker-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.screen-picker-thumb .material-icons-round { font-size: 36px; color: var(--text3); }
+.screen-picker-name { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; min-width: 0; }
+.screen-picker-name img { width: 16px; height: 16px; flex-shrink: 0; }
+.screen-picker-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.screen-picker-empty { padding: 32px; text-align: center; color: var(--text3); }
+.screen-picker-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; border-top: 1px solid var(--border);
+}
+.screen-picker-audio { font-size: 13px; color: var(--text2); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.screen-picker-buttons { display: flex; gap: 8px; }
+.screen-picker-buttons .btn-action:disabled { opacity: .5; cursor: default; }
 
 /* ── Video grid inside call panel ── */
 .call-video-grid {
@@ -2572,6 +2659,28 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     right: 0;
 }
 
+.msg-user-link { cursor: pointer; }
+.msg-sender.msg-user-link:hover { text-decoration: underline; }
+
+/* ═══ INCOMING MESSAGES (left-aligned bubble) ═══ */
+/* Чужие сообщения тоже в облачке — иначе своё и чужое читаются как
+   разные жанры: одно пузырём, другое голым текстом по фону. */
+.msg-row:not(.msg-own) .msg-text {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 12px 12px 12px 2px;
+    display: inline-block;
+    align-self: flex-start;
+    max-width: 100%;
+}
+/* Сообщение из одного файла: пустое облачко над вложением не нужно. */
+.msg-row:not(.msg-own) .msg-text:empty { display: none; }
+
+/* Сообщение из одного файла: у своего остаются только галочки,
+   без пустого облачка над вложением. */
+.msg-row .msg-text.msg-text-meta { background: none; border: none; padding: 0; }
+
 /* ═══ CHECKMARKS ═══ */
 .msg-checkmark {
     display: inline-flex;
@@ -2762,6 +2871,13 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
 .thread-msg .msg-text {
     display: inline-block;
 }
+.thread-msg:not(.msg-own) .msg-text {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 10px 10px 10px 2px;
+}
+.thread-msg:not(.msg-own) .msg-text:empty { display: none; }
 .thread-msg.msg-own .msg-text {
     background: var(--accent-bg);
     padding: 4px 10px;
@@ -2945,7 +3061,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     }
 
     /* Own messages */
-    .msg-row.msg-own .msg-text { max-width: 85%; }
+    .msg-row .msg-text { max-width: 85%; }
     .msg-reply-quote { max-width: 80vw; }
 }
 

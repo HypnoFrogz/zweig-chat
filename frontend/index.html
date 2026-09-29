@@ -14,7 +14,7 @@
     <!-- Fonts are served from this server: a deployment in a closed network has
          no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=54">
+    <link rel="stylesheet" href="/style.css?v=56">
 </head>
 <body>
 
@@ -542,6 +542,9 @@
                 <button class="call-ctrl-btn" id="btn-toggle-mic" onclick="toggleMic()" title="Microphone">
                     <span class="material-icons-round">mic</span>
                 </button>
+                <button class="call-ctrl-btn" id="btn-toggle-screen" onclick="toggleScreenShare()" title="Демонстрация экрана">
+                    <span class="material-icons-round">screen_share</span>
+                </button>
                 <button class="call-ctrl-btn" onclick="showInviteToCall()" title="Invite">
                     <span class="material-icons-round">person_add</span>
                 </button>
@@ -703,6 +706,17 @@
             <div class="user-card-name" id="user-card-name"></div>
             <div class="user-card-username" id="user-card-username"></div>
             <div class="user-card-status" id="user-card-status"></div>
+        </div>
+        <div class="user-card-shared" id="user-card-shared" style="display:none">
+            <div class="user-card-tabs">
+                <button class="user-card-tab active" data-tab="media" onclick="switchUserCardTab('media')">
+                    <span data-i18n="userCard.media">Медиа</span> <span class="user-card-tab-count" id="uc-media-count"></span>
+                </button>
+                <button class="user-card-tab" data-tab="files" onclick="switchUserCardTab('files')">
+                    <span data-i18n="userCard.files">Файлы</span> <span class="user-card-tab-count" id="uc-files-count"></span>
+                </button>
+            </div>
+            <div class="user-card-shared-body" id="user-card-shared-body"></div>
         </div>
         <div class="user-card-actions">
             <button class="btn-action btn-accent user-card-dm-btn" id="user-card-dm-btn" onclick="userCardSendMessage()">
@@ -1404,6 +1418,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=62"></script>
+<script src="/app.js?v=64"></script>
 </body>
 </html>

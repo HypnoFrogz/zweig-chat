@@ -367,6 +367,12 @@ const I18N = {
         'cat.newName': 'Название категории:',
         'files.copyLink': 'Копировать ссылку',
         'userCard.sendMessage': 'Написать',
+        'userCard.media': 'Медиа',
+        'userCard.files': 'Файлы',
+        'userCard.noMedia': 'В переписке пока нет фото и видео',
+        'userCard.noFiles': 'В переписке пока нет файлов',
+        'userCard.loading': 'Загрузка…',
+        'userCard.loadError': 'Не удалось загрузить вложения',
         'msg.reply': 'Ответить',
         'msg.reactions': 'Реакции',
         'msg.replies': 'ответов',
@@ -390,6 +396,22 @@ const I18N = {
         'call.alreadyInCall': 'Вы уже в звонке',
         'call.livekitNotLoaded': 'LiveKit не загружен',
         'call.connectionFailed': 'Не удалось подключиться к звонку',
+        'call.screenShare': 'Демонстрация экрана',
+        'call.screenStop': 'Остановить демонстрацию',
+        'call.screenFailed': 'Не удалось начать демонстрацию экрана',
+        'call.screenOf': 'экран',
+        'call.screenFullscreen': 'Нажмите, чтобы развернуть',
+        'screenPicker.title': 'Что показать',
+        'screenPicker.screens': 'Экран целиком',
+        'screenPicker.windows': 'Окно',
+        'screenPicker.wholeScreen': 'Весь экран',
+        'screenPicker.screenN': 'Экран',
+        'screenPicker.audio': 'Передавать звук компьютера',
+        'screenPicker.share': 'Показать',
+        'screenPicker.cancel': 'Отмена',
+        'screenPicker.empty': 'Нечего показать: окна не найдены',
+        'screenPicker.macPermission': 'macOS не разрешила Zweig запись экрана. Включите Zweig в «Системных настройках → Конфиденциальность и безопасность → Запись экрана», затем перезапустите приложение.',
+        'screenPicker.openSettings': 'Открыть настройки',
         'msg.scheduleTitle': 'Отправить позже',
         'msg.scheduleIn': 'через',
         'msg.schedulePast': 'это время уже прошло',
@@ -597,6 +619,12 @@ const I18N = {
         'cat.newName': 'Category name:',
         'files.copyLink': 'Copy link',
         'userCard.sendMessage': 'Send message',
+        'userCard.media': 'Media',
+        'userCard.files': 'Files',
+        'userCard.noMedia': 'No photos or videos in this chat yet',
+        'userCard.noFiles': 'No files in this chat yet',
+        'userCard.loading': 'Loading…',
+        'userCard.loadError': 'Could not load attachments',
         'msg.reply': 'Reply',
         'msg.reactions': 'Reactions',
         'msg.replies': 'replies',
@@ -620,6 +648,22 @@ const I18N = {
         'call.alreadyInCall': 'Already in a call',
         'call.livekitNotLoaded': 'LiveKit not loaded',
         'call.connectionFailed': 'Call connection failed',
+        'call.screenShare': 'Share screen',
+        'call.screenStop': 'Stop sharing',
+        'call.screenFailed': 'Could not start screen sharing',
+        'call.screenOf': 'screen',
+        'call.screenFullscreen': 'Click to expand',
+        'screenPicker.title': 'Choose what to share',
+        'screenPicker.screens': 'Entire screen',
+        'screenPicker.windows': 'Window',
+        'screenPicker.wholeScreen': 'Entire screen',
+        'screenPicker.screenN': 'Screen',
+        'screenPicker.audio': 'Share computer audio',
+        'screenPicker.share': 'Share',
+        'screenPicker.cancel': 'Cancel',
+        'screenPicker.empty': 'Nothing to share: no windows found',
+        'screenPicker.macPermission': 'macOS has not allowed Zweig to record the screen. Enable Zweig in System Settings → Privacy & Security → Screen Recording, then restart the app.',
+        'screenPicker.openSettings': 'Open settings',
         'msg.scheduleTitle': 'Send later',
         'msg.scheduleIn': 'in',
         'msg.schedulePast': 'that moment has passed',
@@ -1629,7 +1673,12 @@ function updateTopbar() {
     if (currentChannel.type === 'direct') {
         const peer = dmPeer(currentChannel);
         const other = peer.username;
-        iconEl.textContent = '@';
+        // Собеседник — человек, поэтому вместо «@» его аватар, а без аватара —
+        // значок человека. Нажатие открывает карточку с медиа и файлами.
+        iconEl.classList.add('is-person');
+        iconEl.innerHTML = peer.avatar
+            ? `<img src="${srv(peer.avatar)}" alt="">`
+            : '<span class="material-icons-round">person</span>';
         nameEl.textContent = peer.name;
         // For a federated peer the server is part of who they are, and the
         // online dot would be misleading — presence is local only.
@@ -1637,6 +1686,7 @@ function updateTopbar() {
         if (settingsBtn) settingsBtn.style.display = 'none';
         if (membersBtn) membersBtn.style.display = 'none';
     } else {
+        iconEl.classList.remove('is-person');
         if (currentChannel.avatar_path) {
             iconEl.innerHTML = `<img src="${srv(currentChannel.avatar_path)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">`;
         } else {
@@ -1800,21 +1850,21 @@ function renderMessages(messages, scroll = true, prepend = false) {
                 <div class="msg-body">
                     ${actions}
                     ${replyPreview}
-                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))} ${editedBadge}${checkmarks}</div>
+                    <div class="msg-text${msgTextFor(msg) ? '' : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${editedBadge ? ' ' + editedBadge : ''}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
         } else {
             html += `<div class="msg-row${ownClass}" data-id="${msg.id}">
-                <div class="msg-avatar">${avatarContent}</div>
+                <div class="msg-avatar msg-user-link" onclick="showUserCard('${esc(msg.sender).replace(/'/g, "\\'")}')">${avatarContent}</div>
                 <div class="msg-body">
                     ${actions}
                     <div class="msg-header">
-                        <span class="msg-sender">${esc(msg.sender_name || msg.sender)}</span>
+                        <span class="msg-sender msg-user-link" onclick="showUserCard('${esc(msg.sender).replace(/'/g, "\\'")}')">${esc(msg.sender_name || msg.sender)}</span>
                         <span class="msg-time">${time}</span>${editedBadge}
                     </div>
                     ${replyPreview}
-                    <div class="msg-text" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${checkmarks}</div>
+                    <div class="msg-text${msgTextFor(msg) ? '' : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
@@ -3246,8 +3296,108 @@ function showUserCard(username) {
     document.getElementById('user-card-status').textContent = user.status_text || '';
     // Hide "Send message" button if viewing own card
     const dmBtn = document.getElementById('user-card-dm-btn');
-    dmBtn.style.display = username === currentUser ? 'none' : 'flex';
+    const dm = username === currentUser ? null : dmChannelWith(username);
+    // Уже в переписке с ним — «Написать» никуда не ведёт.
+    const inThisDm = dm && currentChannel && currentChannel.id === dm.id;
+    dmBtn.style.display = (username === currentUser || inThisDm) ? 'none' : 'flex';
+    loadUserCardShared(dm);
     document.getElementById('user-card-modal').style.display = 'flex';
+}
+
+// ── Медиа и файлы переписки в карточке ──────────────────────────
+let userCardShared = { slug: null, media: [], files: [], tab: 'media', loading: false, error: false };
+
+function dmChannelWith(username) {
+    return channels.find(c => c.type === 'direct'
+        && (c.members || []).includes(username)
+        && (c.members || []).includes(currentUser)) || null;
+}
+
+// Альбом приходит одним вложением — в сетке нужен каждый снимок.
+function expandAlbumItems(items) {
+    const out = [];
+    (items || []).forEach(it => {
+        const f = it.file || {};
+        if (Array.isArray(f.album) && f.album.length > 1) {
+            f.album.forEach(a => out.push({ ...it, file: { type: 'image', ...a } }));
+        } else {
+            out.push(it);
+        }
+    });
+    return out;
+}
+
+async function loadUserCardShared(dm) {
+    const box = document.getElementById('user-card-shared');
+    if (!box) return;
+    userCardShared = { slug: dm ? dm.slug : null, media: [], files: [], tab: 'media', loading: !!dm, error: false };
+    if (!dm) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    renderUserCardShared();
+    const slug = dm.slug;
+    try {
+        const [m, f] = await Promise.all([
+            apiFetch(`/channels/${slug}/attachments?kind=media`),
+            apiFetch(`/channels/${slug}/attachments?kind=files`),
+        ]);
+        if (!m || !m.ok || !f || !f.ok) throw new Error('attachments');
+        const media = await m.json();
+        const files = await f.json();
+        if (userCardShared.slug !== slug) return;
+        userCardShared.media = expandAlbumItems(media);
+        userCardShared.files = files || [];
+    } catch (e) {
+        if (userCardShared.slug !== slug) return;
+        userCardShared.error = true;
+    }
+    userCardShared.loading = false;
+    renderUserCardShared();
+}
+
+function switchUserCardTab(tab) {
+    userCardShared.tab = tab;
+    renderUserCardShared();
+}
+
+function renderUserCardShared() {
+    const s = userCardShared;
+    document.querySelectorAll('#user-card-shared .user-card-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === s.tab));
+    document.getElementById('uc-media-count').textContent = s.media.length || '';
+    document.getElementById('uc-files-count').textContent = s.files.length || '';
+    const body = document.getElementById('user-card-shared-body');
+    const empty = text => `<div class="user-card-shared-empty">${esc(text)}</div>`;
+    if (s.loading) { body.innerHTML = empty(t('userCard.loading')); return; }
+    if (s.error) { body.innerHTML = empty(t('userCard.loadError')); return; }
+    if (s.tab === 'media') {
+        if (!s.media.length) { body.innerHTML = empty(t('userCard.noMedia')); return; }
+        body.innerHTML = '<div class="user-card-media-grid">' + s.media.map(it => {
+            const f = it.file || {};
+            const u = srv(f.url || f.path || '');
+            const inner = f.type === 'video'
+                ? `<video src="${esc(u)}" preload="metadata" muted playsinline></video>
+                   <span class="material-icons-round user-card-media-play">play_circle</span>`
+                : `<img src="${esc(u)}" alt="${esc(f.name || '')}" loading="lazy">`;
+            return `<div class="user-card-media-tile" data-url="${esc(u)}" onclick="window.open(this.dataset.url,'_blank')" title="${esc(f.name || '')}">${inner}</div>`;
+        }).join('') + '</div>';
+        return;
+    }
+    if (!s.files.length) { body.innerHTML = empty(t('userCard.noFiles')); return; }
+    body.innerHTML = '<div class="user-card-file-list">' + s.files.map(it => {
+        const f = it.file || {};
+        const u = srv(f.url || f.path || '');
+        const name = f.name || f.original_name || 'file';
+        const icon = f.kind === 'voice' ? 'mic' : 'insert_drive_file';
+        const meta = [f.size ? formatFileSize(f.size) : '', it.timestamp ? formatDate(it.timestamp) : '']
+            .filter(Boolean).join(' · ');
+        return `<div class="user-card-file" data-url="${esc(u)}" onclick="window.open(this.dataset.url,'_blank')">
+            <span class="material-icons-round">${icon}</span>
+            <div class="user-card-file-info">
+                <div class="user-card-file-name">${esc(name)}</div>
+                <div class="user-card-file-meta">${esc(meta)}</div>
+            </div>
+        </div>`;
+    }).join('') + '</div>';
 }
 
 function closeUserCard() {
@@ -3270,7 +3420,9 @@ async function userCardSendMessage() {
 }
 
 function onTopbarInfoClick() {
-    if (currentPage !== 'chat' || !currentChannel) return;
+    // Страница переписки называется 'messaging'; с проверкой на 'chat'
+    // нажатие на шапку не делало ничего.
+    if (currentPage !== 'messaging' || !currentChannel) return;
     if (currentChannel.type === 'direct') {
         const other = (currentChannel.members || []).find(m => m !== currentUser);
         if (other) showUserCard(other);
@@ -3991,6 +4143,8 @@ async function joinLivekitRoom(tk, roomName, url) {
         // Remove video elements for this participant
         const container = document.getElementById(`video-${participant.identity}`);
         if (container) container.remove();
+        const screenBox = document.getElementById(`video-${participant.identity}-screen`);
+        if (screenBox) screenBox.remove();
         updateVideoGrid();
         renderCallParticipants();
     });
@@ -4001,6 +4155,14 @@ async function joinLivekitRoom(tk, roomName, url) {
         renderCallParticipants();
     });
     room.on(LivekitClient.RoomEvent.Disconnected, () => closeCall());
+    // Демонстрацию можно остановить и мимо нашей кнопки — плашкой браузера
+    // «Закрыть доступ» или закрыв показываемое окно. Кнопку и плитку
+    // приводим в порядок по факту.
+    room.on(LivekitClient.RoomEvent.LocalTrackUnpublished, (pub) => {
+        if (pub.source === LivekitClient.Track.Source.ScreenShare) removeLocalScreenTile();
+        updateScreenShareButton();
+    });
+    updateScreenShareButton();
 
     try {
         await room.connect(livekitUrl, tk);
@@ -4040,13 +4202,30 @@ function attachTrack(track, participant) {
     } else if (track.kind === 'video') {
         // Add video to call panel grid
         const grid = document.getElementById('call-video-grid');
-        let container = document.getElementById(`video-${participant.identity}`);
+        // Экран — отдельная плитка: у человека могут идти одновременно и
+        // камера, и демонстрация, и в одном окне они бы наложились.
+        const isScreen = track.source === LivekitClient.Track.Source.ScreenShare;
+        const boxId = isScreen ? `video-${participant.identity}-screen` : `video-${participant.identity}`;
+        let container = document.getElementById(boxId);
         if (!container) {
             container = document.createElement('div');
-            container.className = 'call-video-item';
-            container.id = `video-${participant.identity}`;
-            container.innerHTML = `<div class="call-video-item-name">${esc(participant.name || participant.identity)}</div>`;
-            grid.appendChild(container);
+            container.className = 'call-video-item' + (isScreen ? ' is-screen' : '');
+            container.id = boxId;
+            const who = esc(participant.name || participant.identity);
+            container.innerHTML = isScreen
+                ? `<div class="call-video-item-name"><span class="material-icons-round">screen_share</span>${who} · ${esc(t('call.screenOf'))}</div>`
+                : `<div class="call-video-item-name">${who}</div>`;
+            if (isScreen) {
+                // Панель звонка узкая — экран разворачивается во весь монитор.
+                container.title = t('call.screenFullscreen');
+                container.addEventListener('click', () => {
+                    if (document.fullscreenElement) document.exitFullscreen();
+                    else if (container.requestFullscreen) container.requestFullscreen();
+                });
+            }
+            // Экран — первым: ради него обычно и собрались.
+            if (isScreen) grid.prepend(container);
+            else grid.appendChild(container);
         }
         const el = track.attach();
         el.dataset.trackSid = track.sid;
@@ -4212,6 +4391,170 @@ async function hangUpOnServer() {
     }
 }
 
+// ── Демонстрация экрана ────────────────────────────────────────
+// В браузере окно выбора (вкладка, окно или весь экран) показывает сам
+// браузер. В десктопном приложении getDisplayMedia без помощи не работает:
+// Electron просит главный процесс выдать источник, тот собирает список окон и
+// экранов и присылает его сюда — выбор показывает showScreenPicker ниже.
+let screenShareBusy = false;
+
+function screenShareSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+}
+
+function updateScreenShareButton() {
+    const btn = document.getElementById('btn-toggle-screen');
+    if (!btn) return;
+    btn.style.display = screenShareSupported() ? '' : 'none';
+    const on = !!(livekitRoom && livekitRoom.localParticipant && livekitRoom.localParticipant.isScreenShareEnabled);
+    btn.querySelector('.material-icons-round').textContent = on ? 'stop_screen_share' : 'screen_share';
+    btn.classList.toggle('sharing', on);
+    btn.title = on ? t('call.screenStop') : t('call.screenShare');
+}
+
+async function toggleScreenShare() {
+    if (!livekitRoom || screenShareBusy) return;
+    const lp = livekitRoom.localParticipant;
+    const on = lp.isScreenShareEnabled;
+    screenShareBusy = true;
+    try {
+        if (on) {
+            await lp.setScreenShareEnabled(false);
+        } else {
+            const pub = await lp.setScreenShareEnabled(true, {
+                // Звук берётся, если источник его отдаёт: вкладка браузера или
+                // системный звук на Windows. Нет звука — демонстрация идёт без него.
+                audio: true,
+                systemAudio: 'include',
+                selfBrowserSurface: 'exclude',
+                surfaceSwitching: 'include',
+                contentHint: 'detail',
+            });
+            if (pub && pub.track) attachTrack(pub.track, lp);
+        }
+    } catch (err) {
+        // Отказ в окне выбора — не ошибка: человек передумал.
+        const cancelled = err && (err.name === 'NotAllowedError' || err.name === 'AbortError');
+        if (!cancelled) {
+            console.error('Screen share error:', err);
+            showToast(t('call.screenFailed'), 'error');
+        }
+    } finally {
+        screenShareBusy = false;
+        updateScreenShareButton();
+    }
+}
+
+function removeLocalScreenTile() {
+    if (!livekitRoom) return;
+    const box = document.getElementById(`video-${livekitRoom.localParticipant.identity}-screen`);
+    if (box) box.remove();
+    updateVideoGrid();
+}
+
+// Окно выбора источника в десктопном приложении. Главный процесс ждёт ответа
+// на каждый запрос, поэтому ответить нужно ровно один раз — и при отмене тоже.
+function showScreenPicker(data) {
+    const desk = window.zweigDesktop;
+    if (!desk) return;
+    const requestId = data.requestId;
+    const sources = data.sources || [];
+    let answered = false;
+    let selected = null;
+
+    const old = document.getElementById('screen-picker-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'screen-picker-modal';
+    modal.className = 'modal screen-picker-modal';
+    modal.style.display = 'flex';
+
+    // Экраны система называет по-своему и по-английски («Entire screen»,
+    // «Screen 1») — подписываем сами: один экран или номер монитора.
+    const screens = sources.filter(s => s.kind === 'screen').map((s, i, all) => ({
+        ...s,
+        name: all.length > 1 ? `${t('screenPicker.screenN')} ${i + 1}` : t('screenPicker.wholeScreen'),
+    }));
+    const windows = sources.filter(s => s.kind !== 'screen');
+    const tile = s => `
+        <button type="button" class="screen-picker-item" data-id="${esc(s.id)}" title="${esc(s.name)}">
+            <div class="screen-picker-thumb">${s.thumbnail
+                ? `<img src="${s.thumbnail}" alt="">`
+                : `<span class="material-icons-round">${s.kind === 'screen' ? 'desktop_windows' : 'web_asset'}</span>`}</div>
+            <div class="screen-picker-name">${s.icon ? `<img src="${s.icon}" alt="">` : ''}<span>${esc(s.name)}</span></div>
+        </button>`;
+    const section = (title, list) => list.length
+        ? `<div class="screen-picker-section">${esc(title)}</div><div class="screen-picker-grid">${list.map(tile).join('')}</div>`
+        : '';
+    const needsPermission = data.platform === 'darwin' && data.permission && data.permission !== 'granted';
+    const audioToggle = data.audioSupported
+        ? `<label class="screen-picker-audio"><input type="checkbox" id="screen-picker-audio"> ${esc(t('screenPicker.audio'))}</label>`
+        : '<span></span>';
+
+    modal.innerHTML = `
+        <div class="modal-backdrop"></div>
+        <div class="modal-content screen-picker">
+            <div class="screen-picker-header">
+                <h3>${esc(t('screenPicker.title'))}</h3>
+                <button class="btn-icon" data-act="cancel"><span class="material-icons-round">close</span></button>
+            </div>
+            ${needsPermission ? `<div class="screen-picker-warning">
+                <span>${esc(t('screenPicker.macPermission'))}</span>
+                <button class="btn-action" data-act="settings">${esc(t('screenPicker.openSettings'))}</button>
+            </div>` : ''}
+            <div class="screen-picker-body">
+                ${section(t('screenPicker.screens'), screens)}
+                ${section(t('screenPicker.windows'), windows)}
+                ${sources.length ? '' : `<div class="screen-picker-empty">${esc(t('screenPicker.empty'))}</div>`}
+            </div>
+            <div class="screen-picker-footer">
+                ${audioToggle}
+                <div class="screen-picker-buttons">
+                    <button class="btn-action" data-act="cancel">${esc(t('screenPicker.cancel'))}</button>
+                    <button class="btn-action btn-accent" data-act="share" disabled>${esc(t('screenPicker.share'))}</button>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+
+    const shareBtn = modal.querySelector('[data-act="share"]');
+    const finish = (id) => {
+        if (answered) return;
+        answered = true;
+        const audioEl = modal.querySelector('#screen-picker-audio');
+        desk.chooseScreenSource(requestId, id, !!(id && audioEl && audioEl.checked));
+        document.removeEventListener('keydown', onKey);
+        modal.remove();
+    };
+    const onKey = (e) => {
+        if (e.key === 'Escape') finish(null);
+        if (e.key === 'Enter' && selected) finish(selected);
+    };
+    document.addEventListener('keydown', onKey);
+
+    modal.querySelector('.modal-backdrop').addEventListener('click', () => finish(null));
+    modal.querySelectorAll('[data-act="cancel"]').forEach(b => b.addEventListener('click', () => finish(null)));
+    shareBtn.addEventListener('click', () => { if (selected) finish(selected); });
+    const settingsBtn = modal.querySelector('[data-act="settings"]');
+    if (settingsBtn) settingsBtn.addEventListener('click', () => desk.openScreenPermissionSettings && desk.openScreenPermissionSettings());
+    modal.querySelectorAll('.screen-picker-item').forEach(item => {
+        item.addEventListener('click', () => {
+            modal.querySelectorAll('.screen-picker-item.selected').forEach(x => x.classList.remove('selected'));
+            item.classList.add('selected');
+            selected = item.dataset.id;
+            shareBtn.disabled = false;
+        });
+        item.addEventListener('dblclick', () => finish(item.dataset.id));
+    });
+}
+
+(function setupDesktopScreenPicker() {
+    if (window.zweigDesktop && typeof window.zweigDesktop.onScreenPicker === 'function') {
+        window.zweigDesktop.onScreenPicker(showScreenPicker);
+    }
+})();
+
 async function endCall() {
     // Не требуем livekitRoom: звонок должен отменяться и пока он только звонит,
     // то есть ровно тогда, когда комнаты ещё нет.
@@ -4251,6 +4594,7 @@ function closeCall() {
     const camBtn = document.getElementById('btn-toggle-cam');
     camBtn.querySelector('.material-icons-round').textContent = 'videocam_off';
     camBtn.classList.remove('muted');
+    updateScreenShareButton();
     callParticipants.clear();
     // Reset timer display
     const timerEl = document.getElementById('call-panel-timer');

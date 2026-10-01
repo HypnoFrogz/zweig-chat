@@ -82,8 +82,12 @@ async def room_participants(room_name: str) -> list[str] | None:
             api_secret=LIVEKIT_API_SECRET,
         )
         rooms = await lk.room.list_rooms(lk_api.ListRoomsRequest(names=[room_name]))
-        if not rooms.rooms or int(rooms.rooms[0].num_participants) == 0:
-            return []  # комнаты нет или она пуста
+        if not rooms.rooms:
+            return []  # комнаты нет — значит, и людей в ней нет
+        # Счётчику num_participants из list_rooms верить нельзя: LiveKit
+        # обновляет его с запаздыванием и при живых троих в комнате отдаёт 0.
+        # По нему сервер решал, что комната пуста, и уход одного участника
+        # закрывал звонок всем. Спрашиваем список людей напрямую.
         res = await lk.room.list_participants(
             lk_api.ListParticipantsRequest(room=room_name)
         )

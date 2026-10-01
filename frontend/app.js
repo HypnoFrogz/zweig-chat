@@ -3571,9 +3571,22 @@ async function navigateToAdmin() {
     if (sb.classList.contains('open')) toggleSidebar();
     pushRoute('/admin');
     showPage('admin');
+    switchAdminTab(adminTab);
     await loadAdminUsers();
     loadFederation();
-    loadAdminFeedback();
+}
+
+// Разделы админки. Выбранный раздел помним до перезагрузки страницы: вернулся
+// в админку — оказался там же, где был.
+let adminTab = 'users';
+function switchAdminTab(tab) {
+    adminTab = tab;
+    document.querySelectorAll('#page-admin .admin-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('#page-admin .admin-tab-panel').forEach(p => {
+        p.style.display = p.dataset.panel === tab ? '' : 'none';
+    });
+    if (tab === 'servers') loadFederation();
 }
 function showCreateUserForm() { document.getElementById('admin-create-user-form').style.display = 'flex'; }
 async function adminCreateUser() {
@@ -3754,10 +3767,35 @@ async function fedRemove(domain) {
     await loadFederation();
 }
 
+// Список приходит целиком, поиск фильтрует его у себя — без запроса на
+// каждую букву.
+let adminUsersCache = [];
+
 async function loadAdminUsers() {
     const res = await apiFetch('/admin/users');
     if (!res || !res.ok) return;
-    const users = await res.json();
+    adminUsersCache = await res.json();
+    renderAdminUsers();
+}
+
+function renderAdminUsers() {
+    const q = (document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+    const users = q
+        ? adminUsersCache.filter(u =>
+            (u.username || '').toLowerCase().includes(q) ||
+            (u.display_name || '').toLowerCase().includes(q))
+        : adminUsersCache;
+    const countEl = document.getElementById('admin-users-count');
+    if (countEl) {
+        countEl.textContent = q
+            ? `Найдено: ${users.length} из ${adminUsersCache.length}`
+            : `Всего: ${adminUsersCache.length}`;
+    }
+    if (q && users.length === 0) {
+        document.getElementById('admin-users-list').innerHTML =
+            '<div class="admin-users-empty">Никого не нашлось</div>';
+        return;
+    }
     document.getElementById('admin-users-list').innerHTML = users.map(u => {
         const badges = [];
         if (u.role === 'admin') badges.push('<span class="admin-badge admin">admin</span>');

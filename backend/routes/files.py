@@ -1,5 +1,6 @@
 """Zweig Messenger — File manager (CRUD + upload-to-chat)."""
 
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,37 @@ from helpers import (
 )
 
 router = APIRouter(prefix="/api", tags=["files"])
+
+
+# Запрещённое в имени файла: разделители пути, символы, которых не терпят
+# Windows и Android, и управляющие.
+_FORBIDDEN_IN_NAME = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')
+# Длина имени в байтах. Файловые системы терпят 255, запас оставлен под
+# суффикс «_N», который добавляется при совпадении имён.
+_MAX_NAME_BYTES = 150
+
+
+def _safe_filename(raw: str | None, default: str = "file") -> str:
+    """Имя, под которым файл можно положить на диск и отдать обратно.
+
+    Имя присылает клиент, и верить ему нельзя. Файл, присланный в мобильное
+    приложение через «Поделиться», приходит с тем, что придумал чужой
+    провайдер: `document:1234`, путь с косыми чертами, пустая строка или имя на
+    сотни символов. Раньше оно шло на диск как есть — загрузка падала или файл
+    ложился не туда.
+    """
+    name = (raw or "").replace("\\", "/").split("/")[-1]
+    name = _FORBIDDEN_IN_NAME.sub("_", name).strip().strip(".").strip()
+    if not name:
+        return default
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem:
+        stem, ext = name, ""
+    ext = ext[:16]
+    suffix = f".{ext}" if ext else ""
+    while stem and len((stem + suffix).encode("utf-8")) > _MAX_NAME_BYTES:
+        stem = stem[:-1]
+    return (stem.strip() or default) + suffix
 
 
 # ── Folders ──────────────────────────────────────────────────────
@@ -56,7 +88,7 @@ async def upload_files(
     base.mkdir(parents=True, exist_ok=True)
     uploaded = []
     for f in files:
-        dest = base / f.filename
+        dest = base / _safe_filename(f.filename)
         if dest.exists():
             stem = dest.stem
             suffix = dest.suffix
@@ -81,7 +113,7 @@ async def upload_to_chat(
     chat_dir = user_root(username) / "_chat"
     chat_dir.mkdir(parents=True, exist_ok=True)
 
-    dest = chat_dir / file.filename
+    dest = chat_dir / _safe_filename(file.filename)
     if dest.exists():
         stem = dest.stem
         suffix = dest.suffix

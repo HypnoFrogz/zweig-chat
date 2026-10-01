@@ -37,6 +37,8 @@ CONTROL_PLANE_URL = os.getenv("CONTROL_PLANE_URL", "").rstrip("/")
 ORG_KEY = os.getenv("ORG_KEY", "")
 CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
 CALL_ACTIVE_STALE_SEC = int(os.getenv("CALL_ACTIVE_STALE_SEC", "180"))
+# Дольше этого разговор не идёт: предел на случай, когда LiveKit спросить нельзя.
+CALL_ACTIVE_MAX_SEC = int(os.getenv("CALL_ACTIVE_MAX_SEC", str(6 * 3600)))
 CALL_CLEANUP_INTERVAL_SEC = int(os.getenv("CALL_CLEANUP_INTERVAL_SEC", "30"))
 CALL_RETENTION_DAYS = int(os.getenv("CALL_RETENTION_DAYS", "5"))
 # Сколько ждать, прежде чем считать пустую групповую комнату брошенной.
@@ -381,16 +383,39 @@ async def cleanup_calls_state() -> dict[str, int]:
     )
     expired_ringing = cur.rowcount or 0
 
+    # Разговор, идущий дольше CALL_ACTIVE_STALE_SEC, раньше считался зависшим
+    # и закрывался по одному времени — то есть любой звонок длиннее трёх минут
+    # молча становился «завершённым»: собеседник числился свободным, и ему мог
+    # прийти второй вызов, а смена камеры и громкой связи отвечала 409. Теперь
+    # спрашиваем LiveKit, есть ли кто в комнате, и закрываем только пустые.
+    # Где спросить нельзя (hosted-режим, комната на чужом сервере), ждём
+    # заведомо невозможной длины разговора.
     active_stale_before = (_now_utc() - timedelta(seconds=CALL_ACTIVE_STALE_SEC)).isoformat()
+    active_max_before = (_now_utc() - timedelta(seconds=CALL_ACTIVE_MAX_SEC)).isoformat()
     cur = await db.execute(
-        """UPDATE calls
-           SET status = 'ended', ended_at = ?, end_reason = 'stale_active_timeout'
+        """SELECT * FROM calls
            WHERE status = 'active'
              AND COALESCE(answered_at, created_at) != ''
              AND COALESCE(answered_at, created_at) < ?""",
-        (now_iso_s, active_stale_before),
+        (active_stale_before,),
     )
-    stale_active = cur.rowcount or 0
+    stale_candidates = [dict(r) for r in await cur.fetchall()]
+    stale_rows = []
+    for call in stale_candidates:
+        started = call.get("answered_at") or call.get("created_at") or ""
+        people = None if call.get("remote_domain") else await room_participants(call["room_name"])
+        if people is None:
+            if started < active_max_before:
+                stale_rows.append(call)
+        elif not people:
+            stale_rows.append(call)
+    for call in stale_rows:
+        await db.execute(
+            """UPDATE calls SET status = 'ended', ended_at = ?, end_reason = 'stale_active_timeout'
+               WHERE id = ? AND status = 'active'""",
+            (now_iso_s, call["id"]),
+        )
+    stale_active = len(stale_rows)
 
     retention_cutoff = (_now_utc() - timedelta(days=CALL_RETENTION_DAYS)).isoformat()
     cur = await db.execute(
@@ -406,6 +431,29 @@ async def cleanup_calls_state() -> dict[str, int]:
 
     for call in expired_rows:
         await record_missed_call(db, call)
+        # Звонящему тоже: иначе он так и сидит в пустой комнате с гудками —
+        # о том, что никто не ответил, сервер раньше сообщал только записью
+        # «пропущенный» в переписке.
+        timeout_event = {
+            "event": "call_ended",
+            "call_id": call["id"],
+            "channel_slug": call["channel_slug"],
+            "reason": "timeout",
+        }
+        await manager.send_to_user(call["caller_username"], timeout_event)
+        await manager.send_to_user(call["callee_username"], timeout_event)
+
+    # Комната пуста, но у кого-то мог остаться экран звонка: например, приложение
+    # поднялось из фона и не узнало, что собеседник давно ушёл.
+    for call in stale_rows:
+        event = {
+            "event": "call_ended",
+            "call_id": call["id"],
+            "channel_slug": call["channel_slug"],
+            "reason": "stale",
+        }
+        await manager.send_to_user(call["caller_username"], event)
+        await manager.send_to_user(call["callee_username"], event)
 
     return {
         "expired_ringing": expired_ringing,

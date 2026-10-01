@@ -13,6 +13,25 @@ from routes.moderation import get_blocked_by, get_blockers_of
 router = APIRouter(prefix="/api", tags=["messages"])
 
 
+def _unwrap_file(info):
+    """Сведения о вложении без обёртки ответа загрузки.
+
+    Мобильное приложение при отправке через «Поделиться» клало в сообщение
+    весь ответ `/files/upload-to-chat` — `{"ok": true, "file": {...}}` — вместо
+    самого `file`. У такого вложения нет ни имени, ни ссылки, и клиенты
+    показывали безымянный файл, который не открыть. Разворачиваем и при
+    записи, и при чтении: так чинятся и уже отправленные сообщения.
+    """
+    if (
+        isinstance(info, dict)
+        and isinstance(info.get("file"), dict)
+        and not info.get("url")
+        and not info.get("name")
+    ):
+        return info["file"]
+    return info
+
+
 # ── Helpers ──────────────────────────────────────────────────────
 
 async def _get_channel_by_slug(db, slug: str, username: str):
@@ -54,7 +73,7 @@ async def _build_message(db, msg_row) -> dict:
     if sender_row and sender_row["display_name"]:
         m["sender_name"] = sender_row["display_name"]
     if m.get("file_data"):
-        m["file"] = json.loads(m["file_data"])
+        m["file"] = _unwrap_file(json.loads(m["file_data"]))
     if m.get("call_data"):
         m["call"] = json.loads(m["call_data"])
     m.pop("file_data", None)
@@ -200,8 +219,8 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
 
     file_data = None
     if msg_type == "file" and "file" in data:
-        msg["file"] = data["file"]
-        file_data = json.dumps(data["file"], ensure_ascii=False)
+        msg["file"] = _unwrap_file(data["file"])
+        file_data = json.dumps(msg["file"], ensure_ascii=False)
 
     # Fetch reply preview if replying
     if reply_to:
@@ -624,7 +643,7 @@ async def channel_attachments(
     for row in await cursor.fetchall():
         m = dict(row)
         try:
-            file_info = json.loads(m["file_data"])
+            file_info = _unwrap_file(json.loads(m["file_data"]))
         except (TypeError, ValueError):
             continue
         file_type = (file_info.get("type") or "").lower()
@@ -719,7 +738,7 @@ async def search_messages(
         m["channel_slug"] = m.pop("channel_slug", "")
         m["channel_name"] = m.pop("channel_name", "")
         if m.get("file_data"):
-            m["file"] = json.loads(m["file_data"])
+            m["file"] = _unwrap_file(json.loads(m["file_data"]))
         m.pop("file_data", None)
         m.pop("call_data", None)
         results.append(m)
@@ -879,8 +898,8 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     }
 
     if msg_type == "file" and "file" in data:
-        msg["file"] = data["file"]
-        file_data = json.dumps(data["file"], ensure_ascii=False)
+        msg["file"] = _unwrap_file(data["file"])
+        file_data = json.dumps(msg["file"], ensure_ascii=False)
 
     # Fetch reply preview if replying
     if reply_to:

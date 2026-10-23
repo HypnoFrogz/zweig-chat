@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from helpers import get_current_user, get_display_name, require_admin, hash_password, now_iso
 from database import get_db
+import sessions
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -61,10 +62,8 @@ async def _create_user_row(db, username: str, password: str, display_name: str, 
     return True, "created"
 
 async def _revoke_user_sessions(db, target: str, reason: str):
-    await db.execute(
-        "UPDATE user_sessions SET revoked_at = ?, revoked_reason = ? WHERE username = ? AND revoked_at IS NULL",
-        (now_iso(), reason, target),
-    )
+    # Сразу: токены перестают приниматься, WebSocket закрываются, пуши удаляются.
+    await sessions.revoke(db, target, reason)
 
 
 @router.get("/users")
@@ -72,7 +71,11 @@ async def list_all_users(username: str = Depends(get_current_user)):
     await require_admin(username)
     db = await get_db()
     cursor = await db.execute(
-        "SELECT username, display_name, nickname, avatar_path, status_text, role, blocked, created_at, last_seen FROM users ORDER BY created_at"
+        """SELECT u.username, u.display_name, u.nickname, u.avatar_path, u.status_text, u.role, u.blocked,
+                  u.created_at, u.last_seen,
+                  CASE WHEN t.enabled_at IS NOT NULL AND t.secret_enc != '' THEN 1 ELSE 0 END AS twofa
+           FROM users u LEFT JOIN user_2fa t ON t.username = u.username
+           ORDER BY u.created_at"""
     )
     return [dict(r) for r in await cursor.fetchall()]
 
@@ -280,9 +283,13 @@ async def change_role(target: str, data: dict, username: str = Depends(get_curre
         raise HTTPException(status_code=400, detail="Invalid role")
 
     db = await get_db()
-    c = await db.execute("SELECT 1 FROM users WHERE username = ?", (target,))
-    if not await c.fetchone():
+    c = await db.execute("SELECT role FROM users WHERE username = ?", (target,))
+    row = await c.fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="User not found")
+    # Бот так и остаётся ботом: став «пользователем», он смог бы войти паролем.
+    if row["role"] == "bot":
+        raise HTTPException(status_code=400, detail="Роль бота не меняется")
 
     await db.execute("UPDATE users SET role = ? WHERE username = ?", (new_role, target))
     await db.commit()
@@ -338,3 +345,43 @@ async def list_feedback(username: str = Depends(get_current_user)):
         "SELECT id, username, display_name, text, created_at FROM feedback ORDER BY created_at DESC"
     )
     return [dict(r) for r in await cursor.fetchall()]
+
+
+# ── Сеансы пользователя ─────────────────────────────────────────
+
+@router.get("/users/{target}/sessions")
+async def admin_user_sessions(target: str, username: str = Depends(get_current_user)):
+    await require_admin(username)
+    db = await get_db()
+    return {"sessions": await sessions.list_sessions(db, target.strip().lower())}
+
+
+@router.delete("/users/{target}/sessions/{session_id}")
+async def admin_end_session(target: str, session_id: str, username: str = Depends(get_current_user)):
+    await require_admin(username)
+    db = await get_db()
+    n = await sessions.revoke(db, target.strip().lower(), "ended_by_admin", sids=[session_id])
+    await db.commit()
+    if not n:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
+@router.post("/users/{target}/sessions/revoke-all")
+async def admin_end_all_sessions(target: str, username: str = Depends(get_current_user)):
+    await require_admin(username)
+    db = await get_db()
+    n = await sessions.revoke(db, target.strip().lower(), "ended_by_admin")
+    await db.commit()
+    return {"ok": True, "ended": n}
+
+
+@router.delete("/users/{target}/2fa")
+async def admin_reset_2fa(target: str, username: str = Depends(get_current_user)):
+    """Сбросить 2FA: человек потерял телефон и резервные коды."""
+    await require_admin(username)
+    import twofa
+    db = await get_db()
+    await twofa.disable(db, target.strip().lower())
+    await db.commit()
+    return {"ok": True}

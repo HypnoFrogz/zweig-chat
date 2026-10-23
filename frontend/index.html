@@ -11,8 +11,6 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="icon" type="image/png" href="/icons/favicon.png">
     <meta name="theme-color" content="#3a5a48">
-    <!-- Fonts are served from this server: a deployment in a closed network has
-         no route to the Google CDN, and icons then render as ligature text. -->
     <link rel="stylesheet" href="/fonts.css?v=1">
     <link rel="stylesheet" href="/style.css?v=58">
 </head>
@@ -22,20 +20,8 @@
 <div id="login-screen" class="screen active">
     <div class="login-container">
         <div class="login-logo">
-            <svg class="login-logo-mark" viewBox="0 0 64 64" width="60" height="60" aria-hidden="true">
-                <!-- back bubble (Forest) — the neighbour -->
-                <path fill="var(--online)"
-                      d="M17 9h22a9 9 0 0 1 9 9v9a9 9 0 0 1-9 9H26l-8 7 1-7h-2a9 9 0 0 1-9-9v-9a9 9 0 0 1 9-9z"/>
-                <!-- front bubble (Terracotta) — you -->
-                <path fill="var(--accent)" stroke="var(--bg2)" stroke-width="2.5"
-                      d="M27 27h22a9 9 0 0 1 9 9v9a9 9 0 0 1-9 9h-2l1 7-8-7H27a9 9 0 0 1-9-9v-9a9 9 0 0 1 9-9z"/>
-                <!-- message dots -->
-                <circle cx="31" cy="41" r="2.4" fill="#fff"/>
-                <circle cx="39" cy="41" r="2.4" fill="#fff"/>
-                <circle cx="47" cy="41" r="2.4" fill="#fff"/>
-            </svg>
-            <h1>Zweig</h1>
-            <p class="login-subtitle" data-i18n="login.subtitle">Messenger</p>
+            <img class="login-logo-mark" src="/icons/icon-192.png" width="60" height="60"
+                 alt="Zweig chat" style="display:block;margin:0 auto;border-radius:14px;">
         </div>
 
         <!-- Step 1: server address -->
@@ -73,6 +59,20 @@
                 </div>
                 <button type="submit" class="btn-login" data-i18n="login.submit">Sign In</button>
                 <div id="login-error" class="login-error"></div>
+            </form>
+        </div>
+
+        <!-- Step 3: 2FA code (only for accounts that turned 2FA on) -->
+        <div id="login-step-2fa" class="login-step" style="display:none">
+            <form id="login-2fa-form" autocomplete="off">
+                <p class="login-2fa-text" data-i18n="2fa.loginHint">Enter the 6-digit code from your authenticator app or a backup code.</p>
+                <div class="input-group">
+                    <span class="material-icons-round input-icon">pin</span>
+                    <input type="text" id="login-2fa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="123456" required>
+                </div>
+                <button type="submit" class="btn-login" data-i18n="2fa.verify">Confirm</button>
+                <button type="button" class="login-change-server" onclick="cancelLogin2fa()" data-i18n="2fa.back">Back</button>
+                <div id="login-2fa-error" class="login-error"></div>
             </form>
         </div>
     </div>
@@ -214,12 +214,17 @@
                     <span id="msg-typing-text"></span>
                 </div>
 
+                <!-- Полоска загрузки файлов в чат -->
+                <div id="chat-upload" class="upload-progress chat-upload" style="display:none">
+                    <div class="upload-row"><span class="upload-status"></span><button type="button" class="upload-cancel" onclick="cancelUpload()" data-i18n="upload.cancel">Cancel</button></div>
+                    <div class="upload-bar"><div class="upload-bar-fill"></div></div>
+                </div>
                 <!-- Input area -->
                 <div class="msg-input-area" id="msg-input-area" style="display:none">
                     <button class="btn-icon" onclick="triggerChatFileUpload()" title="Attach file">
                         <span class="material-icons-round">attach_file</span>
                     </button>
-                    <input type="file" id="chat-file-input" hidden onchange="uploadChatFile(this.files)">
+                    <input type="file" id="chat-file-input" multiple hidden onchange="uploadChatFile(this.files)">
                     <button class="btn-icon" onclick="toggleEmojiPicker()" title="Emoji">
                         <span class="material-icons-round">mood</span>
                     </button>
@@ -282,8 +287,8 @@
                     </div>
                 </div>
                 <div id="upload-progress" class="upload-progress" style="display:none">
+                    <div class="upload-row"><span class="upload-status" id="upload-status"></span><button type="button" class="upload-cancel" onclick="cancelUpload()" data-i18n="upload.cancel">Cancel</button></div>
                     <div class="upload-bar"><div class="upload-bar-fill" id="upload-bar-fill"></div></div>
-                    <span id="upload-status" data-i18n="files.uploading">Uploading...</span>
                 </div>
             </div>
 
@@ -300,6 +305,9 @@
                     </button>
                     <button class="admin-tab" data-tab="servers" onclick="switchAdminTab('servers')" role="tab">
                         <span class="material-icons-round">hub</span><span>Серверы</span>
+                    </button>
+                    <button class="admin-tab" data-tab="bots" onclick="switchAdminTab('bots')" role="tab">
+                        <span class="material-icons-round">smart_toy</span><span>Боты</span>
                     </button>
                     <button class="admin-tab" data-tab="advanced" onclick="switchAdminTab('advanced')" role="tab">
                         <span class="material-icons-round">tune</span><span>Расширенные настройки</span>
@@ -365,6 +373,37 @@
                         <div class="admin-form-hint" id="fed-self-hint"></div>
                     </div>
                     <div id="fed-list"></div>
+                    </div>
+                </div>
+
+                <div class="admin-tab-panel" data-panel="bots" style="display:none">
+                    <div class="admin-section">
+                        <div class="admin-section-title">
+                            <span class="material-icons-round">smart_toy</span><span>Боты</span>
+                        </div>
+                        <div class="admin-create-form" style="display:flex">
+                            <div class="input-group"><span class="material-icons-round input-icon">alternate_email</span><input type="text" id="admin-bot-username" placeholder="Логин бота, напр. ci_bot" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">badge</span><input type="text" id="admin-bot-display" placeholder="Имя, напр. Сборки"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">notes</span><input type="text" id="admin-bot-desc" placeholder="Что делает (необязательно)"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">link</span><input type="url" id="admin-bot-webhook" placeholder="Адрес бота для событий (необязательно)" autocapitalize="none" spellcheck="false"></div>
+                            <button class="btn-action btn-accent admin-create-btn" onclick="adminCreateBot()">Создать бота</button>
+                            <div class="admin-form-hint">Бот входит не паролем, а токеном — он появится здесь один раз. Бот видит только каналы, куда его добавили, и личку, которую ему написали.</div>
+                        </div>
+                        <div id="admin-bot-secret" class="admin-secret" style="display:none"></div>
+                        <div id="admin-bots-list" class="admin-users-list"></div>
+                    </div>
+                    <div class="admin-section">
+                        <div class="admin-section-title">
+                            <span class="material-icons-round">webhook</span><span>Входящие вебхуки</span>
+                        </div>
+                        <div class="admin-create-form" style="display:flex">
+                            <select id="admin-hook-channel" class="admin-select"></select>
+                            <select id="admin-hook-bot" class="admin-select"></select>
+                            <div class="input-group"><span class="material-icons-round input-icon">label</span><input type="text" id="admin-hook-name" placeholder="Название, напр. GitLab CI"></div>
+                            <button class="btn-action btn-accent admin-create-btn" onclick="adminCreateHook()">Создать вебхук</button>
+                            <div class="admin-form-hint">Без программирования: CI, мониторинг или CRM делают POST на выданный адрес — и сообщение появляется в канале.</div>
+                        </div>
+                        <div id="admin-hooks-list" class="admin-users-list"></div>
                     </div>
                 </div>
 
@@ -839,6 +878,17 @@
                 <span class="settings-item-label" data-i18n="settings.files">File Manager</span>
                 <span class="material-icons-round settings-item-arrow">chevron_right</span>
             </button>
+            <button class="settings-item" onclick="openTwofa()">
+                <span class="material-icons-round settings-item-icon">verified_user</span>
+                <span class="settings-item-label" data-i18n="2fa.title">Two-factor authentication</span>
+                <span class="settings-item-value" id="settings-2fa-state"></span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
+            <button class="settings-item" onclick="openSessions()">
+                <span class="material-icons-round settings-item-icon">devices</span>
+                <span class="settings-item-label" data-i18n="sessions.title">Devices</span>
+                <span class="material-icons-round settings-item-arrow">chevron_right</span>
+            </button>
             <button class="settings-item" id="settings-federation-row" onclick="openFederationDialog()" style="display:none">
                 <span class="material-icons-round settings-item-icon">hub</span>
                 <span class="settings-item-label" data-i18n="fed.title">Links to other servers</span>
@@ -878,6 +928,53 @@
                 <span class="material-icons-round">logout</span>
                 <span data-i18n="settings.logout">Logout</span>
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- Two-factor authentication -->
+<div id="twofa-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeTwofa()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" data-i18n="2fa.title">Two-factor authentication</span>
+            <button class="btn-icon" onclick="closeTwofa()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col" id="twofa-body"></div>
+    </div>
+</div>
+
+<!-- Devices and sessions (own or, for admins, any user's) -->
+<div id="sessions-modal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeSessions()"></div>
+    <div class="modal-content modal-small">
+        <div class="modal-header">
+            <span class="modal-title" id="sessions-title" data-i18n="sessions.title">Devices</span>
+            <button class="btn-icon" onclick="closeSessions()"><span class="material-icons-round">close</span></button>
+        </div>
+        <div class="modal-body modal-body-col">
+            <p class="sessions-hint" id="sessions-hint" data-i18n="sessions.hint">Where your account is signed in. End any session you don't recognise.</p>
+            <div id="sessions-list" class="sessions-list"></div>
+            <button class="btn-action sessions-end-all" id="sessions-end-all" onclick="endOtherSessions()">
+                <span class="material-icons-round">logout</span><span id="sessions-end-all-label" data-i18n="sessions.endOthers">End all other sessions</span>
+            </button>
+            <div id="sessions-own-extra" class="sessions-extra">
+                <label class="sessions-auto">
+                    <span class="sessions-auto-text">
+                        <b data-i18n="sessions.autoTitle">Sign out inactive devices</b>
+                        <small data-i18n="sessions.autoHint">A device that hasn't been used for this long is signed out automatically.</small>
+                    </span>
+                    <select id="sessions-auto" onchange="saveSessionAuto(this.value)">
+                        <option value="0" data-i18n="sessions.autoNever">Never</option>
+                        <option value="1" data-i18n="sessions.auto1">After 1 day</option>
+                        <option value="7" data-i18n="sessions.auto7">After 1 week</option>
+                        <option value="30" data-i18n="sessions.auto30">After 1 month</option>
+                    </select>
+                </label>
+                <button class="btn-action sessions-end-all" onclick="endAllSessionsEverywhere()">
+                    <span class="material-icons-round">phonelink_off</span><span data-i18n="sessions.endEverywhere">Sign out on all devices</span>
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -978,6 +1075,12 @@
     <div class="modal-content">
         <div class="modal-header">
             <span class="modal-title" id="preview-title"></span>
+            <button class="btn-icon" id="preview-prev" onclick="previewStep(-1)" aria-label="Previous file">
+                <span class="material-icons-round">chevron_left</span>
+            </button>
+            <button class="btn-icon" id="preview-next" onclick="previewStep(1)" aria-label="Next file">
+                <span class="material-icons-round">chevron_right</span>
+            </button>
             <button class="btn-icon" onclick="closePreview()">
                 <span class="material-icons-round">close</span>
             </button>

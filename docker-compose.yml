@@ -31,6 +31,8 @@ services:
       - APNS_KEY_ID=${APNS_KEY_ID:-}
       - APNS_TEAM_ID=${APNS_TEAM_ID:-}
       - APNS_BUNDLE_ID=${APNS_BUNDLE_ID:-}
+      # Сколько дней хранить статистику использования для Grafana.
+      - ANALYTICS_RETENTION_DAYS=${ANALYTICS_RETENTION_DAYS:-365}
       # Optional. Both APNs environments are tried regardless, so this only
       # decides which is attempted first — set it when most devices run builds
       # installed from Xcode, to save a wasted round trip.

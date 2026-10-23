@@ -1,4 +1,4 @@
-"""Zweig Messenger — WebSocket connection manager.
+"""ChaosHelper Messenger — WebSocket connection manager.
 
 Supports multiple connections per user (multiple tabs/devices).
 Routes messages to channels or individual users.

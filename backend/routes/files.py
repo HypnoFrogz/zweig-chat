@@ -1,7 +1,12 @@
-"""Zweig Messenger — File manager (CRUD + upload-to-chat)."""
+"""ChaosHelper Messenger — File manager (CRUD + upload-to-chat)."""
 
+import asyncio
+import errno
+import hashlib
 import re
 import shutil
+from urllib.parse import quote
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,6 +49,94 @@ def _safe_filename(raw: str | None, default: str = "file") -> str:
     while stem and len((stem + suffix).encode("utf-8")) > _MAX_NAME_BYTES:
         stem = stem[:-1]
     return (stem.strip() or default) + suffix
+
+
+def upload_url(username: str, rel: str) -> str:
+    """Ссылка на файл для вложения: каждый кусок пути закодирован.
+
+    Раньше путь шёл в ссылку как есть. «фото #3.jpg» обрывалось на «#»
+    (дальше браузер считал всё якорем) и отдавало 404, «отчёт 100%.xlsx»
+    ломалось на «%». Пробелы и кириллица после кодирования тоже надёжнее.
+    """
+    return "/uploads/" + quote(f"{username}/{rel}", safe="/")
+
+
+def _save_upload(src, dest: Path) -> None:
+    """Записать загружаемый файл; при нехватке места — 507, а не 500.
+
+    Недописанный файл удаляется, чтобы в папке не оставались обрывки.
+    """
+    try:
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+    except OSError as e:
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        if e.errno == errno.ENOSPC:
+            raise HTTPException(status_code=507, detail="На сервере закончилось место")
+        raise HTTPException(status_code=500, detail="Не удалось сохранить файл")
+
+
+# ── Миниатюры картинок ───────────────────────────────────────────
+# Сетка «Файлов» грузила каждую картинку целиком: папка с фотографиями с
+# телефона — это десятки мегабайт ради значков 120×120. Теперь рядом лежат
+# уменьшенные копии (до 480 px по ширине) в скрытой папке `_thumbs` того же
+# пользователя. Делает их ffmpeg — он уже стоит в образе ради обложек видео.
+_THUMB_MAX_W = 480
+_THUMB_MIN_BYTES = 150 * 1024  # маленькую картинку проще отдать как есть
+_THUMB_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".heic"}
+_thumbs_in_progress: set[str] = set()
+_thumb_tasks: set = set()
+
+
+def _thumb_rel(rel: str, src: Path) -> str:
+    st = src.stat()
+    key = f"{rel}|{st.st_size}|{int(st.st_mtime)}".encode("utf-8")
+    return f"_thumbs/{hashlib.sha1(key).hexdigest()[:24]}.jpg"
+
+
+def _make_image_thumb(src: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".part.jpg")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-frames:v", "1",
+             "-vf", f"scale='min({_THUMB_MAX_W},iw)':-2", "-q:v", "5", str(tmp)],
+            check=True, timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        if tmp.exists() and tmp.stat().st_size > 0:
+            tmp.replace(dest)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+async def _make_thumbs_later(jobs: list[tuple[Path, Path]]) -> None:
+    for src, dest in jobs:
+        try:
+            await asyncio.to_thread(_make_image_thumb, src, dest)
+        finally:
+            _thumbs_in_progress.discard(str(dest))
+
+
+def _thumb_for(username: str, rel: str, entry: Path, jobs: list) -> str | None:
+    """Ссылка на миниатюру, если она уже есть; иначе ставим её в очередь."""
+    if entry.suffix.lower() not in _THUMB_EXT or entry.stat().st_size < _THUMB_MIN_BYTES:
+        return None
+    t_rel = _thumb_rel(rel, entry)
+    dest = user_root(username) / t_rel
+    if dest.exists():
+        return upload_url(username, t_rel)
+    if str(dest) not in _thumbs_in_progress and len(jobs) < 40:
+        _thumbs_in_progress.add(str(dest))
+        jobs.append((entry, dest))
+    return None
 
 
 # ── Folders ──────────────────────────────────────────────────────
@@ -96,8 +189,7 @@ async def upload_files(
             while dest.exists():
                 dest = base / f"{stem}_{counter}{suffix}"
                 counter += 1
-        with open(dest, "wb") as out:
-            shutil.copyfileobj(f.file, out)
+        _save_upload(f.file, dest)
         rel = str(dest.relative_to(user_root(username))).replace("\\", "/")
         set_item_date(username, rel)
         uploaded.append(rel)
@@ -122,8 +214,7 @@ async def upload_to_chat(
             dest = chat_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
-    with open(dest, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    _save_upload(file.file, dest)
 
     rel = str(dest.relative_to(user_root(username))).replace("\\", "/")
     set_item_date(username, rel)
@@ -131,16 +222,70 @@ async def upload_to_chat(
     ext = dest.suffix.lower()
     file_type = _detect_type(ext)
 
-    return {
-        "ok": True,
-        "file": {
-            "name": dest.name,
-            "path": rel,
-            "url": f"/uploads/{username}/{rel}",
-            "size": dest.stat().st_size,
-            "type": file_type,
-        },
+    info = {
+        "name": dest.name,
+        "path": rel,
+        "url": upload_url(username, rel),
+        "size": dest.stat().st_size,
+        "type": file_type,
     }
+
+    # Кадр-обложка к видео. Делается здесь, а не на телефоне: обложку должны
+    # видеть все — второй мобильный клиент, веб и тот, кто откроет переписку
+    # с чужого сервера. Клиент, снявший кадр у себя, поделиться им не может.
+    if file_type == "video":
+        thumb_rel = _make_video_thumbnail(dest, user_root(username))
+        if thumb_rel:
+            info["thumbnail"] = upload_url(username, thumb_rel)
+
+    return {"ok": True, "file": info}
+
+
+def _make_video_thumbnail(video: Path, root: Path) -> str | None:
+    """Снимает первый кадр видео рядом с ним и отдаёт путь от корня.
+
+    Кадр берётся с первой секунды, а не с нулевой: в самом начале ролика часто
+    чёрный кадр, и обложка получалась бы пустым прямоугольником. Неудача здесь
+    не ошибка загрузки: файл уже принят, просто останется без обложки.
+    """
+    thumb = video.with_suffix(".thumb.jpg")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-ss", "1", "-i", str(video),
+                "-frames:v", "1",
+                "-vf", "scale=640:-2",
+                str(thumb),
+            ],
+            check=True,
+            timeout=20,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+        return None
+
+    if not thumb.exists() or thumb.stat().st_size == 0:
+        # Ролик короче секунды — берём самый первый кадр.
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", str(video), "-frames:v", "1",
+                    "-vf", "scale=640:-2", str(thumb),
+                ],
+                check=True,
+                timeout=20,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
+            return None
+
+    if not thumb.exists() or thumb.stat().st_size == 0:
+        return None
+    return str(thumb.relative_to(root)).replace("\\", "/")
 
 
 # ── List files ───────────────────────────────────────────────────
@@ -153,6 +298,7 @@ async def list_files(path: str = Query(""), username: str = Depends(get_current_
         return {"items": [], "path": path}
     meta = load_meta(username)
     items = []
+    thumb_jobs: list[tuple[Path, Path]] = []
     for entry in sorted(base.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
         if entry.name.startswith(".") or entry.name.startswith("_"):
             continue
@@ -162,14 +308,26 @@ async def list_files(path: str = Query(""), username: str = Depends(get_current_
         added = meta.get(rel, datetime.fromtimestamp(entry.stat().st_mtime, tz=timezone.utc).isoformat())
         ext = entry.suffix.lower() if not is_dir else ""
         file_type = "folder" if is_dir else _detect_type(ext)
-        items.append({
+        item = {
             "name": entry.name,
             "path": rel,
             "is_dir": is_dir,
             "size": size,
             "type": file_type,
             "added": added,
-        })
+            "url": upload_url(username, rel) if not is_dir else "",
+        }
+        if file_type == "image":
+            thumb = _thumb_for(username, rel, entry, thumb_jobs)
+            if thumb:
+                item["thumb"] = thumb
+        items.append(item)
+    if thumb_jobs:
+        # Миниатюры делаются после ответа: список не ждёт ffmpeg, а при
+        # следующем открытии папки они уже будут.
+        task = asyncio.create_task(_make_thumbs_later(thumb_jobs))
+        _thumb_tasks.add(task)
+        task.add_done_callback(_thumb_tasks.discard)
     return {"items": items, "path": path}
 
 
@@ -294,7 +452,7 @@ async def share_to_chat(data: dict, username: str = Depends(get_current_user)):
         "file": {
             "name": source.name,
             "path": rel,
-            "url": f"/uploads/{username}/{rel}",
+            "url": upload_url(username, rel),
             "size": source.stat().st_size,
             "type": file_type,
         },
@@ -308,7 +466,7 @@ def _detect_type(ext: str) -> str:
         return "image"
     if ext in (".mp4", ".webm", ".mov", ".avi", ".mkv"):
         return "video"
-    if ext in (".mp3", ".wav", ".ogg", ".flac", ".aac"):
+    if ext in (".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".opus", ".oga", ".weba"):
         return "audio"
     if ext in (".pdf",):
         return "pdf"

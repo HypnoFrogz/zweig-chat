@@ -1,4 +1,4 @@
-"""Zweig Messenger — User preferences (theme, language, contact names)."""
+"""ChaosHelper Messenger — User preferences (theme, language, contact names)."""
 
 from fastapi import APIRouter, Depends
 from helpers import get_current_user

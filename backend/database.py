@@ -232,6 +232,23 @@ TABLES = [
         online      INTEGER NOT NULL DEFAULT 0,
         updated_at  TEXT NOT NULL
     )""",
+    # Analytics for Grafana (see analytics.py): who was online each hour, from
+    # which client, and every WebSocket session with its duration.
+    """CREATE TABLE IF NOT EXISTS activity_hourly (
+        username    TEXT NOT NULL,
+        hour        TEXT NOT NULL,
+        client      TEXT NOT NULL DEFAULT 'web',
+        PRIMARY KEY (username, hour, client)
+    )""",
+    """CREATE TABLE IF NOT EXISTS session_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        username     TEXT NOT NULL,
+        client       TEXT NOT NULL DEFAULT 'web',
+        app_version  TEXT NOT NULL DEFAULT '',
+        started_at   TEXT NOT NULL,
+        ended_at     TEXT,
+        duration_sec INTEGER
+    )""",
     """CREATE TABLE IF NOT EXISTS user_activity_log (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         username    TEXT NOT NULL,
@@ -446,6 +463,12 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker ON user_blocks(blocker)",
     "CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports(status, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_sender_ts ON messages(sender, timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_activity_hour ON activity_hourly(hour)",
+    "CREATE INDEX IF NOT EXISTS idx_session_started ON session_log(started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_session_user ON session_log(username, started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_call_log_started ON call_log(started_at)",
     "CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id)",
     "CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_user_devices_username ON user_devices(username)",
@@ -503,6 +526,17 @@ async def init_db():
         await db.execute("ALTER TABLE messages ADD COLUMN pinned_at TEXT")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_pinned ON messages(channel_id, is_pinned)")
         await db.commit()
+
+    # ---------- Migration: call_log knows the call, callee, mode, answer ----------
+    # Раньше строка звонка не знала, кому звонили и ответили ли: длительность
+    # считалась от начала гудков, а пропущенные навсегда оставались 'active'.
+    pragma_cl = await db.execute("PRAGMA table_info(call_log)")
+    cl_cols = [r[1] for r in await pragma_cl.fetchall()]
+    for col, ddl in (("call_id", "TEXT"), ("callee", "TEXT"), ("mode", "TEXT"), ("answered_at", "TEXT")):
+        if col not in cl_cols:
+            await db.execute(f"ALTER TABLE call_log ADD COLUMN {col} {ddl}")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_call_log_call ON call_log(call_id)")
+    await db.commit()
 
     # ---------- Migration: add avatar_path to channels ----------
     pragma3 = await db.execute("PRAGMA table_info(channels)")
@@ -696,6 +730,56 @@ async def init_db():
     await db.execute(
         "DELETE FROM active_calls WHERE started_at < datetime('now', '-2 hours')"
     )
+    await db.commit()
+
+    # ---------- Russian texts for old group-call messages ----------
+    # Сервер писал «Анна started a video call» и «Video call ended (119s)».
+    # Переписываем уже сохранённые строки, чтобы старые звонки в переписке
+    # выглядели так же, как новые, и во всех клиентах сразу.
+    await db.execute(
+        """UPDATE messages SET text = substr(text, 1, length(text) - 21) || ' начинает видеозвонок'
+           WHERE type = 'call' AND text LIKE '% started a video call'"""
+    )
+    await db.execute(
+        """UPDATE channels SET last_msg_text = substr(last_msg_text, 1, length(last_msg_text) - 21) || ' начинает видеозвонок'
+           WHERE last_msg_text LIKE '% started a video call'"""
+    )
+    import re as _re
+    from routes.videocall import call_ended_text as _cet
+    for table, col, key in (("messages", "text", "id"), ("channels", "last_msg_text", "id")):
+        cur = await db.execute(
+            f"SELECT {key}, {col} FROM {table} WHERE {col} LIKE 'Video call ended (%s)'"
+        )
+        for row in await cur.fetchall():
+            m = _re.fullmatch(r"Video call ended \((\d+)s\)", row[1] or "")
+            if m:
+                await db.execute(
+                    f"UPDATE {table} SET {col} = ? WHERE {key} = ?", (_cet(int(m.group(1))), row[0])
+                )
+    await db.commit()
+
+    # ---------- Encode old attachment links ----------
+    # Ссылки на вложения раньше не кодировались: файл с «#», «?» или «%» в
+    # имени не открывался. Новые ссылки кодирует files.upload_url; здесь
+    # чиним уже отправленные, только наши (/uploads/...) и только сломанные.
+    from urllib.parse import quote as _q
+    cur = await db.execute(
+        "SELECT id, file_data FROM messages WHERE file_data LIKE '%/uploads/%' "
+        "AND (file_data LIKE '%#%' OR file_data LIKE '%?%' OR file_data LIKE '%!%%' ESCAPE '!')"
+    )
+    for row in await cur.fetchall():
+        try:
+            fd = json.loads(row[1])
+        except Exception:
+            continue
+        changed = False
+        for k in ("url", "thumbnail"):
+            u = fd.get(k) if isinstance(fd, dict) else None
+            if isinstance(u, str) and u.startswith("/uploads/") and _re.search(r"[#?]|%(?![0-9A-Fa-f]{2})", u):
+                fd[k] = _q(u, safe="/")
+                changed = True
+        if changed:
+            await db.execute("UPDATE messages SET file_data = ? WHERE id = ?", (json.dumps(fd, ensure_ascii=False), row[0]))
     await db.commit()
 
     # ---------- Seed admin user ----------

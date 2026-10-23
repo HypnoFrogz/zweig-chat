@@ -1,4 +1,4 @@
-"""Zweig Messenger — ChaosTracker (projects, tasks, Kanban board)."""
+"""ChaosHelper Messenger — ChaosTracker (projects, tasks, Kanban board)."""
 
 import json
 import os

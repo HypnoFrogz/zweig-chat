@@ -282,9 +282,10 @@ const I18N = {
         '2fa.off': 'выкл.',
         '2fa.isOn': 'Включена',
         '2fa.isOff': 'Выключена',
-        '2fa.offHint': 'По желанию. После включения при входе кроме пароля понадобится код из приложения-аутентификатора: Яндекс Ключ, Google Authenticator, 1Password и т. п. Чтобы включить, введите пароль.',
+        '2fa.offHint': 'По желанию. После включения при входе кроме пароля понадобится код из приложения-аутентификатора: Яндекс Ключ, Google Authenticator, 1Password и т. п. Чтобы включить, введите пароль от вашей учётной записи Zweig — тот же, с которым входите в приложение.',
         '2fa.onHint': 'При входе нужен код из приложения-аутентификатора. Осталось резервных кодов: {n}.',
-        '2fa.password': 'Пароль',
+        'tip.files': 'Файлы', 'tip.feedback': 'Обратная связь', 'tip.admin': 'Администрирование', 'tip.new_category': 'Новая папка', 'tip.new_chat': 'Новый чат', 'tip.channel_settings': 'Настройки канала', 'tip.call': 'Позвонить', 'tip.join_call': 'Присоединиться к звонку', 'tip.search': 'Поиск', 'tip.members': 'Участники', 'tip.attach_file': 'Прикрепить файл', 'tip.emoji': 'Эмодзи', 'tip.list_view': 'Списком', 'tip.grid_view': 'Плиткой', 'tip.size': 'Размер', 'tip.minimize': 'Свернуть', 'tip.end_call': 'Завершить звонок', 'tip.video': 'Видео', 'tip.speaker': 'Динамик', 'tip.microphone': 'Микрофон', 'tip.invite': 'Пригласить',
+        '2fa.password': 'Пароль от учётной записи Zweig',
         '2fa.enable': 'Включить',
         '2fa.disable': 'Отключить',
         '2fa.newCodes': 'Новые резервные коды',
@@ -331,7 +332,7 @@ const I18N = {
         'sessions.endOthersConfirm': 'Завершить все сеансы, кроме этого?',
         'sessions.endAllConfirm': 'Завершить все сеансы пользователя {name}?',
         'sessions.ended': 'Сеанс завершён',
-        'sessions.endedN': 'Завершено сеансов: {n}',
+        'sessions.endedN': 'Завершено сеансов: {n}', 'sessions.onlineNow': 'в сети сейчас', 'sessions.oldGroup': 'Давно не заходили · {n}', 'sessions.endOld': 'Завершить давние', 'sessions.endOldConfirm': 'Завершить входы, которыми не пользовались больше недели?',
         'sessions.revoked': 'Сеанс завершён с другого устройства. Войдите снова.',
         'sessions.relogin': 'Чтобы управлять устройствами, войдите заново.',
         'sessions.now': 'сейчас',
@@ -620,9 +621,10 @@ const I18N = {
         '2fa.off': 'off',
         '2fa.isOn': 'On',
         '2fa.isOff': 'Off',
-        '2fa.offHint': 'Optional. Once on, signing in needs a code from an authenticator app (Google Authenticator, 1Password, etc.) in addition to your password. Enter your password to turn it on.',
+        '2fa.offHint': 'Optional. Once on, signing in needs a code from an authenticator app (Google Authenticator, 1Password, etc.) in addition to your password. To turn it on, enter the password of your Zweig account — the one you sign in to the app with.',
         '2fa.onHint': 'Signing in requires a code from your authenticator app. Backup codes left: {n}.',
-        '2fa.password': 'Password',
+        'tip.files': 'Files', 'tip.feedback': 'Feedback', 'tip.admin': 'Admin', 'tip.new_category': 'New category', 'tip.new_chat': 'New chat', 'tip.channel_settings': 'Channel settings', 'tip.call': 'Call', 'tip.join_call': 'Join call', 'tip.search': 'Search', 'tip.members': 'Members', 'tip.attach_file': 'Attach file', 'tip.emoji': 'Emoji', 'tip.list_view': 'List view', 'tip.grid_view': 'Grid view', 'tip.size': 'Size', 'tip.minimize': 'Minimize', 'tip.end_call': 'End call', 'tip.video': 'Video', 'tip.speaker': 'Speaker', 'tip.microphone': 'Microphone', 'tip.invite': 'Invite',
+        '2fa.password': 'Zweig account password',
         '2fa.enable': 'Turn on',
         '2fa.disable': 'Turn off',
         '2fa.newCodes': 'New backup codes',
@@ -669,7 +671,7 @@ const I18N = {
         'sessions.endOthersConfirm': 'End all sessions except this one?',
         'sessions.endAllConfirm': 'End all sessions of {name}?',
         'sessions.ended': 'Session ended',
-        'sessions.endedN': 'Sessions ended: {n}',
+        'sessions.endedN': 'Sessions ended: {n}', 'sessions.onlineNow': 'online now', 'sessions.oldGroup': 'Not used for a while · {n}', 'sessions.endOld': 'End old sessions', 'sessions.endOldConfirm': 'End sessions not used for over a week?',
         'sessions.revoked': 'Your session was ended from another device. Please sign in again.',
         'sessions.relogin': 'Sign in again to manage your devices.',
         'sessions.now': 'now',
@@ -897,6 +899,9 @@ function applyI18n() {
         const key = el.getAttribute('data-i18n-placeholder');
         el.placeholder = t(key);
     });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        el.title = t(el.getAttribute('data-i18n-title'));
+    });
 }
 
 // ── Init ───────────────────────────────────────────────────────
@@ -994,6 +999,7 @@ async function apiFetch(url, opts = {}) {
 
 // ── Auth ───────────────────────────────────────────────────────
 function showLogin() {
+    window.ZweigLoader && ZweigLoader.boot.hide();
     document.getElementById('login-screen').classList.add('active');
     document.getElementById('app-screen').classList.remove('active');
     // Mattermost-style: pick the step to show. If we already know the server,
@@ -1057,12 +1063,13 @@ function changeServer() {
 }
 
 async function showApp() {
+    window.ZweigLoader && ZweigLoader.boot.show();
     document.getElementById('login-screen').classList.remove('active');
     document.getElementById('app-screen').classList.add('active');
     loadTheme();
     applyI18n();
-    await loadChannels();
-    await loadCategories();
+    try { await loadChannels(); await loadCategories(); }
+    finally { window.ZweigLoader && ZweigLoader.boot.hide(); }
     loadUsers();
     connectWebSocket();
     updateSidebarUser();
@@ -1104,6 +1111,19 @@ async function checkAuth() {
     showApp();
 }
 
+// Постоянный номер этого браузера: повторный вход с него заменяет прежний
+// сеанс в «Устройствах», а не добавляет ещё один.
+function zwDeviceId() {
+    try {
+        let id = localStorage.getItem('ch_device_id');
+        if (!id) {
+            id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+            localStorage.setItem('ch_device_id', id);
+        }
+        return id;
+    } catch (_) { return ''; }
+}
+
 document.getElementById('login-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const errEl = document.getElementById('login-error');
@@ -1115,7 +1135,7 @@ document.getElementById('login-form')?.addEventListener('submit', async e => {
         res = await fetch(API + '/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password }),
+            body: JSON.stringify({ username, password, device: { platform: 'web', id: zwDeviceId() } }),
         });
         data = await res.json();
     } catch (err) {
@@ -1147,7 +1167,7 @@ document.getElementById('login-2fa-form')?.addEventListener('submit', async e =>
         res = await fetch(API + '/login/2fa', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ challenge: loginChallenge, code }),
+            body: JSON.stringify({ challenge: loginChallenge, code, device: { platform: 'web', id: zwDeviceId() } }),
         });
         data = await res.json();
     } catch (err) {
@@ -5958,6 +5978,8 @@ function loadTheme() {
 function setTheme(theme, save = true) {
     if (theme === 'dark') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', theme);
+    const tc = document.querySelector('meta[name=theme-color]');
+    if (tc) tc.content = theme === 'light' ? '#EEEBE4' : '#0C0F0E';
     if (save) { localStorage.setItem('ch_theme', theme); apiFetch('/preferences', { method: 'PUT', body: { theme, language: currentLang } }); }
     document.querySelectorAll('.settings-option[data-theme]').forEach(btn => btn.classList.toggle('active', btn.dataset.theme === theme));
 }
@@ -7806,18 +7828,39 @@ async function loadSessions() {
     const others = list.filter(s => !s.current);
     document.getElementById('sessions-end-all').style.display = (sessionsTarget ? list.length : others.length) ? '' : 'none';
     if (!list.length) { box.innerHTML = `<div class="sessions-empty">${t('sessions.empty')}</div>`; return; }
-    box.innerHTML = list.map(s => {
-        const meta = [s.current ? '' : t('sessions.active').replace('{when}', sessionWhen(s.last_used_at)), s.ip]
+    const WEEK = 7 * 24 * 3600 * 1000;
+    const isOld = s => !s.current && !s.online && (Date.now() - new Date(s.last_used_at).getTime() > WEEK);
+    const row = s => {
+        const meta = [s.current ? '' : (s.online ? t('sessions.onlineNow') : t('sessions.active').replace('{when}', sessionWhen(s.last_used_at))), s.ip]
             .filter(Boolean).join(' · ');
-        return `<div class="session-row${s.current ? ' current' : ''}">
-            <span class="session-ic"><span class="material-icons-round">${sessionIcon(s)}</span></span>
+        return `<div class="session-row${s.current ? ' current' : ''}${s.online && !s.current ? ' online' : ''}">
+            <span class="session-ic"><span class="material-icons-round">${sessionIcon(s)}</span>${s.online ? '<i class="session-dot"></i>' : ''}</span>
             <div class="session-info">
                 <div class="session-name">${esc(sessionLabel(s))}${s.current ? `<span class="session-tag">${t('sessions.thisDevice')}</span>` : ''}</div>
                 <div class="session-meta" title="${esc(t('sessions.signedIn').replace('{when}', new Date(s.created_at).toLocaleString()))}">${esc(meta || t('sessions.signedIn').replace('{when}', sessionWhen(s.created_at)))}</div>
             </div>
             ${s.current ? '' : `<button class="session-end" onclick="endSession('${esc(s.id)}')">${t('sessions.end')}</button>`}
         </div>`;
-    }).join('');
+    };
+    const fresh = list.filter(s => !isOld(s));
+    const old = list.filter(isOld);
+    let html = fresh.map(row).join('');
+    if (old.length) {
+        html += `<details class="sessions-old"><summary><span>${t('sessions.oldGroup').replace('{n}', old.length)}</span>
+            ${sessionsTarget ? '' : `<button class="session-end" onclick="event.preventDefault(); endStaleSessions()">${t('sessions.endOld')}</button>`}</summary>
+            <div class="sessions-old-list">${old.map(row).join('')}</div></details>`;
+    }
+    box.innerHTML = html;
+}
+
+async function endStaleSessions() {
+    if (!confirm(t('sessions.endOldConfirm'))) return;
+    const res = await apiFetch('/me/sessions/revoke-stale', { method: 'POST', body: { days: 7 } });
+    if (res && res.ok) {
+        const d = await res.json().catch(() => ({}));
+        showToast(t('sessions.endedN').replace('{n}', d.ended ?? 0), 'success');
+    }
+    loadSessions();
 }
 
 async function endSession(id) {

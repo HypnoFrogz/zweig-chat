@@ -127,6 +127,10 @@ def build_device(ua: str, client: dict | None, ip: str) -> dict:
     for k in ("os", "model", "app", "name"):
         if c.get(k):
             d[k] = _clean(c[k])
+    # Постоянный номер установки (браузер, приложение). По нему повторный
+    # вход с того же устройства заменяет прежний сеанс, а не копится в списке.
+    if c.get("id"):
+        d["device_id"] = _clean(c["id"], 64)
     if ip:
         d["ip"] = ip
     return d
@@ -213,6 +217,8 @@ def describe(row, current_sid: str | None = None) -> dict:
         "created_at": row["created_at"],
         "last_used_at": row["last_used_at"] or row["created_at"],
         "current": bool(current_sid) and row["id"] == current_sid,
+        # Сейчас на связи: у сеанса открыт WebSocket.
+        "online": bool(SOCKETS.get(row["id"])),
     }
 
 
@@ -224,6 +230,44 @@ async def list_sessions(db, username: str, current_sid: str | None = None) -> li
         (username, now_iso(), current_sid or ""),
     )
     return [describe(r, current_sid) for r in await cur.fetchall()]
+
+
+async def replace_same_device(db, username: str, sid: str) -> int:
+    """Новый вход с того же устройства завершает его прежние сеансы.
+
+    Без этого переустановка приложения или очистка браузера оставляли в
+    «Устройствах» хвост из входов, которых на деле уже нет."""
+    cur = await db.execute("SELECT device_info FROM user_sessions WHERE id = ?", (sid,))
+    row = await cur.fetchone()
+    try:
+        dev = (json.loads(row["device_info"]) if row and row["device_info"] else {}).get("device_id")
+    except (ValueError, AttributeError):
+        dev = None
+    if not dev:
+        return 0
+    cur = await db.execute(
+        "SELECT id, device_info FROM user_sessions WHERE username = ? AND revoked_at IS NULL AND id != ?",
+        (username, sid),
+    )
+    same = []
+    for r in await cur.fetchall():
+        try:
+            if (json.loads(r["device_info"] or "{}") or {}).get("device_id") == dev:
+                same.append(r["id"])
+        except ValueError:
+            pass
+    if not same:
+        return 0
+    return await revoke(db, username, "replaced", sids=same)
+
+
+async def stale_session_ids(db, username: str, days: int, keep: str | None) -> list[str]:
+    cur = await db.execute(
+        """SELECT id FROM user_sessions WHERE username = ? AND revoked_at IS NULL AND id != ?
+           AND COALESCE(NULLIF(last_used_at, ''), created_at) < ?""",
+        (username, keep or "", _cutoff(days)),
+    )
+    return [r["id"] for r in await cur.fetchall()]
 
 
 # ── WebSocket сеанса ─────────────────────────────────────────────

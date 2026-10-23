@@ -10,18 +10,23 @@
     <meta name="apple-mobile-web-app-title" content="Zweig">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="icon" type="image/png" href="/icons/favicon.png">
-    <meta name="theme-color" content="#3a5a48">
+    <meta name="theme-color" content="#0C0F0E">
+    <script>try{var t=localStorage.getItem('ch_theme');if(t&&t!=='dark'){document.documentElement.setAttribute('data-theme',t);document.querySelector('meta[name=theme-color]').content='#EEEBE4';}}catch(e){}</script>
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=58">
+    <link rel="stylesheet" href="/style.css?v=59">
+    <link rel="stylesheet" href="/theme-c.css?v=3">
 </head>
 <body>
+
+<!-- ═══ ЗАСТАВКА ПРИ ЗАПУСКЕ ═══ -->
+<div id="boot-loader" role="status" aria-label="Загрузка Zweig"><svg aria-hidden="true"></svg><div class="zw-word">zweig</div><div class="zw-host"></div></div>
+<script src="/zweig-loader.js?v=1"></script>
 
 <!-- ═══ LOGIN SCREEN ═══ -->
 <div id="login-screen" class="screen active">
     <div class="login-container">
         <div class="login-logo">
-            <img class="login-logo-mark" src="/icons/icon-192.png" width="60" height="60"
-                 alt="Zweig chat" style="display:block;margin:0 auto;border-radius:14px;">
+            <svg class="zw-mark login-logo-mark" width="56" height="56" viewBox="0 0 100 100" aria-hidden="true"><rect class="zw-tile" width="100" height="100" rx="26"/><rect class="zw-tile-line" x="0.75" y="0.75" width="98.5" height="98.5" rx="25.5" fill="none" stroke-width="1.5"/><path class="s" d="M46 86V32" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 62C46 52 56 48 66 48" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 74C46 68 38 64 30 64" fill="none" stroke-width="6" stroke-linecap="round"/><rect class="t" x="34" y="12" width="24" height="24" rx="7"/><rect class="a" x="64" y="37" width="22" height="22" rx="7"/><rect class="b" x="14" y="56" width="17" height="17" rx="5"/></svg><span class="zw-word">zweig</span>
         </div>
 
         <!-- Step 1: server address -->
@@ -86,21 +91,21 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-header-top">
-                    <span class="material-icons-round sidebar-logo">forum</span>
+                    <svg class="zw-mark sidebar-logo-svg" viewBox="0 0 100 100" aria-hidden="true"><path class="s" d="M46 86V32" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 62C46 52 56 48 66 48" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 74C46 68 38 64 30 64" fill="none" stroke-width="6" stroke-linecap="round"/><rect class="t" x="34" y="12" width="24" height="24" rx="7"/><rect class="a" x="64" y="37" width="22" height="22" rx="7"/><rect class="b" x="14" y="56" width="17" height="17" rx="5"/></svg>
                     <span class="sidebar-title">Zweig</span>
                 </div>
                 <div class="sidebar-header-btns">
-                    <button class="btn-icon sidebar-files-btn" onclick="navigateToFiles()" title="Files">
+                    <button class="btn-icon sidebar-files-btn" onclick="navigateToFiles()" title="Файлы" data-i18n-title="tip.files">
                         <span class="material-icons-round">folder</span>
                     </button>
                     <!-- ChaosTracker (модуль задач) временно скрыт — вернуться позже -->
                     <button class="btn-icon sidebar-tasks-btn" onclick="navigateToTasks()" title="ChaosTracker" style="display:none">
                         <span class="material-icons-round">assignment</span>
                     </button>
-                    <button class="btn-icon" onclick="showFeedbackModal()" title="Feedback">
+                    <button class="btn-icon" onclick="showFeedbackModal()" title="Обратная связь" data-i18n-title="tip.feedback">
                         <span class="material-icons-round">feedback</span>
                     </button>
-                    <button class="btn-icon sidebar-admin-btn" id="sidebar-admin-btn" onclick="navigateToAdmin()" title="Admin" style="display:none">
+                    <button class="btn-icon sidebar-admin-btn" id="sidebar-admin-btn" onclick="navigateToAdmin()" title="Администрирование" data-i18n-title="tip.admin" style="display:none">
                         <span class="material-icons-round">admin_panel_settings</span>
                     </button>
                 </div>
@@ -119,10 +124,10 @@
                 <div class="sidebar-section-header">
                     <span data-i18n="sidebar.chats">Chats</span>
                     <div class="sidebar-header-actions">
-                        <button class="btn-icon-xs" onclick="showCategoryPrompt()" title="New category">
+                        <button class="btn-icon-xs" onclick="showCategoryPrompt()" title="Новая папка" data-i18n-title="tip.new_category">
                             <span class="material-icons-round">folder_open</span>
                         </button>
-                        <button class="btn-icon-xs" onclick="showNewChatDialog()" title="New chat">
+                        <button class="btn-icon-xs" onclick="showNewChatDialog()" title="Новый чат" data-i18n-title="tip.new_chat">
                             <span class="material-icons-round">add</span>
                         </button>
                     </div>
@@ -157,19 +162,19 @@
                     <span class="topbar-channel-desc" id="topbar-channel-desc"></span>
                 </div>
                 <div class="topbar-actions">
-                    <button class="btn-icon" id="btn-channel-settings" onclick="showChannelSettingsDialog()" title="Channel settings" style="display:none">
+                    <button class="btn-icon" id="btn-channel-settings" onclick="showChannelSettingsDialog()" title="Настройки канала" data-i18n-title="tip.channel_settings" style="display:none">
                         <span class="material-icons-round">settings</span>
                     </button>
-                    <button class="btn-icon" id="btn-call" onclick="startVideoCall()" title="Call" style="display:none">
+                    <button class="btn-icon" id="btn-call" onclick="startVideoCall()" title="Позвонить" data-i18n-title="tip.call" style="display:none">
                         <span class="material-icons-round">call</span>
                     </button>
-                    <button class="btn-icon" id="btn-call-join" onclick="joinActiveCall()" title="Join call" style="display:none">
+                    <button class="btn-icon" id="btn-call-join" onclick="joinActiveCall()" title="Присоединиться к звонку" data-i18n-title="tip.join_call" style="display:none">
                         <span class="material-icons-round call-active-icon">call</span>
                     </button>
-                    <button class="btn-icon" onclick="toggleSearch()" title="Search">
+                    <button class="btn-icon" onclick="toggleSearch()" title="Поиск" data-i18n-title="tip.search">
                         <span class="material-icons-round">search</span>
                     </button>
-                    <button class="btn-icon" id="btn-members" onclick="toggleRightPanel()" title="Members">
+                    <button class="btn-icon" id="btn-members" onclick="toggleRightPanel()" title="Участники" data-i18n-title="tip.members">
                         <span class="material-icons-round">group</span>
                     </button>
                 </div>
@@ -221,11 +226,11 @@
                 </div>
                 <!-- Input area -->
                 <div class="msg-input-area" id="msg-input-area" style="display:none">
-                    <button class="btn-icon" onclick="triggerChatFileUpload()" title="Attach file">
+                    <button class="btn-icon" onclick="triggerChatFileUpload()" title="Прикрепить файл" data-i18n-title="tip.attach_file">
                         <span class="material-icons-round">attach_file</span>
                     </button>
                     <input type="file" id="chat-file-input" multiple hidden onchange="uploadChatFile(this.files)">
-                    <button class="btn-icon" onclick="toggleEmojiPicker()" title="Emoji">
+                    <button class="btn-icon" onclick="toggleEmojiPicker()" title="Эмодзи" data-i18n-title="tip.emoji">
                         <span class="material-icons-round">mood</span>
                     </button>
                     <button class="btn-icon" onclick="showScheduleDialog()" title="Отправить позже" data-i18n-title="msg.scheduleTitle">
@@ -247,14 +252,14 @@
                 <div class="files-toolbar">
                     <div class="breadcrumb" id="breadcrumb"></div>
                     <div class="file-view-controls">
-                        <button class="btn-icon file-view-btn active" data-view="list" onclick="setFileView('list')" title="List view">
+                        <button class="btn-icon file-view-btn active" data-view="list" onclick="setFileView('list')" title="Списком" data-i18n-title="tip.list_view">
                             <span class="material-icons-round">view_list</span>
                         </button>
-                        <button class="btn-icon file-view-btn" data-view="grid" onclick="setFileView('grid')" title="Grid view">
+                        <button class="btn-icon file-view-btn" data-view="grid" onclick="setFileView('grid')" title="Плиткой" data-i18n-title="tip.grid_view">
                             <span class="material-icons-round">grid_view</span>
                         </button>
                         <input type="range" id="file-grid-size" min="0" max="2" step="1" value="1"
-                               class="file-size-slider" oninput="setGridSize(this.value)" style="display:none" title="Size">
+                               class="file-size-slider" oninput="setGridSize(this.value)" style="display:none" title="Размер" data-i18n-title="tip.size">
                     </div>
                     <div class="toolbar-actions">
                         <button class="btn-action" onclick="showNewFolderDialog()">
@@ -382,12 +387,12 @@
                             <span class="material-icons-round">smart_toy</span><span>Боты</span>
                         </div>
                         <div class="admin-create-form" style="display:flex">
-                            <div class="input-group"><span class="material-icons-round input-icon">alternate_email</span><input type="text" id="admin-bot-username" placeholder="Логин бота, напр. ci_bot" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
-                            <div class="input-group"><span class="material-icons-round input-icon">badge</span><input type="text" id="admin-bot-display" placeholder="Имя, напр. Сборки"></div>
-                            <div class="input-group"><span class="material-icons-round input-icon">notes</span><input type="text" id="admin-bot-desc" placeholder="Что делает (необязательно)"></div>
-                            <div class="input-group"><span class="material-icons-round input-icon">link</span><input type="url" id="admin-bot-webhook" placeholder="Адрес бота для событий (необязательно)" autocapitalize="none" spellcheck="false"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">alternate_email</span><input type="text" id="admin-bot-username" name="zw-bot-login" placeholder="Логин, напр. ci_bot" autocapitalize="none" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" readonly onfocus="this.removeAttribute('readonly')" title="Логин — по нему бота находят и упоминают: @ci_bot"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">badge</span><input type="text" id="admin-bot-display" name="zw-bot-name" autocomplete="off" placeholder="Имя в чатах, напр. «Сборки CI»" title="Так бот подписан в чатах и в списке участников"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">notes</span><input type="text" id="admin-bot-desc" name="zw-bot-desc" autocomplete="off" placeholder="Описание, напр. «пишет о сборках» (необязательно)"></div>
+                            <div class="input-group"><span class="material-icons-round input-icon">link</span><input type="url" id="admin-bot-webhook" name="zw-bot-hook" autocomplete="off" placeholder="URL для событий — для своего бота (необязательно)" autocapitalize="none" spellcheck="false" title="Если бот — ваша программа: сюда сервер будет присылать новые сообщения POST-запросом. Можно не заполнять и забирать их через /api/bot/updates."></div>
                             <button class="btn-action btn-accent admin-create-btn" onclick="adminCreateBot()">Создать бота</button>
-                            <div class="admin-form-hint">Бот входит не паролем, а токеном — он появится здесь один раз. Бот видит только каналы, куда его добавили, и личку, которую ему написали.</div>
+                            <div class="admin-form-hint"><b>Логин</b> — как бота найти и упомянуть (@ci_bot). <b>Имя в чатах</b> — как он подписан в сообщениях. Бот входит не паролем, а токеном: он появится здесь один раз. Бот видит только каналы, куда его добавили, и личку, которую ему написали. <a href="https://zweig.services/api-docs" target="_blank" rel="noopener">Документация API</a></div>
                         </div>
                         <div id="admin-bot-secret" class="admin-secret" style="display:none"></div>
                         <div id="admin-bots-list" class="admin-users-list"></div>
@@ -580,29 +585,29 @@
             <div class="call-panel-header">
                 <span class="call-panel-title" data-i18n="call.title">In Call</span>
                 <span class="call-panel-timer" id="call-panel-timer">0:00</span>
-                <button class="btn-icon" onclick="minimizeCallPanel()" title="Minimize">
+                <button class="btn-icon" onclick="minimizeCallPanel()" title="Свернуть" data-i18n-title="tip.minimize">
                     <span class="material-icons-round">remove</span>
                 </button>
             </div>
             <!-- Video grid inside call panel -->
             <div class="call-video-grid" id="call-video-grid"></div>
             <div class="call-panel-controls">
-                <button class="call-ctrl-btn call-ctrl-hangup" onclick="endCall()" title="End call">
+                <button class="call-ctrl-btn call-ctrl-hangup" onclick="endCall()" title="Завершить звонок" data-i18n-title="tip.end_call">
                     <span class="material-icons-round">call_end</span>
                 </button>
-                <button class="call-ctrl-btn" id="btn-toggle-cam" onclick="toggleCamera()" title="Video">
+                <button class="call-ctrl-btn" id="btn-toggle-cam" onclick="toggleCamera()" title="Видео" data-i18n-title="tip.video">
                     <span class="material-icons-round">videocam_off</span>
                 </button>
-                <button class="call-ctrl-btn muted" id="btn-toggle-speaker" onclick="toggleSpeaker()" title="Speaker">
+                <button class="call-ctrl-btn muted" id="btn-toggle-speaker" onclick="toggleSpeaker()" title="Динамик" data-i18n-title="tip.speaker">
                     <span class="material-icons-round">hearing</span>
                 </button>
-                <button class="call-ctrl-btn" id="btn-toggle-mic" onclick="toggleMic()" title="Microphone">
+                <button class="call-ctrl-btn" id="btn-toggle-mic" onclick="toggleMic()" title="Микрофон" data-i18n-title="tip.microphone">
                     <span class="material-icons-round">mic</span>
                 </button>
                 <button class="call-ctrl-btn" id="btn-toggle-screen" onclick="toggleScreenShare()" title="Демонстрация экрана">
                     <span class="material-icons-round">screen_share</span>
                 </button>
-                <button class="call-ctrl-btn" onclick="showInviteToCall()" title="Invite">
+                <button class="call-ctrl-btn" onclick="showInviteToCall()" title="Пригласить" data-i18n-title="tip.invite">
                     <span class="material-icons-round">person_add</span>
                 </button>
             </div>
@@ -1015,7 +1020,7 @@
             <div class="ch-avatar-section" style="display:flex;align-items:center;gap:16px;margin-bottom:12px;">
                 <div class="ch-avatar-preview" id="ch-avatar-preview" style="width:64px;height:64px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:var(--text2);overflow:hidden;cursor:pointer;" onclick="document.getElementById('ch-avatar-input').click()"></div>
                 <div>
-                    <button class="btn-action" onclick="document.getElementById('ch-avatar-input').click()">Change avatar</button>
+                    <button class="btn-action" onclick="document.getElementById('ch-avatar-input').click()" data-i18n="profile.changeAvatar">Change avatar</button>
                     <input type="file" id="ch-avatar-input" accept="image/*" hidden onchange="uploadChannelAvatarFile(this.files)">
                 </div>
             </div>
@@ -1539,6 +1544,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=65"></script>
+<script src="/app.js?v=68"></script>
+<script src="/sections.js?v=1"></script>
 </body>
 </html>

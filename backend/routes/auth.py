@@ -147,6 +147,7 @@ async def _issue_login(db, user, data: dict, request: Request) -> dict:
     # определяем по User-Agent.
     await sessions.note_activity(db, session_id, request.headers.get("user-agent", ""),
                                  data.get("device"), sessions.client_ip(request))
+    await sessions.replace_same_device(db, username, session_id)
     await db.commit()
 
     return {
@@ -508,6 +509,19 @@ async def end_my_session(session_id: str, sess: tuple = Depends(get_current_sess
     if not n:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"ok": True, "current": session_id == sid}
+
+
+@router.post("/me/sessions/revoke-stale")
+async def end_stale_sessions(data: dict | None = None, sess: tuple = Depends(get_current_session)):
+    """Завершить входы, которыми давно не пользовались (по умолчанию — 7 дней)."""
+    username, sid = sess
+    days = int((data or {}).get("days") or 7)
+    days = max(1, min(days, 365))
+    db = await get_db()
+    ids = await sessions.stale_session_ids(db, username, days, sid)
+    n = await sessions.revoke(db, username, "stale", sids=ids) if ids else 0
+    await db.commit()
+    return {"ok": True, "ended": n}
 
 
 @router.post("/me/sessions/revoke-others")

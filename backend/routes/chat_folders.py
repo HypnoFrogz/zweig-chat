@@ -9,6 +9,8 @@ from database import get_db
 
 router = APIRouter(prefix="/api", tags=["chat_folders"])
 
+_ICON_READY = False
+
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -23,7 +25,7 @@ async def get_folders(username: str = Depends(get_current_user)):
     await _ensure_table(db)
 
     cursor = await db.execute(
-        """SELECT f.id, f.name, f.position
+        """SELECT f.id, f.name, f.position, f.icon
            FROM chat_folders f
            WHERE f.username = ?
            ORDER BY f.position ASC""",
@@ -42,6 +44,7 @@ async def get_folders(username: str = Depends(get_current_user)):
             "id": row["id"],
             "name": row["name"],
             "position": row["position"],
+            "icon": row["icon"] or "",
             "channel_slugs": slugs,
         })
 
@@ -59,6 +62,8 @@ async def create_folder(data: dict, username: str = Depends(get_current_user)):
     await _ensure_table(db)
 
     folder_id = str(uuid.uuid4())
+    icon = str(data.get("icon") or "")[:40]
+    slugs = [str(x) for x in (data.get("channel_slugs") or []) if str(x).strip()]
 
     # Get next position
     cursor = await db.execute(
@@ -69,12 +74,25 @@ async def create_folder(data: dict, username: str = Depends(get_current_user)):
     pos = row["next_pos"]
 
     await db.execute(
-        "INSERT INTO chat_folders (id, username, name, position, created_at) VALUES (?, ?, ?, ?, ?)",
-        (folder_id, username, name, pos, _now_iso()),
+        "INSERT INTO chat_folders (id, username, name, position, created_at, icon) VALUES (?, ?, ?, ?, ?, ?)",
+        (folder_id, username, name, pos, _now_iso(), icon),
     )
+    # Чаты, выбранные прямо при создании. Чат живёт только в одной папке —
+    # так же, как при добавлении по одному.
+    for i, slug in enumerate(slugs):
+        await db.execute(
+            """DELETE FROM chat_folder_channels
+               WHERE channel_slug = ? AND folder_id IN
+               (SELECT id FROM chat_folders WHERE username = ?)""",
+            (slug, username),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO chat_folder_channels (folder_id, channel_slug, position) VALUES (?, ?, ?)",
+            (folder_id, slug, i),
+        )
     await db.commit()
 
-    return {"id": folder_id, "name": name, "position": pos, "channel_slugs": []}
+    return {"id": folder_id, "name": name, "position": pos, "icon": icon, "channel_slugs": slugs}
 
 
 @router.put("/chat-folders/{folder_id}")
@@ -97,6 +115,11 @@ async def update_folder(folder_id: str, data: dict, username: str = Depends(get_
             await db.execute(
                 "UPDATE chat_folders SET name = ? WHERE id = ?", (name, folder_id)
             )
+
+    if "icon" in data:
+        await db.execute(
+            "UPDATE chat_folders SET icon = ? WHERE id = ?", (str(data["icon"] or "")[:40], folder_id)
+        )
 
     # Update channel_slugs if provided — full replace
     if "channel_slugs" in data:
@@ -210,3 +233,12 @@ async def _ensure_table(db):
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_chat_folders_user ON chat_folders(username)"
     )
+    # Значок папки — добавлен позже, старые базы получают столбец здесь.
+    global _ICON_READY
+    if not _ICON_READY:
+        cur = await db.execute("PRAGMA table_info(chat_folders)")
+        cols = {r[1] for r in await cur.fetchall()}
+        if "icon" not in cols:
+            await db.execute("ALTER TABLE chat_folders ADD COLUMN icon TEXT NOT NULL DEFAULT ''")
+            await db.commit()
+        _ICON_READY = True

@@ -1,11 +1,11 @@
 {
   "name": "Zweig",
   "short_name": "Zweig",
-  "description": "Семейный портал",
+  "description": "Корпоративный мессенджер",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#33302c",
-  "theme_color": "#3a5a48",
+  "background_color": "#0C0F0E",
+  "theme_color": "#0C0F0E",
   "orientation": "portrait-primary",
   "icons": [
     {

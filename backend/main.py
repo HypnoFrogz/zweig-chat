@@ -24,11 +24,20 @@ from routes.tasks import router as tasks_router
 from routes.push import router as push_router
 from routes.federation import router as federation_router
 from routes.moderation import router as moderation_router
+from routes.bots import router as bots_router, init_schema as init_bots_schema
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    import analytics
+    await analytics.on_startup()
+    from database import get_db as _get_db
+    await init_bots_schema(await _get_db())
+    import sessions
+    await sessions.init_schema(await _get_db())
+    import twofa
+    await twofa.init_schema(await _get_db())
     init_firebase()
     if videocall.CALL_CLEANUP_ON_STARTUP:
         await videocall.run_calls_cleanup_once()
@@ -39,8 +48,11 @@ async def lifespan(app: FastAPI):
     presence_task = asyncio.create_task(federation.run_presence_loop())
     # Отложенные сообщения: раз в двадцать секунд проверяем, не пора ли.
     schedule_task = asyncio.create_task(messages_module.run_schedule_loop())
+    # Автовыход с неактивных устройств: раз в час.
+    import sessions as _sessions
+    inactive_task = asyncio.create_task(_sessions.run_inactive_loop())
     yield
-    for task in (cleanup_task, outbox_task, presence_task, schedule_task):
+    for task in (cleanup_task, outbox_task, presence_task, schedule_task, inactive_task):
         task.cancel()
         try:
             await task
@@ -83,3 +95,4 @@ app.include_router(tasks_router)
 app.include_router(push_router)
 app.include_router(federation_router)
 app.include_router(moderation_router)
+app.include_router(bots_router)

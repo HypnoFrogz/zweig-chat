@@ -1,4 +1,4 @@
-"""Zweig Messenger — Chat Folders (per-user, like Telegram)."""
+"""ChaosHelper Messenger — Chat Folders (per-user, like Telegram)."""
 
 import uuid
 from datetime import datetime, timezone

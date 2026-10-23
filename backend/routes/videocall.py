@@ -35,7 +35,8 @@ if not LIVEKIT_PUBLIC_URL:
 LIVEKIT_MODE = os.getenv("LIVEKIT_MODE", "self").strip().lower()
 CONTROL_PLANE_URL = os.getenv("CONTROL_PLANE_URL", "").rstrip("/")
 ORG_KEY = os.getenv("ORG_KEY", "")
-CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
+# Сколько звонит неотвеченный вызов. 20 секунд — дольше человек обычно не ждёт.
+CALL_RING_TIMEOUT_SEC = int(os.getenv("CALL_RING_TIMEOUT_SEC", "20"))
 CALL_ACTIVE_STALE_SEC = int(os.getenv("CALL_ACTIVE_STALE_SEC", "180"))
 # Дольше этого разговор не идёт: предел на случай, когда LiveKit спросить нельзя.
 CALL_ACTIVE_MAX_SEC = int(os.getenv("CALL_ACTIVE_MAX_SEC", str(6 * 3600)))
@@ -333,6 +334,7 @@ async def _cancel_calls_of_absent_caller(username: str) -> None:
                 "UPDATE calls SET status = 'cancelled', ended_at = ?, end_reason = 'caller_gone' WHERE id = ?",
                 (ended, call["id"]),
             )
+            await _log_call_end(db, call["id"], call["channel_id"], "cancelled", ended)
             await db.commit()
             await _relay_call_state(db, call, "ended", "caller_gone")
             event = {
@@ -358,6 +360,153 @@ def on_user_offline(username: str) -> None:
     task.add_done_callback(_gone_tasks.discard)
 
 
+async def _log_call_end(db, call_id: str, channel_id: str, status: str, ended: str) -> None:
+    """Закрыть строку звонка в call_log.
+
+    Длительность — от ответа, а не от начала гудков; неотвеченный звонок —
+    ноль. Строки, записанные до появления call_id, закрываем по-старому, по
+    каналу.
+    """
+    cur = await db.execute(
+        """UPDATE call_log SET status = ?, ended_at = ?,
+               duration_sec = CASE WHEN answered_at IS NOT NULL
+                   THEN CAST((julianday(?) - julianday(answered_at)) * 86400 AS INTEGER) ELSE 0 END
+           WHERE call_id = ? AND status = 'active'""",
+        (status, ended, ended, call_id),
+    )
+    if (cur.rowcount or 0) == 0:
+        await db.execute(
+            """UPDATE call_log SET status = ?, ended_at = ?,
+                   duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
+               WHERE channel_id = ? AND status = 'active' AND call_id IS NULL""",
+            (status, ended, ended, channel_id),
+        )
+
+
+async def _sync_call_log(db) -> None:
+    """Довести call_log до состояния звонков.
+
+    Звонок заканчивается из многих мест (уход звонящего, недоступный сосед,
+    сверка с LiveKit, протухание при запросе) — вместо правки каждого
+    дотягиваем журнал здесь, при уборке. Ничего не коммитит.
+    """
+    now = now_iso()
+    await db.execute(
+        """UPDATE call_log SET
+               answered_at = COALESCE(answered_at, (SELECT c.answered_at FROM calls c WHERE c.id = call_log.call_id)),
+               ended_at = (SELECT COALESCE(c.ended_at, ?) FROM calls c WHERE c.id = call_log.call_id),
+               status = (SELECT CASE
+                           WHEN c.status IN ('ended', 'cancelled') AND c.answered_at IS NULL THEN 'cancelled'
+                           ELSE c.status END
+                         FROM calls c WHERE c.id = call_log.call_id)
+           WHERE status = 'active' AND call_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM calls c WHERE c.id = call_log.call_id
+                         AND c.status NOT IN ('ringing', 'active'))""",
+        (now,),
+    )
+    # Строки звонков удаляются через CALL_RETENTION_DAYS; осиротевший журнал
+    # закрываем без длительности — честнее, чем растянуть её на дни.
+    await db.execute(
+        """UPDATE call_log SET status = 'cancelled', ended_at = started_at, duration_sec = 0
+           WHERE status = 'active' AND call_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.id = call_log.call_id)"""
+    )
+    await db.execute(
+        """UPDATE call_log SET duration_sec = CASE
+               WHEN status = 'ended' AND answered_at IS NOT NULL
+               THEN MAX(0, CAST((julianday(ended_at) - julianday(answered_at)) * 86400 AS INTEGER))
+               ELSE 0 END
+           WHERE duration_sec IS NULL AND ended_at IS NOT NULL AND call_id IS NOT NULL"""
+    )
+
+
+def call_ended_text(seconds: int) -> str:
+    """«Видеозвонок завершён · 1 ч 5 мин» — для строки в переписке.
+
+    Раньше сервер писал «Video call ended (3907s)»: по-английски и в секундах.
+    """
+    return f"Видеозвонок завершён · {human_duration(seconds)}"
+
+
+def human_duration(seconds: int) -> str:
+    s = max(0, int(seconds or 0))
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h} ч {m} мин" if m else f"{h} ч"
+    if m:
+        return f"{m} мин {sec} с" if sec else f"{m} мин"
+    return f"{sec} с"
+
+
+async def _expire_ringing_calls(db, now_iso_s: str) -> list[dict]:
+    """Перевести протухшие вызовы в «пропущен» и вернуть именно их.
+
+    Сначала выбираем, потом обновляем: после UPDATE уже не узнать, какие
+    именно звонки протухли в этот раз, а отметить надо ровно их.
+    """
+    cur = await db.execute(
+        "SELECT * FROM calls WHERE status = 'ringing' AND expires_at != '' AND expires_at < ?",
+        (now_iso_s,),
+    )
+    expired_rows = [dict(r) for r in await cur.fetchall()]
+    for call in expired_rows:
+        await db.execute(
+            """UPDATE calls SET status = 'missed', ended_at = ?, end_reason = 'timeout'
+               WHERE id = ? AND status = 'ringing'""",
+            (now_iso_s, call["id"]),
+        )
+        await _log_call_end(db, call["id"], call["channel_id"], "missed", now_iso_s)
+    return expired_rows
+
+
+async def _notify_expired_ringing(db, expired_rows: list[dict]) -> None:
+    for call in expired_rows:
+        await record_missed_call(db, call)
+        # Звонящему тоже: иначе он так и сидит в пустой комнате с гудками —
+        # о том, что никто не ответил, сервер раньше сообщал только записью
+        # «пропущенный» в переписке.
+        timeout_event = {
+            "event": "call_ended",
+            "call_id": call["id"],
+            "channel_slug": call["channel_slug"],
+            "reason": "timeout",
+        }
+        await manager.send_to_user(call["caller_username"], timeout_event)
+        await manager.send_to_user(call["callee_username"], timeout_event)
+
+
+async def _ring_timeout_after(delay_sec: float) -> None:
+    """Сбросить вызов ровно по таймауту, не дожидаясь общей уборки.
+
+    Уборка идёт раз в CALL_CLEANUP_INTERVAL_SEC (30 с), и с ней 20-секундный
+    вызов звонил бы до 50 секунд. Поэтому на каждый вызов ставим свой таймер;
+    уборка остаётся страховкой на случай перезапуска сервера.
+    """
+    try:
+        await asyncio.sleep(max(0.0, delay_sec) + 0.5)
+        db = await get_db()
+        rows = await _expire_ringing_calls(db, now_iso())
+        if rows:
+            await db.commit()
+            await _notify_expired_ringing(db, rows)
+    except Exception as e:
+        print(f"[calls.ring_timeout] {e}")
+
+
+def schedule_ring_timeout(expires_at: str) -> None:
+    exp = _parse_iso(expires_at)
+    if not exp:
+        return
+    delay = (exp - _now_utc()).total_seconds()
+    task = asyncio.create_task(_ring_timeout_after(delay))
+    _ring_timeout_tasks.add(task)
+    task.add_done_callback(_ring_timeout_tasks.discard)
+
+
+_ring_timeout_tasks: set = set()
+
+
 async def cleanup_calls_state() -> dict[str, int]:
     """
     Self-healing cleanup for addressed calls:
@@ -368,20 +517,8 @@ async def cleanup_calls_state() -> dict[str, int]:
     db = await get_db()
     now_iso_s = now_iso()
 
-    # Сначала выбираем, потом обновляем: после UPDATE уже не узнать, какие
-    # именно звонки протухли в этот раз, а отметить надо ровно их.
-    cur = await db.execute(
-        "SELECT * FROM calls WHERE status = 'ringing' AND expires_at != '' AND expires_at < ?",
-        (now_iso_s,),
-    )
-    expired_rows = [dict(r) for r in await cur.fetchall()]
-    cur = await db.execute(
-        """UPDATE calls
-           SET status = 'missed', ended_at = ?, end_reason = 'timeout'
-           WHERE status = 'ringing' AND expires_at != '' AND expires_at < ?""",
-        (now_iso_s, now_iso_s),
-    )
-    expired_ringing = cur.rowcount or 0
+    expired_rows = await _expire_ringing_calls(db, now_iso_s)
+    expired_ringing = len(expired_rows)
 
     # Разговор, идущий дольше CALL_ACTIVE_STALE_SEC, раньше считался зависшим
     # и закрывался по одному времени — то есть любой звонок длиннее трёх минут
@@ -417,6 +554,8 @@ async def cleanup_calls_state() -> dict[str, int]:
         )
     stale_active = len(stale_rows)
 
+    await _sync_call_log(db)
+
     retention_cutoff = (_now_utc() - timedelta(days=CALL_RETENTION_DAYS)).isoformat()
     cur = await db.execute(
         """DELETE FROM calls
@@ -429,19 +568,7 @@ async def cleanup_calls_state() -> dict[str, int]:
 
     await db.commit()
 
-    for call in expired_rows:
-        await record_missed_call(db, call)
-        # Звонящему тоже: иначе он так и сидит в пустой комнате с гудками —
-        # о том, что никто не ответил, сервер раньше сообщал только записью
-        # «пропущенный» в переписке.
-        timeout_event = {
-            "event": "call_ended",
-            "call_id": call["id"],
-            "channel_slug": call["channel_slug"],
-            "reason": "timeout",
-        }
-        await manager.send_to_user(call["caller_username"], timeout_event)
-        await manager.send_to_user(call["callee_username"], timeout_event)
+    await _notify_expired_ringing(db, expired_rows)
 
     # Комната пуста, но у кого-то мог остаться экран звонка: например, приложение
     # поднялось из фона и не узнало, что собеседник давно ушёл.
@@ -569,10 +696,12 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
         (call_id, ch["id"], ch["slug"], room_name, username, callee_username, mode, expires_at, now.isoformat()),
     )
     await db.execute(
-        "INSERT INTO call_log (channel_id, started_by, started_at, status) VALUES (?, ?, ?, 'active')",
-        (ch["id"], username, now.isoformat()),
+        "INSERT INTO call_log (channel_id, started_by, started_at, status, call_id, callee, mode) "
+        "VALUES (?, ?, ?, 'active', ?, ?, ?)",
+        (ch["id"], username, now.isoformat(), call_id, callee_username, mode),
     )
     await db.commit()
+    schedule_ring_timeout(expires_at)
 
     caller_name = await get_display_name(username)
     callee_name = await get_display_name(callee_username)
@@ -706,6 +835,7 @@ async def answer_addressed_call(data: dict, username: str = Depends(get_current_
         "UPDATE calls SET status = 'active', answered_at = ? WHERE id = ?",
         (answered_at, call_id),
     )
+    await db.execute("UPDATE call_log SET answered_at = ? WHERE call_id = ?", (answered_at, call_id))
     await db.commit()
 
     # For a federated call the room is on the other server, so the token we
@@ -758,10 +888,7 @@ async def reject_addressed_call(data: dict, username: str = Depends(get_current_
             "UPDATE calls SET status = 'rejected', ended_at = ?, end_reason = ? WHERE id = ?",
             (ended, "rejected", call_id),
         )
-        await db.execute(
-            "UPDATE call_log SET status = 'rejected', ended_at = ?, duration_sec = 0 WHERE channel_id = ? AND status = 'active'",
-            (ended, call["channel_id"]),
-        )
+        await _log_call_end(db, call_id, call["channel_id"], "rejected", ended)
         await db.commit()
         await _relay_call_state(db, call, "rejected", "rejected")
         reject_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "rejected"}
@@ -789,11 +916,9 @@ async def end_addressed_call(data: dict, username: str = Depends(get_current_use
             "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?",
             (ended, "ended_by_user", call_id),
         )
-        await db.execute(
-            """UPDATE call_log SET status = 'ended', ended_at = ?,
-               duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
-               WHERE channel_id = ? AND status = 'active'""",
-            (ended, ended, call["channel_id"]),
+        await _log_call_end(
+            db, call_id, call["channel_id"],
+            "ended" if call["status"] == "active" else "cancelled", ended,
         )
         await db.commit()
         # Отменённый до ответа звонок для вызываемого — тоже пропущенный: он о
@@ -933,7 +1058,7 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
         "sender": "system",
         "sender_name": "System",
         "type": "call",
-        "text": f"{display_name} started a video call",
+        "text": f"{display_name} начинает видеозвонок",
         "call": {
             "room_name": room_name,
             "status": "active",
@@ -1236,7 +1361,7 @@ async def finish_group_call(db, ch: dict, room_name: str = "") -> None:
             await db.execute(
                 "UPDATE messages SET call_data = ?, text = ? WHERE id = ?",
                 (json.dumps(call, ensure_ascii=False),
-                 f"Video call ended ({call['duration']}s)", msg_row["id"]),
+                 call_ended_text(call["duration"]), msg_row["id"]),
             )
 
     ended_at = now_iso()
@@ -1417,6 +1542,7 @@ async def register_incoming_federated_call(
          expires_at, now_iso(), domain, livekit_url, livekit_token),
     )
     await db.commit()
+    schedule_ring_timeout(expires_at)
 
     payload = {
         "event": "call_invite",
@@ -1480,12 +1606,7 @@ async def apply_federated_call_state(db, call: dict, state: str, reason: str = "
                 "UPDATE calls SET status = ?, ended_at = ?, end_reason = ? WHERE id = ?",
                 ("rejected" if state == "rejected" else "ended", ended, reason or state, call_id),
             )
-            await db.execute(
-                """UPDATE call_log SET status = ?, ended_at = ?,
-                   duration_sec = CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
-                   WHERE channel_id = ? AND status = 'active'""",
-                (state, ended, ended, call["channel_id"]),
-            )
+            await _log_call_end(db, call_id, call["channel_id"], state, ended)
             await db.commit()
         event = {
             "event": "call_ended",

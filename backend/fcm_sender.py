@@ -59,6 +59,7 @@ async def send_message_notification(
     channel_slug: str,
     channel_name: str,
     unread_count: int = 0,
+    is_group: bool = False,
 ) -> bool:
     """Push a message to the user's native apps.
 
@@ -93,6 +94,11 @@ async def send_message_notification(
                     # The body travels in data now that there's no notification
                     # block for the client to read it from.
                     "text": preview,
+                    # Беседа это или личный диалог — знает сервер. Телефон
+                    # раньше догадывался сам, сравнивая имя беседы с именем
+                    # отправителя, и группа, названная как человек, считалась
+                    # личкой.
+                    "is_group": "1" if is_group else "0",
                 },
                 android=messaging.AndroidConfig(
                     priority="high",
@@ -101,8 +107,15 @@ async def send_message_notification(
                 apns=messaging.APNSConfig(
                     payload=messaging.APNSPayload(
                         aps=messaging.Aps(
+                            # В беседе заголовок — её название, а имя
+                            # написавшего уходит подзаголовком: из пуша
+                            # «Алексей Герасимов» с текстом ниже нельзя было
+                            # понять, в каком чате тебя упомянули. В личном
+                            # диалоге название беседы и есть собеседник,
+                            # поэтому там всё по-прежнему.
                             alert=messaging.ApsAlert(
-                                title=sender_name,
+                                title=channel_name if is_group else sender_name,
+                                subtitle=sender_name if is_group else None,
                                 body=preview,
                             ),
                             sound="message_received.wav",
@@ -198,7 +211,7 @@ async def send_call_notification(
     # Time-to-live: a call invite is only useful while it's ringing. If FCM can't
     # deliver within the ring window (device asleep / app killed), it must DROP the
     # message instead of delivering a stale "incoming call" long after it ended.
-    ring_default = int(os.getenv("CALL_RING_TIMEOUT_SEC", "45"))
+    ring_default = int(os.getenv("CALL_RING_TIMEOUT_SEC", "20"))
     ttl_seconds = ring_default
     if expires_at:
         try:

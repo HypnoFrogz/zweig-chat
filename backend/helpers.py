@@ -1,4 +1,4 @@
-"""Zweig Messenger — shared utilities."""
+"""ChaosHelper Messenger — shared utilities."""
 
 import os
 import re
@@ -57,9 +57,12 @@ def hash_password(plain: str) -> str:
     return pwd_context.hash(plain)
 
 
-def create_access_token(username: str) -> str:
+def create_access_token(username: str, session_id: str | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": username, "exp": expire, "type": "access"}
+    if session_id:
+        # Номер сеанса: по нему запрос отклоняется сразу после отзыва входа.
+        payload["sid"] = session_id
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -84,32 +87,46 @@ def hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """FastAPI dependency — returns username from Bearer token."""
+def _decode_access(token_str: str) -> dict:
+    """Payload токена доступа; HTTPException 401, если он не годится или сеанс отозван."""
+    import sessions
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        token_type = payload.get("type")
-        # Keep compatibility with old access tokens without explicit type.
-        if token_type not in (None, "access"):
-            raise HTTPException(status_code=401, detail="Invalid token type")
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return username
+        payload = jwt.decode(token_str, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    # Keep compatibility with old access tokens without explicit type.
+    if payload.get("type") not in (None, "access"):
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    if not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if sessions.is_revoked(payload.get("sid")):
+        raise HTTPException(status_code=401, detail="Session revoked")
+    return payload
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """FastAPI dependency — returns username from Bearer token."""
+    return _decode_access(credentials.credentials)["sub"]
+
+
+def get_current_session(credentials: HTTPAuthorizationCredentials = Depends(security)) -> tuple[str, str | None]:
+    """FastAPI dependency — (username, номер сеанса или None для старых токенов)."""
+    p = _decode_access(credentials.credentials)
+    return p["sub"], p.get("sid")
+
+
+def decode_access_payload(token_str: str) -> dict | None:
+    """Payload токена доступа для WebSocket; None, если не годится."""
+    try:
+        return _decode_access(token_str)
+    except HTTPException:
+        return None
 
 
 def decode_token_from_string(token_str: str) -> str | None:
     """Decode JWT from raw string (for WebSocket auth)."""
-    try:
-        payload = jwt.decode(token_str, SECRET_KEY, algorithms=[ALGORITHM])
-        token_type = payload.get("type")
-        if token_type not in (None, "access"):
-            return None
-        return payload.get("sub")
-    except JWTError:
-        return None
+    p = decode_access_payload(token_str)
+    return p["sub"] if p else None
 
 
 def decode_refresh_token(token_str: str) -> dict:
@@ -166,6 +183,10 @@ def user_root(username: str) -> Path:
 
 def safe_path(username: str, rel: str) -> Path:
     base = user_root(username)
+    # Путь всегда от корня папки пользователя. Ведущий «/» (мобилка шлёт
+    # «/photo.jpg») превращал его в абсолютный путь системы — и запрос
+    # отклонялся как «Access denied»: «Отправить в чат» не работало.
+    rel = str(rel or "").strip().lstrip("/\\")
     target = (base / rel).resolve()
     if not str(target).startswith(str(base.resolve())):
         raise HTTPException(status_code=403, detail="Access denied")

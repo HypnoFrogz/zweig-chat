@@ -1,13 +1,15 @@
-"""Zweig Messenger — Messages (send, edit, delete, search, WebSocket)."""
+"""ChaosHelper Messenger — Messages (send, edit, delete, search, WebSocket)."""
 
 import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
-from helpers import get_current_user, get_display_name, decode_token_from_string, now_iso
+from helpers import get_current_user, get_display_name, decode_token_from_string, decode_access_payload, now_iso
+import sessions as auth_sessions
 from database import get_db
 from ws_manager import manager
+import analytics
 from routes.moderation import get_blocked_by, get_blockers_of
 
 router = APIRouter(prefix="/api", tags=["messages"])
@@ -33,6 +35,41 @@ def _unwrap_file(info):
 
 
 # ── Helpers ──────────────────────────────────────────────────────
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    """Русское склонение по числу: 1 фотография, 2 фотографии, 5 фотографий."""
+    if 11 <= n % 100 <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
+def attachment_preview(msg: dict) -> str:
+    """Как назвать сообщение, у которого нет текста.
+
+    Нужно в двух местах сразу: строкой последнего сообщения в списке бесед и
+    телом уведомления. Раньше и там и там подставлялось имя файла — для
+    голосового это `voice_1756640000.m4a`, по которому не понять даже, что это
+    голосовое.
+    """
+    file = msg.get("file") or {}
+    album = file.get("album")
+    if isinstance(album, list) and len(album) > 1:
+        return f"{len(album)} {_plural(len(album), 'фотография', 'фотографии', 'фотографий')}"
+    if file.get("kind") == "voice":
+        return "Голосовое сообщение"
+    kind = file.get("type")
+    if kind == "image":
+        return "Фотография"
+    if kind == "video":
+        return "Видео"
+    name = file.get("name")
+    return name if name else "Файл"
+
 
 async def _get_channel_by_slug(db, slug: str, username: str):
     cursor = await db.execute(
@@ -242,7 +279,7 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
         (msg["id"], username, now),
     )
 
-    lm_text = text or (msg.get("file", {}).get("name", "File"))
+    lm_text = text or attachment_preview(msg)
     await db.execute(
         "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, last_msg_timestamp = ? WHERE id = ?",
         (lm_text, username, display_name, now, ch["id"]),
@@ -260,6 +297,9 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
     if blockers:
         members = [m for m in members if m not in blockers]
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": ch["slug"], "message": msg})
+    # Ботам-участникам — в очередь обновлений (и на их вебхук, если задан).
+    from routes.bots import on_new_message as _bots_on_new_message
+    await _bots_on_new_message(db, ch, msg, members)
 
     # Push notifications to offline members (FCM for native apps + Web Push for PWA)
     from fcm_sender import send_message_notification
@@ -283,19 +323,24 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
             delivered = await send_message_notification(
                 recipient=member,
                 sender_name=display_name,
-                text=text,
+                text=text or attachment_preview(msg),
                 channel_slug=ch["slug"],
                 channel_name=ch.get("name") or display_name,
+                is_group=ch.get("type") != "direct",
             )
         # Web Push — только когда не подключено вообще ничего. Показывать
         # системное уведомление поверх открытой вкладки, где сообщение и так
         # видно, незачем; и тот, у кого есть и приложение, и PWA, иначе узнал
         # бы об одном сообщении дважды.
         if not delivered and not manager.is_online(member):
+            preview = ((text or attachment_preview(msg)) or "")[:100] or "Новое сообщение"
             await send_push_to_user(member, {
                 "type": "message",
                 "title": ch.get("name") or display_name,
-                "body": (text or "")[:100] or "Новое сообщение",
+                # В беседе заголовок — её название, поэтому кто написал,
+                # видно только из текста.
+                "body": f"{display_name}: {preview}"
+                        if ch.get("type") != "direct" else preview,
                 "conv_id": ch["slug"],
                 "badge": 1,
             })
@@ -773,11 +818,19 @@ async def get_presence(username: str = Depends(get_current_user)):
 # ── WebSocket ────────────────────────────────────────────────────
 
 @router.websocket("/ws/messaging")
-async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
-    username = decode_token_from_string(token)
+async def messaging_websocket(
+    websocket: WebSocket,
+    token: str = Query(...),
+    client: str = Query(""),
+    platform: str = Query(""),
+    v: str = Query(""),
+):
+    payload = decode_access_payload(token)
+    username = payload["sub"] if payload else None
     if not username:
         await websocket.close(code=4003, reason="Unauthorized")
         return
+    auth_sid = payload.get("sid")
 
     # Check if user is blocked
     db = await get_db()
@@ -788,10 +841,28 @@ async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
         return
 
     await manager.connect(username, websocket)
+    auth_sessions.attach(auth_sid, websocket)
     display_name = await get_display_name(username)
+
+    # Статистика для Grafana: с какого клиента и сколько был в сети.
+    client_kind = analytics.classify_client(client, websocket.headers.get("user-agent"), platform)
+    try:
+        session_id = await analytics.session_start(username, client_kind, v)
+    except Exception as e:  # статистика не должна мешать переписке
+        print(f"[analytics] session_start: {e}")
+        session_id = None
 
     now = now_iso()
     today = now[:10]  # YYYY-MM-DD
+
+    # Устройство и время активности входа — для списка «Устройства».
+    try:
+        plat = platform if platform in ("android", "ios") else ""
+        await auth_sessions.note_activity(db, auth_sid, websocket.headers.get("user-agent", ""),
+                                          {"platform": plat} if plat else None,
+                                          auth_sessions.client_ip(websocket))
+    except Exception as e:
+        print(f"[sessions] note_activity: {e}")
 
     # Update last_seen
     await db.execute("UPDATE users SET last_seen = ? WHERE username = ?", (now, username))
@@ -816,6 +887,10 @@ async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
                 continue
 
             event = data.get("event")
+            try:
+                await analytics.touch(username, client_kind)
+            except Exception:
+                pass
 
             if event == "ping":
                 await manager.send_to_user(username, {"event": "pong"})
@@ -826,6 +901,7 @@ async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
                     "INSERT INTO online_sessions (username, online, updated_at) VALUES (?, 1, ?) ON CONFLICT(username) DO UPDATE SET online = 1, updated_at = excluded.updated_at",
                     (username, ping_now)
                 )
+                await auth_sessions.heartbeat(ping_db, auth_sid)
                 await ping_db.commit()
 
             elif event == "send_message":
@@ -844,6 +920,11 @@ async def messaging_websocket(websocket: WebSocket, token: str = Query(...)):
     except Exception:
         pass
     finally:
+        try:
+            await analytics.session_end(session_id)
+        except Exception:
+            pass
+        auth_sessions.detach(auth_sid, websocket)
         went_offline = await manager.disconnect(username, websocket)
         if went_offline:
             db2 = await get_db()
@@ -940,12 +1021,20 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
         members = [m for m in members if m not in blockers]
 
     # Get channel slug for WS event
-    ch_cursor = await db.execute("SELECT slug, name FROM channels WHERE id = ?", (channel_id,))
+    ch_cursor = await db.execute(
+        "SELECT slug, name, type FROM channels WHERE id = ?", (channel_id,)
+    )
     ch_info = await ch_cursor.fetchone()
     ch_slug = ch_info["slug"] if ch_info else channel_id
     ch_name = (ch_info["name"] if ch_info else "") or display_name
+    ch_is_group = bool(ch_info) and ch_info["type"] != "direct" 
 
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": ch_slug, "message": msg})
+    from routes.bots import on_new_message as _bots_on_new_message
+    await _bots_on_new_message(
+        db, {"slug": ch_slug, "name": ch_info["name"] if ch_info else "", "type": ch_info["type"] if ch_info else ""},
+        msg, members,
+    )
 
     # Push notifications to offline members (FCM for native apps + Web Push for PWA)
     from fcm_sender import send_message_notification
@@ -967,12 +1056,14 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
                 text=text,
                 channel_slug=ch_slug,
                 channel_name=ch_name,
+                is_group=ch_is_group,
             )
         if not delivered and not manager.is_online(member):
+            preview = (text or "")[:100] or "Новое сообщение"
             await send_push_to_user(member, {
                 "type": "message",
                 "title": ch_name,
-                "body": (text or "")[:100] or "Новое сообщение",
+                "body": f"{display_name}: {preview}" if ch_is_group else preview,
                 "conv_id": ch_slug,
                 "badge": 1,
             })
@@ -1045,6 +1136,10 @@ async def add_reaction(slug: str, msg_id: str, data: dict, username: str = Depen
     emoji = data.get("emoji", "").strip()
     if not emoji:
         raise HTTPException(status_code=400, detail="Emoji required")
+    # Любой эмодзи, включая составные (семьи, флаги, оттенки кожи), но не
+    # произвольный текст: самые длинные последовательности — около 10 знаков.
+    if len(emoji) > 16:
+        raise HTTPException(status_code=400, detail="Emoji too long")
 
     cursor = await db.execute(
         "SELECT 1 FROM messages WHERE id = ? AND channel_id = ?", (msg_id, ch["id"])

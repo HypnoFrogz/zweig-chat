@@ -1,15 +1,18 @@
-"""Zweig Messenger — Device token registration for push notifications."""
+"""ChaosHelper Messenger — Device token registration for push notifications."""
 
 import uuid
 from fastapi import APIRouter, Depends
-from helpers import get_current_user, now_iso
+from helpers import get_current_user, get_current_session, now_iso
 from database import get_db
 
 router = APIRouter(prefix="/api", tags=["devices"])
 
 
 @router.post("/devices/register")
-async def register_device(data: dict, username: str = Depends(get_current_user)):
+async def register_device(data: dict, sess: tuple = Depends(get_current_session)):
+    # Пуш-токен привязан ко входу: завершили сеанс — уведомления на это
+    # устройство больше не идут.
+    username, sid = sess
     fcm_token = data.get("fcm_token", "").strip()
     voip_token = data.get("voip_token", "").strip()
     platform = data.get("platform", "android").strip()
@@ -29,14 +32,14 @@ async def register_device(data: dict, username: str = Depends(get_current_user))
         )
         if await cursor.fetchone():
             await db.execute(
-                "UPDATE user_voip_devices SET username = ?, updated_at = ? WHERE voip_token = ?",
-                (username, now, voip_token),
+                "UPDATE user_voip_devices SET username = ?, session_id = ?, updated_at = ? WHERE voip_token = ?",
+                (username, sid, now, voip_token),
             )
         else:
             await db.execute(
-                "INSERT INTO user_voip_devices (id, username, voip_token, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), username, voip_token, now, now),
+                "INSERT INTO user_voip_devices (id, username, voip_token, created_at, updated_at, session_id)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (str(uuid.uuid4()), username, voip_token, now, now, sid),
             )
         if not fcm_token:
             await db.commit()
@@ -49,13 +52,13 @@ async def register_device(data: dict, username: str = Depends(get_current_user))
 
     if existing:
         await db.execute(
-            "UPDATE user_devices SET username = ?, platform = ?, updated_at = ? WHERE fcm_token = ?",
-            (username, platform, now, fcm_token),
+            "UPDATE user_devices SET username = ?, platform = ?, session_id = ?, updated_at = ? WHERE fcm_token = ?",
+            (username, platform, sid, now, fcm_token),
         )
     else:
         await db.execute(
-            "INSERT INTO user_devices (id, username, fcm_token, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), username, fcm_token, platform, now, now),
+            "INSERT INTO user_devices (id, username, fcm_token, platform, created_at, updated_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), username, fcm_token, platform, now, now, sid),
         )
 
     await db.commit()

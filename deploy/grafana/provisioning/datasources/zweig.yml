@@ -1,0 +1,15 @@
+# Источник данных — база мессенджера, только на чтение.
+# Плагин frser-sqlite-datasource ставится при старте (GF_INSTALL_PLUGINS).
+apiVersion: 1
+datasources:
+  - name: Zweig
+    uid: zweig-sqlite
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      path: /var/lib/zweig/chaoshelper.db
+      # mode=ro — Grafana ничего не пишет в базу мессенджера.
+      pathPrefix: "file:"
+      pathOptions: "mode=ro"

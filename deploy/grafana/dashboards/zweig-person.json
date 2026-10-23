@@ -1,0 +1,713 @@
+{
+  "uid": "zweig-person",
+  "title": "Zweig — сотрудник",
+  "description": "Активность одного сотрудника: часы в сети, сеансы, устройства, звонки.",
+  "tags": [
+    "zweig"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "user",
+        "label": "Сотрудник",
+        "type": "query",
+        "datasource": {
+          "type": "frser-sqlite-datasource",
+          "uid": "zweig-sqlite"
+        },
+        "query": {
+          "queryText": "SELECT username FROM users WHERE COALESCE(home_server, '') = '' AND blocked = 0 ORDER BY username",
+          "rawQueryText": "SELECT username FROM users WHERE COALESCE(home_server, '') = '' AND blocked = 0 ORDER BY username",
+          "queryType": "table"
+        },
+        "definition": "",
+        "refresh": 1,
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "tz",
+        "label": "Часовой пояс, ч от UTC",
+        "type": "custom",
+        "query": "+3,+2,+4,+5,+6,+7,+8,+9,+10,+11,+12,0",
+        "current": {
+          "text": "+3",
+          "value": "+3"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Последний раз в сети",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT replace(substr(datetime(NULLIF(last_seen, ''), '$tz hours'), 1, 16), 'T', ' ') AS value FROM users WHERE username = '$user'",
+          "rawQueryText": "SELECT replace(substr(datetime(NULLIF(last_seen, ''), '$tz hours'), 1, 16), 'T', ' ') AS value FROM users WHERE username = '$user'",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Дней активности",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT COUNT(DISTINCT d) AS value FROM (SELECT date(datetime(hour, '$tz hours')) AS d, username FROM activity_hourly WHERE hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') UNION SELECT date, username FROM user_activity_log WHERE date >= date(${__from:date:seconds}, 'unixepoch') AND date <= date(${__to:date:seconds}, 'unixepoch')) WHERE username = '$user'",
+          "rawQueryText": "SELECT COUNT(DISTINCT d) AS value FROM (SELECT date(datetime(hour, '$tz hours')) AS d, username FROM activity_hourly WHERE hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') UNION SELECT date, username FROM user_activity_log WHERE date >= date(${__from:date:seconds}, 'unixepoch') AND date <= date(${__to:date:seconds}, 'unixepoch')) WHERE username = '$user'",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Часов в сети",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT COUNT(*) AS value FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch')",
+          "rawQueryText": "SELECT COUNT(*) AS value FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch')",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Сообщений",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT COUNT(*) AS value FROM messages WHERE sender = '$user' AND type NOT IN ('call') AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND timestamp < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "rawQueryText": "SELECT COUNT(*) AS value FROM messages WHERE sender = '$user' AND type NOT IN ('call') AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND timestamp < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Звонков",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 17,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT COUNT(*) AS value FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "rawQueryText": "SELECT COUNT(*) AS value FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "Минут в звонках",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT ROUND(COALESCE(SUM(duration_sec), 0) / 60.0) AS value FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND status = 'ended' AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "rawQueryText": "SELECT ROUND(COALESCE(SUM(duration_sec), 0) / 60.0) AS value FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND status = 'ended' AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Часов в сети по дням",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT CAST(strftime('%s', date(datetime(hour, '$tz hours'))) AS INTEGER) AS time, COUNT(*) AS \"Часов\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "rawQueryText": "SELECT CAST(strftime('%s', date(datetime(hour, '$tz hours'))) AS INTEGER) AS time, COUNT(*) AS \"Часов\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "Сообщений по дням",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT CAST(strftime('%s', date(datetime(timestamp, '$tz hours'))) AS INTEGER) AS time, COUNT(*) AS \"Сообщений\" FROM messages WHERE sender = '$user' AND type != 'call' AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND timestamp < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "rawQueryText": "SELECT CAST(strftime('%s', date(datetime(timestamp, '$tz hours'))) AS INTEGER) AS time, COUNT(*) AS \"Сообщений\" FROM messages WHERE sender = '$user' AND type != 'call' AND timestamp >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND timestamp < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "queryType": "time series",
+          "timeColumns": [
+            "time"
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "type": "barchart",
+      "title": "По часам суток",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT strftime('%H', datetime(hour, '$tz hours')) AS \"Час\", COUNT(*) AS \"Дней\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "rawQueryText": "SELECT strftime('%H', datetime(hour, '$tz hours')) AS \"Час\", COUNT(*) AS \"Дней\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY 1 ORDER BY 1",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "never",
+        "xTickLabelRotation": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "barWidth": 0.8,
+        "groupWidth": 0.7
+      }
+    },
+    {
+      "id": 38,
+      "type": "piechart",
+      "title": "Устройства, часов",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT CASE client WHEN 'ios' THEN 'iPhone' WHEN 'android' THEN 'Android' WHEN 'mobile' THEN 'Телефон' WHEN 'desktop' THEN 'Компьютер (приложение)' WHEN 'web' THEN 'Браузер' ELSE client END AS \"Клиент\", COUNT(*) AS \"Часов\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY client",
+          "rawQueryText": "SELECT CASE client WHEN 'ios' THEN 'iPhone' WHEN 'android' THEN 'Android' WHEN 'mobile' THEN 'Телефон' WHEN 'desktop' THEN 'Компьютер (приложение)' WHEN 'web' THEN 'Браузер' ELSE client END AS \"Клиент\", COUNT(*) AS \"Часов\" FROM activity_hourly WHERE username = '$user' AND hour >= strftime('%Y-%m-%d %H:00', ${__from:date:seconds}, 'unixepoch') AND hour <= strftime('%Y-%m-%d %H:00', ${__to:date:seconds}, 'unixepoch') GROUP BY client",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "pieType": "donut",
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ],
+          "showLegend": true
+        },
+        "displayLabels": []
+      }
+    },
+    {
+      "id": 39,
+      "type": "table",
+      "title": "Сеансы",
+      "description": "Каждое подключение приложения или вкладки. Сеансы, оборванные перезапуском сервера, — 0 минут.",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", replace(substr(datetime(ended_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Конец\", ROUND(COALESCE(duration_sec, 0) / 60.0) AS \"Минут\", CASE client WHEN 'ios' THEN 'iPhone' WHEN 'android' THEN 'Android' WHEN 'mobile' THEN 'Телефон' WHEN 'desktop' THEN 'Компьютер (приложение)' WHEN 'web' THEN 'Браузер' ELSE client END AS \"Клиент\", app_version AS \"Версия\" FROM session_log WHERE username = '$user' AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "rawQueryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", replace(substr(datetime(ended_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Конец\", ROUND(COALESCE(duration_sec, 0) / 60.0) AS \"Минут\", CASE client WHEN 'ios' THEN 'iPhone' WHEN 'android' THEN 'Android' WHEN 'mobile' THEN 'Телефон' WHEN 'desktop' THEN 'Компьютер (приложение)' WHEN 'web' THEN 'Браузер' ELSE client END AS \"Клиент\", app_version AS \"Версия\" FROM session_log WHERE username = '$user' AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 40,
+      "type": "table",
+      "title": "Звонки",
+      "description": "",
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "zweig-sqlite"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "zweig-sqlite"
+          },
+          "queryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", CASE WHEN started_by = '$user' THEN 'исходящий' ELSE 'входящий' END AS \"Направление\", CASE WHEN started_by = '$user' THEN COALESCE(callee, 'общий звонок') ELSE started_by END AS \"С кем\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "rawQueryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", CASE WHEN started_by = '$user' THEN 'исходящий' ELSE 'входящий' END AS \"Направление\", CASE WHEN started_by = '$user' THEN COALESCE(callee, 'общий звонок') ELSE started_by END AS \"С кем\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE (started_by = '$user' OR callee = '$user') AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "queryType": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Дашборды Zweig",
+      "type": "dashboards",
+      "tags": [
+        "zweig"
+      ],
+      "asDropdown": true
+    }
+  ]
+}

@@ -277,6 +277,77 @@ const I18N = {
         'settings.terms': 'Условия использования',
         'settings.support': 'Поддержка',
         'settings.deleteAccount': 'Удалить аккаунт',
+        '2fa.title': 'Двухфакторная защита',
+        '2fa.on': 'вкл.',
+        '2fa.off': 'выкл.',
+        '2fa.isOn': 'Включена',
+        '2fa.isOff': 'Выключена',
+        '2fa.offHint': 'По желанию. После включения при входе кроме пароля понадобится код из приложения-аутентификатора: Яндекс Ключ, Google Authenticator, 1Password и т. п. Чтобы включить, введите пароль.',
+        '2fa.onHint': 'При входе нужен код из приложения-аутентификатора. Осталось резервных кодов: {n}.',
+        '2fa.password': 'Пароль',
+        '2fa.enable': 'Включить',
+        '2fa.disable': 'Отключить',
+        '2fa.newCodes': 'Новые резервные коды',
+        '2fa.scan': 'Отсканируйте QR-код в приложении-аутентификаторе.',
+        '2fa.manual': 'Или введите ключ вручную:',
+        '2fa.code': 'Код из приложения',
+        '2fa.codeOrBackup': 'Код из приложения или резервный',
+        '2fa.verify': 'Подтвердить',
+        '2fa.back': 'Назад',
+        '2fa.enabledDone': '2FA включена',
+        '2fa.codesHint': 'Сохраните резервные коды. Каждый срабатывает один раз — на случай, если телефон потерян. Больше мы их не покажем. Остальные входы в аккаунт завершены.',
+        '2fa.copy': 'Скопировать',
+        '2fa.copied': 'Коды скопированы',
+        '2fa.done': 'Готово',
+        '2fa.disableHint': 'Чтобы отключить 2FA, введите пароль и код из приложения (или резервный код).',
+        '2fa.disabledDone': '2FA отключена',
+        '2fa.newCodesHint': 'Введите код из приложения — старые резервные коды перестанут работать.',
+        '2fa.newCodesDone': 'Новые резервные коды',
+        '2fa.badCode': 'Неверный код',
+        '2fa.badPassword': 'Неверный пароль',
+        '2fa.tooMany': 'Слишком много попыток. Подождите 15 минут.',
+        '2fa.expired': 'Время на ввод кода вышло. Войдите заново.',
+        '2fa.loginHint': 'Введите 6-значный код из приложения-аутентификатора или резервный код.',
+        '2fa.backupUsed': 'Использован резервный код. Осталось: {n}',
+        '2fa.serverOld': 'Сервер ещё не обновлён — 2FA появится после обновления.',
+        '2fa.adminReset': 'Сбросить 2FA',
+        '2fa.adminResetConfirm': 'Сбросить 2FA у {name}? Он сможет войти только по паролю.',
+        '2fa.adminResetDone': '2FA сброшена',
+        'common.cancel': 'Отмена',
+        'sessions.title': 'Устройства',
+        'sessions.hint': 'Где выполнен вход в ваш аккаунт. Завершите сеанс, который не узнаёте.',
+        'sessions.hintAdmin': 'Где выполнен вход в аккаунт {name}.',
+        'sessions.titleAdmin': 'Сеансы: {name}',
+        'sessions.endOthers': 'Завершить все остальные',
+        'sessions.endAll': 'Завершить все сеансы',
+        'sessions.end': 'Завершить',
+        'sessions.thisDevice': 'Это устройство',
+        'sessions.active': 'активен {when}',
+        'sessions.signedIn': 'вход {when}',
+        'sessions.mobile': 'Мобильное приложение',
+        'sessions.unknown': 'Неизвестное устройство',
+        'sessions.empty': 'Нет активных сеансов',
+        'sessions.endConfirm': 'Завершить этот сеанс? Устройство выйдет из аккаунта.',
+        'sessions.endOthersConfirm': 'Завершить все сеансы, кроме этого?',
+        'sessions.endAllConfirm': 'Завершить все сеансы пользователя {name}?',
+        'sessions.ended': 'Сеанс завершён',
+        'sessions.endedN': 'Завершено сеансов: {n}',
+        'sessions.revoked': 'Сеанс завершён с другого устройства. Войдите снова.',
+        'sessions.relogin': 'Чтобы управлять устройствами, войдите заново.',
+        'sessions.now': 'сейчас',
+        'sessions.autoTitle': 'Автовыход с неактивных устройств',
+        'sessions.autoHint': 'Устройство, которым не пользовались столько времени, выйдет из аккаунта само.',
+        'sessions.autoNever': 'Никогда',
+        'sessions.auto1': 'Через день',
+        'sessions.auto7': 'Через неделю',
+        'sessions.auto30': 'Через месяц',
+        'sessions.autoSaved': 'Сохранено',
+        'sessions.autoSavedN': 'Сохранено. Завершено неактивных сеансов: {n}',
+        'sessions.endEverywhere': 'Выйти на всех устройствах',
+        'sessions.endEverywhereConfirm': 'Выйти из аккаунта на всех устройствах, включая это?',
+        'sessions.endedEverywhere': 'Вы вышли на всех устройствах.',
+        'sessions.serverOld': 'Сервер ещё не обновлён — список устройств появится после обновления.',
+        'admin.sessions': 'Сеансы',
         'fed.title': 'Связи с другими серверами',
         'fed.hint': 'Каталога людей с других серверов нет. Чтобы вам смогли написать, создайте ссылку и передайте её сами — почтой или любым другим способом.',
         'fed.addByLink': 'Добавить собеседника по ссылке',
@@ -312,6 +383,19 @@ const I18N = {
         'files.uploadFile': 'Файл',
         'files.uploaded': 'Загружено',
         'files.uploadError': 'Ошибка загрузки',
+        'files.home': 'Мои файлы',
+        'preview.na': 'Для этого файла нет предпросмотра — скачайте его.',
+        'preview.tooBig': 'Файл слишком большой для предпросмотра — скачайте его.',
+        'preview.loadError': 'Не удалось открыть файл',
+        'preview.prev': 'Предыдущий файл',
+        'preview.next': 'Следующий файл',
+        'admin.created': 'Создан',
+        'upload.tooBig': 'файл больше 500 МБ — сервер его не примет',
+        'upload.noSpace': 'на сервере закончилось место',
+        'upload.network': 'нет связи с сервером',
+        'upload.cancel': 'Отмена',
+        'upload.cancelled': 'Загрузка отменена',
+        'upload.of': 'из',
         'files.name': 'Название',
         'files.size': 'Размер',
         'files.date': 'Добавлено',
@@ -378,6 +462,7 @@ const I18N = {
         'msg.replies': 'ответов',
         'msg.reply1': 'ответ',
         'search.people': 'Люди',
+        'call.you': 'вы',
         'search.channels': 'Каналы',
         'search.all': 'Все',
         'search.usersAndChannels': 'Поиск людей и каналов...',
@@ -450,6 +535,7 @@ const I18N = {
         'emoji.search': 'Поиск эмодзи…',
         'emoji.recent': 'Недавние',
         'emoji.nothing': 'Ничего не найдено',
+        'emoji.more': 'Другие реакции',
         'emoji.cat.smileys': 'Смайлики',
         'emoji.cat.gestures': 'Жесты',
         'emoji.cat.people': 'Люди',
@@ -529,6 +615,77 @@ const I18N = {
         'settings.terms': 'Terms of Service',
         'settings.support': 'Support',
         'settings.deleteAccount': 'Delete account',
+        '2fa.title': 'Two-factor authentication',
+        '2fa.on': 'on',
+        '2fa.off': 'off',
+        '2fa.isOn': 'On',
+        '2fa.isOff': 'Off',
+        '2fa.offHint': 'Optional. Once on, signing in needs a code from an authenticator app (Google Authenticator, 1Password, etc.) in addition to your password. Enter your password to turn it on.',
+        '2fa.onHint': 'Signing in requires a code from your authenticator app. Backup codes left: {n}.',
+        '2fa.password': 'Password',
+        '2fa.enable': 'Turn on',
+        '2fa.disable': 'Turn off',
+        '2fa.newCodes': 'New backup codes',
+        '2fa.scan': 'Scan the QR code with your authenticator app.',
+        '2fa.manual': 'Or enter the key manually:',
+        '2fa.code': 'Code from the app',
+        '2fa.codeOrBackup': 'App code or backup code',
+        '2fa.verify': 'Confirm',
+        '2fa.back': 'Back',
+        '2fa.enabledDone': '2FA is on',
+        '2fa.codesHint': 'Save these backup codes. Each works once, in case you lose your phone. We will not show them again. Your other sessions have been ended.',
+        '2fa.copy': 'Copy',
+        '2fa.copied': 'Codes copied',
+        '2fa.done': 'Done',
+        '2fa.disableHint': 'To turn 2FA off, enter your password and an app code (or a backup code).',
+        '2fa.disabledDone': '2FA is off',
+        '2fa.newCodesHint': 'Enter an app code. Your old backup codes will stop working.',
+        '2fa.newCodesDone': 'New backup codes',
+        '2fa.badCode': 'Wrong code',
+        '2fa.badPassword': 'Wrong password',
+        '2fa.tooMany': 'Too many attempts. Wait 15 minutes.',
+        '2fa.expired': 'Time to enter the code ran out. Sign in again.',
+        '2fa.loginHint': 'Enter the 6-digit code from your authenticator app or a backup code.',
+        '2fa.backupUsed': 'Backup code used. Left: {n}',
+        '2fa.serverOld': 'The server has not been updated yet. 2FA will appear after the update.',
+        '2fa.adminReset': 'Reset 2FA',
+        '2fa.adminResetConfirm': 'Reset 2FA for {name}? They will sign in with a password only.',
+        '2fa.adminResetDone': '2FA reset',
+        'common.cancel': 'Cancel',
+        'sessions.title': 'Devices',
+        'sessions.hint': 'Where your account is signed in. End any session you don’t recognise.',
+        'sessions.hintAdmin': 'Where {name} is signed in.',
+        'sessions.titleAdmin': 'Sessions: {name}',
+        'sessions.endOthers': 'End all other sessions',
+        'sessions.endAll': 'End all sessions',
+        'sessions.end': 'End',
+        'sessions.thisDevice': 'This device',
+        'sessions.active': 'active {when}',
+        'sessions.signedIn': 'signed in {when}',
+        'sessions.mobile': 'Mobile app',
+        'sessions.unknown': 'Unknown device',
+        'sessions.empty': 'No active sessions',
+        'sessions.endConfirm': 'End this session? The device will be signed out.',
+        'sessions.endOthersConfirm': 'End all sessions except this one?',
+        'sessions.endAllConfirm': 'End all sessions of {name}?',
+        'sessions.ended': 'Session ended',
+        'sessions.endedN': 'Sessions ended: {n}',
+        'sessions.revoked': 'Your session was ended from another device. Please sign in again.',
+        'sessions.relogin': 'Sign in again to manage your devices.',
+        'sessions.now': 'now',
+        'sessions.autoTitle': 'Sign out inactive devices',
+        'sessions.autoHint': 'A device that has not been used for this long is signed out automatically.',
+        'sessions.autoNever': 'Never',
+        'sessions.auto1': 'After 1 day',
+        'sessions.auto7': 'After 1 week',
+        'sessions.auto30': 'After 1 month',
+        'sessions.autoSaved': 'Saved',
+        'sessions.autoSavedN': 'Saved. Inactive sessions ended: {n}',
+        'sessions.endEverywhere': 'Sign out on all devices',
+        'sessions.endEverywhereConfirm': 'Sign out of your account on all devices, including this one?',
+        'sessions.endedEverywhere': 'You have been signed out on all devices.',
+        'sessions.serverOld': 'The server hasn’t been updated yet — devices will appear after the update.',
+        'admin.sessions': 'Sessions',
         'fed.title': 'Links to other servers',
         'fed.hint': 'There is no directory of people on other servers. To let someone write to you, create a link and pass it on yourself — by mail or any other way.',
         'fed.addByLink': 'Add a contact by link',
@@ -564,6 +721,19 @@ const I18N = {
         'files.uploadFile': 'File',
         'files.uploaded': 'Uploaded',
         'files.uploadError': 'Upload failed',
+        'files.home': 'My files',
+        'preview.na': 'No preview for this file — download it instead.',
+        'preview.tooBig': 'The file is too large to preview — download it instead.',
+        'preview.loadError': 'Could not open the file',
+        'preview.prev': 'Previous file',
+        'preview.next': 'Next file',
+        'admin.created': 'Created',
+        'upload.tooBig': 'file is larger than 500 MB — the server won’t accept it',
+        'upload.noSpace': 'the server is out of disk space',
+        'upload.network': 'no connection to the server',
+        'upload.cancel': 'Cancel',
+        'upload.cancelled': 'Upload cancelled',
+        'upload.of': 'of',
         'files.name': 'Name',
         'files.size': 'Size',
         'files.date': 'Added',
@@ -630,6 +800,7 @@ const I18N = {
         'msg.replies': 'replies',
         'msg.reply1': 'reply',
         'search.people': 'People',
+        'call.you': 'you',
         'search.channels': 'Channels',
         'search.all': 'All',
         'search.usersAndChannels': 'Search people and channels...',
@@ -702,6 +873,7 @@ const I18N = {
         'emoji.search': 'Search emoji…',
         'emoji.recent': 'Recent',
         'emoji.nothing': 'Nothing found',
+        'emoji.more': 'More reactions',
         'emoji.cat.smileys': 'Smileys',
         'emoji.cat.gestures': 'Gestures',
         'emoji.cat.people': 'People',
@@ -795,6 +967,10 @@ async function apiFetch(url, opts = {}) {
     }
     const res = await fetch(API + url, { ...requestOpts, headers });
     if (res.status === 401) {
+        // Сеанс завершили с другого устройства или из админки — скажем об этом.
+        let revoked = false;
+        try { revoked = (await res.clone().json())?.detail === 'Session revoked'; } catch (_) {}
+        if (revoked) { logout(t('sessions.revoked')); return null; }
         const canRetry = !requestOpts._retry && requestOpts.skipAuth !== true;
         if (canRetry) {
             const refreshed = await refreshAccessToken();
@@ -836,7 +1012,10 @@ function showLoginStep(step) {
     if (!serverStep || !credStep) return;
     const onServer = step === 'server';
     serverStep.style.display = onServer ? '' : 'none';
-    credStep.style.display = onServer ? 'none' : '';
+    credStep.style.display = step === 'credentials' ? '' : 'none';
+    const tfStep = document.getElementById('login-step-2fa');
+    if (tfStep) tfStep.style.display = step === '2fa' ? '' : 'none';
+    if (step === '2fa') { setTimeout(() => document.getElementById('login-2fa-code')?.focus(), 50); return; }
     // Show which server the credentials will be sent to.
     const label = document.getElementById('login-server-label');
     if (label) label.textContent = getServerBase() || location.host;
@@ -944,6 +1123,51 @@ document.getElementById('login-form')?.addEventListener('submit', async e => {
         errEl.textContent = t('login.serverUnreachable');
         return;
     }
+    if (res.ok && data.twofa_required) {
+        // Включена 2FA — второй шаг: код из приложения-аутентификатора.
+        loginChallenge = data.challenge;
+        document.getElementById('login-2fa-code').value = '';
+        document.getElementById('login-2fa-error').textContent = '';
+        showLoginStep('2fa');
+        return;
+    }
+    if (!finishLogin(res, data)) errEl.textContent = data.detail || 'Login failed';
+});
+
+let loginChallenge = '';
+function cancelLogin2fa() { loginChallenge = ''; showLoginStep('credentials'); }
+
+document.getElementById('login-2fa-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const errEl = document.getElementById('login-2fa-error');
+    errEl.textContent = '';
+    const code = document.getElementById('login-2fa-code').value.trim();
+    let res, data;
+    try {
+        res = await fetch(API + '/login/2fa', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ challenge: loginChallenge, code }),
+        });
+        data = await res.json();
+    } catch (err) {
+        errEl.textContent = t('login.serverUnreachable');
+        return;
+    }
+    if (finishLogin(res, data)) {
+        loginChallenge = '';
+        if (typeof data.backup_left === 'number') {
+            setTimeout(() => showToast(t('2fa.backupUsed').replace('{n}', data.backup_left), data.backup_left <= 2 ? 'error' : 'success'), 600);
+        }
+        return;
+    }
+    if (res.status === 429) errEl.textContent = t('2fa.tooMany');
+    else if (data.detail === '2FA challenge expired') errEl.textContent = t('2fa.expired');
+    else errEl.textContent = t('2fa.badCode');
+});
+
+// Общий финал входа: и после пароля, и после кода 2FA.
+function finishLogin(res, data) {
     const access = data.access_token || data.token;
     const refresh = data.refresh_token;
     if (res.ok && access && refresh) {
@@ -960,12 +1184,22 @@ document.getElementById('login-form')?.addEventListener('submit', async e => {
         localStorage.setItem('ch_display', displayName);
         localStorage.setItem('ch_role', userRole);
         showApp();
-    } else {
-        errEl.textContent = data.detail || 'Login failed';
+        return true;
     }
-});
+    return false;
+}
 
-function logout() {
+function logout(notice) {
+    // Завершить сеанс и на сервере, если выходим сами (а не нас выкинули).
+    if (typeof notice !== 'string' && refreshToken && token) {
+        try {
+            fetch(API + '/auth/logout', {
+                method: 'POST', keepalive: true,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+            }).catch(() => {});
+        } catch (_) {}
+    }
     unsubscribePush();
     token = '';
     refreshToken = '';
@@ -982,6 +1216,10 @@ function logout() {
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
     showLogin();
     closeAllModals();
+    if (typeof notice === 'string') {
+        const errEl = document.getElementById('login-error');
+        if (errEl) errEl.textContent = notice;
+    }
 }
 
 // ── Account deletion (Apple 5.1.1(v) / GDPR erasure) ────────────
@@ -1482,7 +1720,6 @@ function showChannelContextMenu(e, slug) {
     // включая телефон, где такого переключателя пока нет.
     const muted = isChannelMuted(ch);
     items += `<div class="ctx-item" onclick="${muted ? `unmuteChannel('${slug}')` : `muteChannel('${slug}')`}"><span class="material-icons-round">${muted ? 'notifications_active' : 'notifications_off'}</span> ${t(muted ? 'channel.unmute' : 'channel.mute')}</div>`;
-
     if (isDM) {
         // Одностороннее удаление: переписка пропадает только у нас.
         items += `<div class="ctx-item ctx-danger" onclick="clearChat('${slug}')"><span class="material-icons-round">delete</span> ${t('chat.delete')}</div>`;
@@ -1776,6 +2013,13 @@ function renderMessages(messages, scroll = true, prepend = false) {
     let lastTime = '';
     const existingIds = new Set();
     container.querySelectorAll('.msg-row[data-id]').forEach(el => existingIds.add(el.dataset.id));
+    // Новое сообщение дописывается в конец уже открытого чата: если в чате
+    // уже стоит разделитель с этой датой, второй не нужен. Раньше каждый
+    // пришедший вживую пакет начинался с нового «Сегодня».
+    if (!prepend) {
+        const seps = container.querySelectorAll('.msg-date-sep');
+        if (seps.length) lastDate = seps[seps.length - 1].textContent;
+    }
 
     messages.forEach(msg => {
         if (existingIds.has(msg.id)) return;
@@ -1860,7 +2104,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
                 <div class="msg-body">
                     ${actions}
                     <div class="msg-header">
-                        <span class="msg-sender msg-user-link" onclick="showUserCard('${esc(msg.sender).replace(/'/g, "\\'")}')">${esc(msg.sender_name || msg.sender)}</span>
+                        <span class="msg-sender msg-user-link" onclick="showUserCard('${esc(msg.sender).replace(/'/g, "\\'")}')">${esc(msg.sender_name || msg.sender)}</span>${botBadge(msg.sender)}
                         <span class="msg-time">${time}</span>${editedBadge}
                     </div>
                     ${replyPreview}
@@ -1909,8 +2153,32 @@ function renderMsgFile(msg) {
     if (!msg.file) return '';
     const f = msg.file;
     const fileUrl = srv(f.url);
+    // Альбом: несколько снимков одним сообщением. Проверяем раньше картинки —
+    // в самом `file` лежит первый снимок, и без этой ветки показался бы он один.
+    if (Array.isArray(f.album) && f.album.length > 1) {
+        const visible = f.album.slice(0, 4);
+        const hidden = f.album.length - visible.length;
+        const tiles = visible.map((a, i) => {
+            const u = srv(a.url);
+            const more = (hidden > 0 && i === visible.length - 1)
+                ? `<span class="msg-album-more">+${hidden}</span>` : '';
+            return `<div class="msg-album-tile" onclick="window.open('${u}','_blank')">
+                <img src="${u}" alt="${esc(a.name || '')}">${more}
+            </div>`;
+        }).join('');
+        return `<div class="msg-album">${tiles}</div>`;
+    }
     if (f.type === 'image') {
         return `<img class="msg-file-image" src="${fileUrl}" alt="${esc(f.name)}" onclick="window.open('${fileUrl}','_blank')">`;
+    }
+    // Голосовое — проигрыватель, а не строка со скрепкой. Признак ставит тот,
+    // кто записывал: по расширению голосовое не отличить от присланной музыки.
+    if (f.kind === 'voice') {
+        const dur = f.duration_ms ? formatVoiceDuration(f.duration_ms) : '';
+        return `<div class="msg-file-voice">
+            <audio controls preload="metadata" src="${fileUrl}"></audio>
+            ${dur ? `<span class="msg-file-size">${dur}</span>` : ''}
+        </div>`;
     }
     const sizeStr = f.size ? formatFileSize(f.size) : '';
     return `<div class="msg-file-attach" onclick="window.open('${fileUrl}','_blank')">
@@ -1918,6 +2186,11 @@ function renderMsgFile(msg) {
         <span class="msg-file-name">${esc(f.name)}</span>
         <span class="msg-file-size">${sizeStr}</span>
     </div>`;
+}
+
+function formatVoiceDuration(ms) {
+    const total = Math.round(ms / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
 function formatMsgText(text) {
@@ -2434,10 +2707,26 @@ async function forwardToChannel(slug) {
 }
 
 // ── Reactions ──────────────────────────────────────────────────
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏'];
+// Быстрая строка — шесть последних реакций человека (новичку — привычный
+// набор), в конце «+» с полной палитрой: поиск, разделы, прокрутка. Раньше
+// выбор был только из шести фиксированных.
+const DEFAULT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏'];
+function recentReactions() {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem('ch_recent_reactions') || '[]'); } catch (e) { /* пусто */ }
+    for (const em of DEFAULT_REACTIONS) if (list.length < 6 && !list.includes(em)) list.push(em);
+    return list.slice(0, 6);
+}
+function rememberReaction(em) {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem('ch_recent_reactions') || '[]'); } catch (e) { /* пусто */ }
+    list = [em, ...list.filter(e => e !== em)].slice(0, 12);
+    try { localStorage.setItem('ch_recent_reactions', JSON.stringify(list)); } catch (e) { /* приватный режим */ }
+}
 
 function showReactionPicker(e, msgId) {
     e.stopPropagation();
+    closeReactionFullPicker();
     let picker = document.getElementById('reaction-picker');
     if (!picker) {
         picker = document.createElement('div');
@@ -2445,20 +2734,52 @@ function showReactionPicker(e, msgId) {
         picker.className = 'reaction-picker';
         document.body.appendChild(picker);
     }
-    picker.innerHTML = QUICK_REACTIONS.map(em =>
+    picker.innerHTML = recentReactions().map(em =>
         `<button class="reaction-picker-btn" onclick="addReaction('${msgId}','${em}')">${em}</button>`
-    ).join('');
+    ).join('') + `<button class="reaction-picker-btn reaction-more" title="${esc(t('emoji.more'))}" aria-label="${esc(t('emoji.more'))}" onclick="openReactionFullPicker(event,'${msgId}')"><span class="material-icons-round">add</span></button>`;
     picker.style.display = 'flex';
     const rect = e.target.closest('.msg-row').getBoundingClientRect();
-    picker.style.top = (rect.top - 50) + 'px';
-    picker.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+    picker.style.top = Math.max(8, rect.top - 50) + 'px';
+    picker.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 300)) + 'px';
     const close = (ev) => { if (!ev.target.closest('.reaction-picker')) { picker.style.display = 'none'; document.removeEventListener('click', close); } };
     setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function openReactionFullPicker(e, msgId) {
+    e.stopPropagation();
+    const quick = document.getElementById('reaction-picker');
+    const anchor = quick ? quick.getBoundingClientRect() : { top: e.clientY, left: e.clientX, bottom: e.clientY };
+    if (quick) quick.style.display = 'none';
+    let full = document.getElementById('reaction-full-picker');
+    if (!full) {
+        full = document.createElement('div');
+        full.id = 'reaction-full-picker';
+        full.className = 'emoji-picker emoji-floating';
+        document.body.appendChild(full);
+    }
+    openEmojiPickerIn(full, em => addReaction(msgId, em));
+    full.style.display = 'flex';
+    // Под строкой реакций, а если не помещается — над ней.
+    const h = full.offsetHeight, w = full.offsetWidth;
+    let top = anchor.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, anchor.top - h - 6);
+    full.style.top = top + 'px';
+    full.style.left = Math.max(8, Math.min(anchor.left, window.innerWidth - w - 8)) + 'px';
+    const close = (ev) => {
+        if (!ev.target.closest('#reaction-full-picker')) { closeReactionFullPicker(); document.removeEventListener('click', close); }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
+}
+function closeReactionFullPicker() {
+    const full = document.getElementById('reaction-full-picker');
+    if (full) full.style.display = 'none';
 }
 
 async function addReaction(msgId, emoji) {
     const picker = document.getElementById('reaction-picker');
     if (picker) picker.style.display = 'none';
+    closeReactionFullPicker();
+    rememberReaction(emoji);
     if (!currentChannel) return;
     await apiFetch(`/channels/${currentChannel.slug}/messages/${msgId}/reactions`, { method: 'POST', body: { emoji } });
 }
@@ -2512,7 +2833,7 @@ async function openThread(msgId) {
         const time = formatTime(msg.timestamp);
         html += `<div class="thread-msg${isOwn ? ' msg-own' : ''}">
             <div class="thread-msg-header">
-                <span class="msg-sender">${esc(msg.sender_name || msg.sender)}</span>
+                <span class="msg-sender">${esc(msg.sender_name || msg.sender)}</span>${botBadge(msg.sender)}
                 <span class="msg-time">${time}</span>
             </div>
             <div class="msg-text">${formatMsgText(msgTextFor(msg))}</div>
@@ -2573,42 +2894,70 @@ function selectMentionAt(idx) {
 // под 70 КБ сгенерированного текста, и в общем коде ему делать нечего.
 const EMOJI_CAT_ICONS = { smileys:'😀', gestures:'👋', people:'👤', nature:'🐶', food:'🍎', activities:'⚽', travel:'🚗', objects:'💡', symbols:'❤️' };
 
-// Что открыто в палитре сейчас. Вынесено из аргументов renderEmojiPicker,
-// потому что каркас теперь рисуется один раз, а меняется только сетка.
-let emojiCat = '';
+// Палитра одна на два случая: вставка в поле ввода и реакция на сообщение.
+// Куда девать выбранный эмодзи, решает emojiPickHandler; разметка палитры —
+// в emojiPickerEl (поле ввода или всплывающее окно реакции).
 let emojiQuery = '';
+let emojiPickHandler = null;
+let emojiPickerEl = null;
 
 function emojiCatName(cat) { return t('emoji.cat.' + cat); }
+
+function emojiRecent() {
+    try { return JSON.parse(localStorage.getItem('ch_recent_emoji') || '[]'); } catch (e) { return []; }
+}
+function rememberEmoji(em) {
+    const recent = [em, ...emojiRecent().filter(e => e !== em)].slice(0, 32);
+    try { localStorage.setItem('ch_recent_emoji', JSON.stringify(recent)); } catch (e) { /* приватный режим */ }
+}
 
 function toggleEmojiPicker() {
     const picker = document.getElementById('emoji-picker');
     if (picker.style.display === 'none') {
-        emojiCat = '';
-        emojiQuery = '';
-        renderEmojiPicker();
+        closeReactionFullPicker();
+        openEmojiPickerIn(picker, insertEmoji);
         picker.style.display = 'flex';
+        fitEmojiPicker(picker);
     } else {
         picker.style.display = 'none';
     }
 }
 
-// Каркас палитры. Рисуется один раз за открытие: если перерисовывать его на
-// каждое нажатие клавиши, поле поиска пересоздаётся и теряет и фокус, и текст,
-// а нажатая вкладка исчезает из DOM прямо посреди обработки клика — и общий
-// обработчик документа, не найдя её внутри .emoji-picker, закрывает палитру.
-function renderEmojiPicker() {
-    const picker = document.getElementById('emoji-picker');
-    const tabs = Object.keys(EMOJI_DATA).map(cat =>
-        `<button class="emoji-cat-tab" data-cat="${cat}" onclick="filterEmojiCategory('${cat}')" title="${esc(emojiCatName(cat))}">${EMOJI_CAT_ICONS[cat]}</button>`
-    ).join('');
+// Не вылезать за край окна: на узком окне и в десктопе палитра у поля ввода
+// уходила влево за экран и обрезалась снизу.
+function fitEmojiPicker(picker) {
+    picker.style.transform = '';
+    const r = picker.getBoundingClientRect();
+    let dx = 0;
+    if (r.left < 8) dx = 8 - r.left;
+    else if (r.right > window.innerWidth - 8) dx = window.innerWidth - 8 - r.right;
+    if (dx) picker.style.transform = `translateX(${dx}px)`;
+}
 
+// Каркас палитры рисуется один раз за открытие: если перерисовывать его на
+// каждое нажатие клавиши, поле поиска пересоздаётся и теряет фокус и текст.
+// Сетка — одна длинная лента со всеми разделами: вкладка прокручивает к
+// своему разделу, а при прокрутке подсвечивается тот, что сейчас виден.
+// Раньше вкладка подменяла содержимое сетки, а сама сетка не прокручивалась.
+function openEmojiPickerIn(picker, onPick) {
+    emojiPickerEl = picker;
+    emojiPickHandler = onPick;
+    emojiQuery = '';
+    const cats = (emojiRecent().length ? ['recent'] : []).concat(Object.keys(EMOJI_DATA));
+    const tabs = cats.map(cat => {
+        const icon = cat === 'recent' ? '🕘' : EMOJI_CAT_ICONS[cat];
+        const name = cat === 'recent' ? t('emoji.recent') : emojiCatName(cat);
+        return `<button type="button" class="emoji-cat-tab" data-cat="${cat}" onclick="filterEmojiCategory('${cat}')" title="${esc(name)}" aria-label="${esc(name)}">${icon}</button>`;
+    }).join('');
     picker.innerHTML = `
         <div class="emoji-search-bar">
-            <input type="text" class="emoji-search" id="emoji-search" placeholder="${esc(t('emoji.search'))}" oninput="onEmojiSearch(this.value)">
+            <input type="text" class="emoji-search" placeholder="${esc(t('emoji.search'))}" oninput="onEmojiSearch(this.value)">
         </div>
         <div class="emoji-tabs">${tabs}</div>
-        <div class="emoji-grid" id="emoji-grid"></div>
+        <div class="emoji-grid"></div>
     `;
+    const grid = picker.querySelector('.emoji-grid');
+    grid.addEventListener('scroll', syncEmojiTabs, { passive: true });
     updateEmojiGrid();
 }
 
@@ -2624,50 +2973,70 @@ function emojiMatches(em, tokens) {
 }
 
 function emojiCell(em) {
-    return `<span class="emoji-item" onclick="insertEmoji('${em}')">${em}</span>`;
+    return `<span class="emoji-item" onclick="pickEmoji('${em}')">${em}</span>`;
 }
 
 function updateEmojiGrid() {
-    const grid = document.getElementById('emoji-grid');
+    const grid = emojiPickerEl && emojiPickerEl.querySelector('.emoji-grid');
     if (!grid) return;
-
-    document.querySelectorAll('.emoji-cat-tab').forEach(b => {
-        b.classList.toggle('active', !emojiQuery && b.dataset.cat === emojiCat);
-    });
-
     let html = '';
     if (emojiQuery) {
         const tokens = emojiTokens(emojiQuery);
-        const hits = Object.values(EMOJI_DATA).flat().filter(em => emojiMatches(em, tokens));
+        const seen = new Set();
+        const hits = Object.values(EMOJI_DATA).flat().filter(em => !seen.has(em) && seen.add(em) && emojiMatches(em, tokens));
         html = hits.length
             ? hits.map(emojiCell).join('')
             : `<div class="emoji-empty">${esc(t('emoji.nothing'))}</div>`;
-    } else if (emojiCat) {
-        html = (EMOJI_DATA[emojiCat] || []).map(emojiCell).join('');
     } else {
-        const recent = JSON.parse(localStorage.getItem('ch_recent_emoji') || '[]');
-        if (recent.length > 0) {
-            html += `<div class="emoji-section-label">${esc(t('emoji.recent'))}</div>`;
+        const recent = emojiRecent();
+        if (recent.length) {
+            html += `<div class="emoji-section-label" data-sec="recent">${esc(t('emoji.recent'))}</div>`;
             html += recent.map(emojiCell).join('');
-            html += `<div class="emoji-section-label">${esc(emojiCatName('smileys'))}</div>`;
         }
-        html += EMOJI_DATA.smileys.map(emojiCell).join('');
+        for (const cat of Object.keys(EMOJI_DATA)) {
+            html += `<div class="emoji-section-label" data-sec="${cat}">${esc(emojiCatName(cat))}</div>`;
+            html += EMOJI_DATA[cat].map(emojiCell).join('');
+        }
     }
     grid.innerHTML = html;
     grid.scrollTop = 0;
+    syncEmojiTabs();
+}
+
+function syncEmojiTabs() {
+    if (!emojiPickerEl) return;
+    const grid = emojiPickerEl.querySelector('.emoji-grid');
+    let current = '';
+    if (!emojiQuery) {
+        for (const sec of grid.querySelectorAll('.emoji-section-label')) {
+            if (sec.offsetTop <= grid.scrollTop + 8) current = sec.dataset.sec;
+            else break;
+        }
+    }
+    emojiPickerEl.querySelectorAll('.emoji-cat-tab').forEach(b => b.classList.toggle('active', b.dataset.cat === current));
 }
 
 function filterEmojiCategory(cat) {
-    emojiCat = cat;
-    emojiQuery = '';
-    const input = document.getElementById('emoji-search');
-    if (input) input.value = '';
-    updateEmojiGrid();
+    if (!emojiPickerEl) return;
+    if (emojiQuery) {
+        emojiQuery = '';
+        emojiPickerEl.querySelector('.emoji-search').value = '';
+        updateEmojiGrid();
+    }
+    const grid = emojiPickerEl.querySelector('.emoji-grid');
+    const sec = grid.querySelector(`.emoji-section-label[data-sec="${cat}"]`);
+    if (sec) grid.scrollTop = sec.offsetTop;
+    syncEmojiTabs();
 }
 
 function onEmojiSearch(q) {
     emojiQuery = q.trim();
     updateEmojiGrid();
+}
+
+function pickEmoji(em) {
+    rememberEmoji(em);
+    if (emojiPickHandler) emojiPickHandler(em);
 }
 
 function insertEmoji(emoji) {
@@ -2677,10 +3046,6 @@ function insertEmoji(emoji) {
     input.value = text.substring(0, pos) + emoji + text.substring(pos);
     input.selectionStart = input.selectionEnd = pos + emoji.length;
     input.focus();
-    // Add to recent
-    let recent = JSON.parse(localStorage.getItem('ch_recent_emoji') || '[]');
-    recent = [emoji, ...recent.filter(e => e !== emoji)].slice(0, 32);
-    localStorage.setItem('ch_recent_emoji', JSON.stringify(recent));
     document.getElementById('emoji-picker').style.display = 'none';
 }
 
@@ -2703,18 +3068,106 @@ function sendTyping(isTyping) {
 
 // ── File upload to chat ────────────────────────────────────────
 function triggerChatFileUpload() { document.getElementById('chat-file-input').click(); }
-async function uploadChatFile(files) {
-    if (!files.length || !currentChannel) return;
-    const formData = new FormData();
-    formData.append('file', files[0]);
-    const res = await apiFetch('/files/upload-to-chat', { method: 'POST', body: formData });
-    if (!res || !res.ok) return;
-    const data = await res.json();
-    if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ event: 'send_message', channel_id: currentChannel.id, text: '', type: 'file', file: data.file }));
-    } else {
-        await apiFetch(`/channels/${currentChannel.slug}/messages`, { method: 'POST', body: { text: '', type: 'file', file: data.file } });
+// ── Загрузка с полоской прогресса ─────────────────────────────
+// fetch не умеет сообщать, сколько уже ушло на сервер, поэтому файлы грузим
+// через XMLHttpRequest. Одна и та же функция — для чата и для «Файлов».
+let currentUploadXhr = null;
+let uploadCancelled = false;
+function xhrUpload(url, formData, onProgress, retried) {
+    return new Promise(resolve => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', API + url);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
+        xhr.onload = async () => {
+            if (xhr.status === 401 && !retried && await refreshAccessToken()) {
+                resolve(await xhrUpload(url, formData, onProgress, true));
+                return;
+            }
+            let data = null;
+            try { data = JSON.parse(xhr.responseText); } catch (e) { /* не JSON */ }
+            resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+        };
+        xhr.onerror = () => resolve({ ok: false, status: 0, data: null });
+        xhr.onabort = () => resolve({ ok: false, status: -1, aborted: true, data: null });
+        currentUploadXhr = xhr;
+        xhr.send(formData);
+    });
+}
+function cancelUpload() {
+    uploadCancelled = true;
+    if (currentUploadXhr) currentUploadXhr.abort();
+}
+function uploadErrorText(r) {
+    if (r.status === 413) return t('upload.tooBig');
+    if (r.status === 507) return t('upload.noSpace');
+    if (r.status === 0) return t('upload.network');
+    return (r.data && r.data.detail) || `${t('files.uploadError')} (${r.status})`;
+}
+function fmtBytes(n) {
+    if (n < 1024) return `${n} Б`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} КБ`;
+    if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+    return `${(n / 1024 ** 3).toFixed(2)} ГБ`;
+}
+// Общая полоска: «смета.pdf — 45% · 12.3 / 27.0 МБ (2 из 5)».
+function renderUploadBar(boxId, file, idx, count, doneBytes, totalBytes) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    box.style.display = 'block';
+    const pct = totalBytes ? Math.min(100, Math.round(doneBytes / totalBytes * 100)) : 0;
+    box.querySelector('.upload-bar-fill').style.width = pct + '%';
+    const more = count > 1 ? ` (${idx + 1} ${t('upload.of')} ${count})` : '';
+    box.querySelector('.upload-status').textContent =
+        `${file.name} — ${pct}% · ${fmtBytes(doneBytes)} / ${fmtBytes(totalBytes)}${more}`;
+}
+function hideUploadBar(boxId) {
+    const box = document.getElementById(boxId);
+    if (box) { box.style.display = 'none'; box.querySelector('.upload-bar-fill').style.width = '0%'; }
+}
+// Грузит файлы по одному и вызывает onUploaded(ответ, файл) для каждого.
+async function uploadWithProgress(boxId, files, url, makeForm, onUploaded) {
+    files = Array.from(files || []);
+    if (!files.length) return { ok: 0, errors: [], cancelled: false };
+    uploadCancelled = false;
+    const totalBytes = files.reduce((n, f) => n + f.size, 0) || 1;
+    let done = 0, ok = 0;
+    const errors = [];
+    for (let i = 0; i < files.length; i++) {
+        if (uploadCancelled) break;
+        const f = files[i];
+        renderUploadBar(boxId, f, i, files.length, done, totalBytes);
+        const r = await xhrUpload(url, makeForm(f), loaded => renderUploadBar(boxId, f, i, files.length, done + loaded, totalBytes));
+        if (r.ok) { ok++; if (onUploaded) await onUploaded(r.data, f); }
+        else if (!r.aborted) errors.push(`${f.name}: ${uploadErrorText(r)}`);
+        done += f.size;
     }
+    currentUploadXhr = null;
+    hideUploadBar(boxId);
+    if (uploadCancelled) showToast(t('upload.cancelled'), 'warning');
+    else if (errors.length) showToast(errors.slice(0, 3).join('; '), 'error');
+    return { ok, errors, cancelled: uploadCancelled };
+}
+
+// ── File upload to chat ────────────────────────────────────────
+function triggerChatFileUpload() { document.getElementById('chat-file-input').click(); }
+async function uploadChatFile(files) {
+    if (!files || !files.length || !currentChannel) return;
+    const channel = currentChannel;
+    // Раньше уходил только первый из выбранных файлов, а ошибка загрузки
+    // проглатывалась молча — «файл не отправился», и непонятно почему.
+    await uploadWithProgress('chat-upload', files, '/files/upload-to-chat', f => {
+        const fd = new FormData();
+        fd.append('file', f);
+        return fd;
+    }, async data => {
+        if (!data || !data.file) return;
+        if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ event: 'send_message', channel_id: channel.id, text: '', type: 'file', file: data.file }));
+        } else {
+            await apiFetch(`/channels/${channel.slug}/messages`, { method: 'POST', body: { text: '', type: 'file', file: data.file } });
+        }
+    });
     document.getElementById('chat-file-input').value = '';
 }
 
@@ -2763,7 +3216,12 @@ async function connectWebSocket() {
         wsPingInterval = setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ event: 'ping' })); }, 25000);
     };
     ws.onmessage = e => { handleWsEvent(JSON.parse(e.data)); };
-    ws.onclose = () => { clearInterval(wsPingInterval); wsPingInterval = null; wsReconnectTimer = setTimeout(connectWebSocket, 3000); };
+    ws.onclose = (e) => {
+        clearInterval(wsPingInterval); wsPingInterval = null;
+        // 4001 — сеанс завершён с другого устройства или админом: не переподключаемся.
+        if (e && e.code === 4001) { if (token) logout(t('sessions.revoked')); return; }
+        wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
     ws.onerror = () => { try { ws.close(); } catch (_) {} };
 }
 
@@ -2825,6 +3283,9 @@ function handleWsEvent(data) {
         case 'project_member_added': case 'project_member_removed':
             handleTaskWsEvent(data); break;
         case 'pong': break;
+        case 'session_revoked':
+            if (data.reason !== 'logout') logout(t('sessions.revoked'));
+            break;
     }
 }
 
@@ -3563,7 +4024,10 @@ async function uploadAvatar(files) {
 }
 
 // ── Settings / Admin ──────────────────────────────────────────
-function showSettingsMenu() { document.getElementById('settings-menu').style.display = 'flex'; }
+function showSettingsMenu() {
+    document.getElementById('settings-menu').style.display = 'flex';
+    refreshTwofaState();
+}
 function closeSettingsMenu() { document.getElementById('settings-menu').style.display = 'none'; }
 async function navigateToAdmin() {
     closeSettingsMenu();
@@ -3587,6 +4051,122 @@ function switchAdminTab(tab) {
         p.style.display = p.dataset.panel === tab ? '' : 'none';
     });
     if (tab === 'servers') loadFederation();
+    if (tab === 'bots') loadAdminBots();
+}
+
+// ── Боты и вебхуки (админка) ──────────────────────────────────
+function botBadge(username) {
+    const u = (typeof allUsers !== 'undefined' ? allUsers : []).find(x => x.username === username);
+    return u && u.role === 'bot' ? '<span class="bot-badge" title="Бот">бот</span>' : '';
+}
+
+async function loadAdminBots() {
+    const [bres, wres] = await Promise.all([apiFetch('/admin/bots'), apiFetch('/admin/webhooks')]);
+    if (!bres || !bres.ok) return;
+    const bots = await bres.json();
+    const hooks = wres && wres.ok ? await wres.json() : [];
+    const list = document.getElementById('admin-bots-list');
+    list.innerHTML = bots.length ? bots.map(b => `
+        <div class="admin-user-row">
+            <div class="admin-user-info">
+                <div class="admin-user-name">${esc(b.display_name)} (@${esc(b.username)}) <span class="bot-badge">бот</span>${b.blocked ? ' <span class="admin-badge blocked">отключён</span>' : ''}</div>
+                <div class="admin-user-meta">${esc(b.description || '')}${b.description ? ' · ' : ''}каналов: ${b.channels}${b.webhook_url ? ' · вебхук: ' + esc(b.webhook_url) : ''}${b.last_action ? ' · последнее действие: ' + new Date(b.last_action).toLocaleString() : ''}</div>
+            </div>
+            <div class="admin-user-actions">
+                <button class="btn-icon" title="Добавить в канал" onclick="adminBotAddToChannel('${esc(b.username)}')"><span class="material-icons-round">group_add</span></button>
+                <button class="btn-icon" title="Новый токен" onclick="adminBotReissue('${esc(b.username)}')"><span class="material-icons-round">key</span></button>
+                <button class="btn-icon" title="${b.blocked ? 'Включить' : 'Приостановить'}" onclick="adminBotToggle('${esc(b.username)}', ${!b.blocked})"><span class="material-icons-round">${b.blocked ? 'play_arrow' : 'pause'}</span></button>
+                <button class="btn-icon" title="Удалить" onclick="adminBotDelete('${esc(b.username)}')"><span class="material-icons-round">delete</span></button>
+            </div>
+        </div>`).join('') : '<div class="admin-users-empty">Ботов пока нет</div>';
+    const hl = document.getElementById('admin-hooks-list');
+    hl.innerHTML = hooks.length ? hooks.map(h => `
+        <div class="admin-user-row">
+            <div class="admin-user-info">
+                <div class="admin-user-name">${esc(h.name || 'Вебхук')} → #${esc(h.channel_name || h.channel_slug)}</div>
+                <div class="admin-user-meta">от имени @${esc(h.bot)} · создан ${new Date(h.created_at).toLocaleDateString()}</div>
+            </div>
+            <div class="admin-user-actions">
+                <button class="btn-icon" title="Удалить" onclick="adminHookDelete('${esc(h.id)}')"><span class="material-icons-round">delete</span></button>
+            </div>
+        </div>`).join('') : '<div class="admin-users-empty">Вебхуков пока нет</div>';
+    const sel = document.getElementById('admin-hook-channel');
+    sel.innerHTML = channels.filter(c => c.type !== 'direct')
+        .map(c => `<option value="${esc(c.slug)}">#${esc(c.name || c.slug)}</option>`).join('');
+    const bsel = document.getElementById('admin-hook-bot');
+    bsel.innerHTML = '<option value="">Общий бот «Вебхук»</option>' +
+        bots.filter(b => !b.blocked).map(b => `<option value="${esc(b.username)}">${esc(b.display_name)} (@${esc(b.username)})</option>`).join('');
+}
+
+// Токен показывается один раз: сервер хранит только его хеш.
+function showSecretOnce(title, secret, hint) {
+    const box = document.getElementById('admin-bot-secret');
+    box.style.display = 'block';
+    box.innerHTML = `<div class="admin-secret-title">${esc(title)}</div>
+        <div class="admin-secret-row"><code>${esc(secret)}</code>
+        <button class="btn-action" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent).then(()=>showToast(t('toast.copied'),'success'))"><span class="material-icons-round">content_copy</span>Копировать</button></div>
+        <div class="admin-form-hint">${esc(hint)}</div>`;
+}
+
+async function adminCreateBot() {
+    const username = document.getElementById('admin-bot-username').value.trim();
+    const display_name = document.getElementById('admin-bot-display').value.trim();
+    const description = document.getElementById('admin-bot-desc').value.trim();
+    const webhook_url = document.getElementById('admin-bot-webhook').value.trim();
+    if (!username) { showToast('Укажите логин бота', 'error'); return; }
+    const res = await apiFetch('/admin/bots', { method: 'POST', body: { username, display_name, description, webhook_url } });
+    if (!res) return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.detail || 'Не удалось создать бота', 'error'); return; }
+    ['admin-bot-username', 'admin-bot-display', 'admin-bot-desc', 'admin-bot-webhook'].forEach(id => document.getElementById(id).value = '');
+    showSecretOnce(`Токен бота @${data.username}`, data.token, 'Сохраните его сейчас — больше он показан не будет. Потеряли — выпустите новый.');
+    loadAdminBots();
+}
+async function adminBotReissue(name) {
+    if (!confirm(`Выпустить новый токен для @${name}? Старый сразу перестанет работать.`)) return;
+    const res = await apiFetch(`/admin/bots/${encodeURIComponent(name)}/token`, { method: 'POST' });
+    if (!res || !res.ok) { showToast(t('toast.error'), 'error'); return; }
+    const data = await res.json();
+    showSecretOnce(`Новый токен бота @${name}`, data.token, 'Старый токен больше не действует.');
+}
+async function adminBotToggle(name, blocked) {
+    const res = await apiFetch(`/admin/bots/${encodeURIComponent(name)}`, { method: 'PUT', body: { blocked } });
+    if (res && res.ok) loadAdminBots();
+}
+async function adminBotDelete(name) {
+    if (!confirm(`Удалить бота @${name}? Токен и его вебхуки перестанут работать, сообщения в переписке останутся.`)) return;
+    const res = await apiFetch(`/admin/bots/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res && res.ok) loadAdminBots();
+}
+async function adminBotAddToChannel(name) {
+    const opts = channels.filter(c => c.type !== 'direct');
+    if (!opts.length) { showToast('Нет каналов', 'error'); return; }
+    const choice = prompt('В какой канал добавить бота? Введите название:\n' + opts.map(c => '• ' + (c.name || c.slug)).join('\n'));
+    if (!choice) return;
+    const ch = opts.find(c => (c.name || '').toLowerCase() === choice.trim().toLowerCase() || c.slug === choice.trim());
+    if (!ch) { showToast('Канал не найден', 'error'); return; }
+    const res = await apiFetch(`/admin/bots/${encodeURIComponent(name)}/channels`, { method: 'POST', body: { channel_slug: ch.slug } });
+    if (res && res.ok) { showToast(`Бот добавлен в #${ch.name || ch.slug}`, 'success'); loadAdminBots(); }
+}
+async function adminCreateHook() {
+    const channel_slug = document.getElementById('admin-hook-channel').value;
+    const bot = document.getElementById('admin-hook-bot').value;
+    const name = document.getElementById('admin-hook-name').value.trim();
+    if (!channel_slug) { showToast('Выберите канал', 'error'); return; }
+    const res = await apiFetch('/admin/webhooks', { method: 'POST', body: { channel_slug, bot, name } });
+    if (!res) return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.detail || 'Не удалось создать вебхук', 'error'); return; }
+    document.getElementById('admin-hook-name').value = '';
+    const base = getServerBase() || location.origin;
+    showSecretOnce('Адрес вебхука', base + data.path,
+        'Внешний сервис отправляет сюда POST с JSON {"text": "…"} — сообщение появится в канале. Адрес — как пароль: сохраните его, второй раз он не показывается.');
+    loadAdminBots();
+}
+async function adminHookDelete(id) {
+    if (!confirm('Удалить вебхук? Сервисы, которые им пользуются, перестанут писать в канал.')) return;
+    const res = await apiFetch(`/admin/webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res && res.ok) loadAdminBots();
 }
 function showCreateUserForm() { document.getElementById('admin-create-user-form').style.display = 'flex'; }
 async function adminCreateUser() {
@@ -3780,16 +4360,17 @@ async function loadAdminUsers() {
 
 function renderAdminUsers() {
     const q = (document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+    const people = adminUsersCache.filter(u => u.role !== 'bot');
     const users = q
-        ? adminUsersCache.filter(u =>
+        ? people.filter(u =>
             (u.username || '').toLowerCase().includes(q) ||
             (u.display_name || '').toLowerCase().includes(q))
-        : adminUsersCache;
+        : people;
     const countEl = document.getElementById('admin-users-count');
     if (countEl) {
         countEl.textContent = q
-            ? `Найдено: ${users.length} из ${adminUsersCache.length}`
-            : `Всего: ${adminUsersCache.length}`;
+            ? `Найдено: ${users.length} из ${people.length}`
+            : `Всего: ${people.length}`;
     }
     if (q && users.length === 0) {
         document.getElementById('admin-users-list').innerHTML =
@@ -3800,13 +4381,18 @@ function renderAdminUsers() {
         const badges = [];
         if (u.role === 'admin') badges.push('<span class="admin-badge admin">admin</span>');
         if (u.blocked) badges.push('<span class="admin-badge blocked">blocked</span>');
+        if (u.twofa) badges.push(`<span class="admin-badge admin" title="${t('2fa.title')}">2FA</span>`);
         return `<div class="admin-user-row">
             <div class="admin-user-info">
                 <div class="admin-user-name">${esc(u.display_name)} (@${u.username}) ${badges.join(' ')}</div>
-                <div class="admin-user-meta">Created: ${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}</div>
+                <div class="admin-user-meta">${t('admin.created')}: ${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}</div>
             </div>
             <div class="admin-user-actions">
+                <button class="btn-icon" onclick="openSessions('${u.username}', '${esc(u.display_name || u.username).replace(/'/g, '&#39;')}')" title="${t('admin.sessions')}">
+                    <span class="material-icons-round">devices</span>
+                </button>
                 ${u.username !== currentUser ? `
+                    ${u.twofa ? `<button class="btn-icon" onclick="adminReset2fa('${u.username}')" title="${t('2fa.adminReset')}"><span class="material-icons-round">phonelink_erase</span></button>` : ''}
                     <button class="btn-icon" onclick="adminToggleRole('${u.username}', '${u.role === 'admin' ? 'user' : 'admin'}')" title="${u.role === 'admin' ? 'Снять админа' : 'Выдать админа'}"${u.role === 'admin' ? ' style="color:var(--accent)"' : ''}>
                         <span class="material-icons-round">${u.role === 'admin' ? 'remove_moderator' : 'add_moderator'}</span>
                     </button>
@@ -3950,7 +4536,12 @@ async function startVideoCall() {
     }
     const data = await res.json();
     activeCallId = data.call_id || null;
+    // Гудки — пока собеседник не вошёл в комнату или сервер не сбросил вызов
+    // (событие call_ended с reason=timeout через CALL_RING_TIMEOUT_SEC).
+    startRingback();
     await joinLivekitRoom(data.livekit_token, data.room_name, data.livekit_url);
+    if (!livekitRoom) stopRingback();
+    else if (livekitRoom.remoteParticipants && livekitRoom.remoteParticipants.size > 0) stopRingback();
 }
 // Общий звонок в канале. Комната одна на канал, сервер сам рассылает всем
 // участникам приглашение с их личными токенами.
@@ -4002,6 +4593,7 @@ function onCallStarted(data) {
     setIncomingCallData(data);
 }
 function onCallEnded(data) {
+    if (data && activeCallId && data.call_id === activeCallId) stopRingback();
     const incomingCallId = incomingCallData && incomingCallData.call_id ? incomingCallData.call_id : null;
     const endedIncoming = !!(incomingCallId && data.call_id && incomingCallId === data.call_id);
     const endedByCallId = !!(data.call_id && activeCallId && data.call_id === activeCallId);
@@ -4011,6 +4603,7 @@ function onCallEnded(data) {
     document.getElementById('btn-call-join').style.display = 'none';
 }
 function onCallAnswered(data) {
+    if (data && activeCallId && data.call_id === activeCallId) stopRingback();
     // Someone answered the call on another device/tab — dismiss incoming call UI
     if (incomingCallData && !livekitRoom) {
         const incomingCallId = incomingCallData.call_id || null;
@@ -4128,6 +4721,10 @@ function scheduleIncomingCallTimeout(data) {
 
 async function joinLivekitRoom(tk, roomName, url) {
     if (!window.LivekitClient) { showToast(t('call.livekitNotLoaded'), 'error'); return; }
+    // Вошли в звонок любым путём («Вступить» в шапке канала, «Ответить»,
+    // по ссылке) — плашка входящего вызова и мелодия больше не нужны. Раньше
+    // после «Вступить» плашка висела и звонила дальше.
+    if (incomingCallData) clearIncomingCallUI();
     // The room lives on whichever server started the call, and its token is
     // signed with that server's LiveKit secret — so for a federated call we
     // must dial the URL the backend handed us, not our own host. Falling back
@@ -4175,6 +4772,7 @@ async function joinLivekitRoom(tk, roomName, url) {
         renderCallParticipants();
     });
     room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+        stopRingback();
         renderCallParticipants();
     });
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
@@ -4221,11 +4819,6 @@ async function joinLivekitRoom(tk, roomName, url) {
     } catch (err) {
         console.error('LiveKit connect error:', err);
         showToast(t('call.connectionFailed'), 'error');
-        // Tell the server the call is over. closeCall() only clears local
-        // state, so without this the call stays "ringing": the other side keeps
-        // ringing until it times out, and by then there is nothing left to
-        // cancel with, because closeCall() has already dropped activeCallId.
-        await hangUpOnServer();
         closeCall();
     }
 }
@@ -4308,7 +4901,7 @@ function renderCallParticipants() {
         const initial = (p.name || '?').charAt(0).toUpperCase();
         const micIcon = p.isMuted ? 'mic_off' : 'mic';
         const micClass = p.isMuted ? 'call-participant-mic mic-muted material-icons-round' : 'call-participant-mic material-icons-round';
-        const youLabel = p.isLocal ? ' (you)' : '';
+        const youLabel = p.isLocal ? ` (${t('call.you')})` : '';
         row.innerHTML = `
             <div class="call-participant-avatar">${esc(initial)}</div>
             <div class="call-participant-info">
@@ -4336,6 +4929,10 @@ function updateVideoGrid() {
             grid.classList.remove('two-videos');
         }
     }
+    // Есть демонстрация экрана — экран крупно сверху, камеры лентой маленьких
+    // плиток под ним. Раньше камеры 4:3 в две колонки не помещались в высоту
+    // сетки и наезжали на показываемый экран.
+    grid.classList.toggle('has-screen', !!grid.querySelector('.call-video-item.is-screen'));
 }
 
 // Keep backward compat aliases
@@ -4407,28 +5004,6 @@ async function toggleCamera() {
         } catch (e) {}
     }
 }
-// Tells the server the call is over. A no-op when there is nothing to end, and
-// never throws: a failed request must not stop the local teardown, or the UI is
-// left showing a call that no longer exists.
-// Сказать серверу, что звонок окончен. Адресный завершается по своему id,
-// общий — по каналу: строки в `calls` у него нет, и без этой ветки групповой
-// звонок оставался «идущим» для всех, кто в нём не был. Никогда не бросает
-// исключений: неудача здесь не должна мешать закрыть звонок у себя.
-async function hangUpOnServer() {
-    try {
-        if (activeCallId) {
-            await apiFetch('/calls/end', { method: 'POST', body: { call_id: activeCallId } });
-        } else if (groupCallSlug) {
-            await apiFetch('/videocall/end', {
-                method: 'POST',
-                body: { channel_slug: groupCallSlug, room_name: livekitRoom ? livekitRoom.name : '' },
-            });
-        }
-    } catch (err) {
-        console.warn('Не удалось сообщить серверу о завершении звонка:', err);
-    }
-}
-
 // ── Демонстрация экрана ────────────────────────────────────────
 // В браузере окно выбора (вкладка, окно или весь экран) показывает сам
 // браузер. В десктопном приложении getDisplayMedia без помощи не работает:
@@ -4599,10 +5174,33 @@ async function endCall() {
     await hangUpOnServer();
     closeCall();
 }
+
+// Сказать серверу, что звонок окончен. Адресный завершается по своему id,
+// общий — по каналу: строки в `calls` у него нет, и без этой ветки групповой
+// звонок оставался «идущим» для всех, кто в нём не был. Никогда не бросает
+// исключений: неудача здесь не должна мешать закрыть звонок у себя.
+async function hangUpOnServer() {
+    try {
+        if (activeCallId) {
+            await apiFetch('/calls/end', { method: 'POST', body: { call_id: activeCallId } });
+        } else if (groupCallSlug) {
+            await apiFetch('/videocall/end', {
+                method: 'POST',
+                body: { channel_slug: groupCallSlug, room_name: livekitRoom ? livekitRoom.name : '' },
+            });
+        }
+    } catch (err) {
+        console.warn('Не удалось сообщить серверу о завершении звонка:', err);
+    }
+}
 let callTimerInterval = null;
 let callStartTime = null;
 
 function closeCall() {
+    stopRingback();
+    // Звук «трубку положили» — только если звонок был на экране.
+    const wasOpen = document.getElementById('call-panel')?.style.display !== 'none';
+    if (wasOpen) playHangupTone();
     activeCallId = null;
     groupCallSlug = '';
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
@@ -4656,14 +5254,20 @@ function toggleCallPanel() {
     }
 }
 
+// 0:07, 12:34, а после часа — 1:02:03 (раньше было «62:03» и дальше «167:15»).
+function formatCallClock(totalSec) {
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = String(totalSec % 60).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
 function startCallTimer() {
     callStartTime = Date.now();
     if (callTimerInterval) clearInterval(callTimerInterval);
     callTimerInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
-        const mins = Math.floor(elapsed / 60);
-        const secs = elapsed % 60;
-        const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+        const timeStr = formatCallClock(elapsed);
         document.getElementById('call-banner-time').textContent = timeStr;
         const panelTimer = document.getElementById('call-panel-timer');
         if (panelTimer) panelTimer.textContent = timeStr;
@@ -4699,6 +5303,9 @@ function filterInviteCallList(query) {
         el.style.display = (name.includes(q) || uname.includes(q)) ? '' : 'none';
     });
 }
+// Позвать людей в идущий звонок — и в общий, и в разговор на двоих. Сервер
+// возьмёт комнату из того звонка, в котором мы сейчас находимся, и выпишет
+// каждому приглашённому его собственный токен: подписать чужой он не может.
 async function sendCallInvites() {
     const picked = Array.from(document.querySelectorAll('#invite-call-list input:checked')).map(c => c.value);
     if (!picked.length) { closeInviteCallModal(); return; }
@@ -4743,6 +5350,60 @@ function startRingtone() {
 function stopRingtone() {
     if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; }
     if (ringtoneCtx) { ringtoneCtx.close().catch(() => {}); ringtoneCtx = null; }
+}
+
+// ── Гудки у звонящего ──────────────────────────────────────────
+// Пока собеседник не ответил, звонящий слышит длинные гудки, как в обычном
+// телефоне: 425 Гц, секунда звука и четыре тишины. Раньше была тишина, и
+// было непонятно, идёт ли вызов вообще.
+let ringbackCtx = null;
+let ringbackTimer = null;
+function startRingback() {
+    stopRingback();
+    try {
+        ringbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ringbackCtx.state === 'suspended') ringbackCtx.resume().catch(() => {});
+        const beep = () => {
+            if (!ringbackCtx) return;
+            const osc = ringbackCtx.createOscillator();
+            const gain = ringbackCtx.createGain();
+            osc.frequency.value = 425;
+            osc.connect(gain); gain.connect(ringbackCtx.destination);
+            const now = ringbackCtx.currentTime;
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+            gain.gain.setValueAtTime(0.12, now + 0.98);
+            gain.gain.linearRampToValueAtTime(0, now + 1.0);
+            osc.start(now); osc.stop(now + 1.0);
+        };
+        beep();
+        ringbackTimer = setInterval(beep, 5000);
+    } catch (e) { }
+}
+// Конец звонка: три коротких сигнала 425 Гц, как «отбой» в телефоне.
+function playHangupTone() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const t0 = ctx.currentTime + 0.05;
+        for (let i = 0; i < 3; i++) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = 425;
+            osc.connect(gain); gain.connect(ctx.destination);
+            const st = t0 + i * 0.4;
+            gain.gain.setValueAtTime(0, st);
+            gain.gain.linearRampToValueAtTime(0.12, st + 0.015);
+            gain.gain.setValueAtTime(0.12, st + 0.185);
+            gain.gain.linearRampToValueAtTime(0, st + 0.2);
+            osc.start(st); osc.stop(st + 0.2);
+        }
+        setTimeout(() => ctx.close().catch(() => {}), 1600);
+    } catch (e) { }
+}
+function stopRingback() {
+    if (ringbackTimer) { clearInterval(ringbackTimer); ringbackTimer = null; }
+    if (ringbackCtx) { ringbackCtx.close().catch(() => {}); ringbackCtx = null; }
 }
 
 // ── Search ─────────────────────────────────────────────────────
@@ -4850,13 +5511,15 @@ async function loadFileList(path) {
 
 function renderBreadcrumb(path) {
     const el = document.getElementById('breadcrumb');
-    let html = `<a onclick="loadFileList('')">Home</a>`;
+    // Путь — в data-атрибуте, а не внутри onclick: апостроф в имени папки
+    // («Отчёт Ивана's») ломал разметку, и папка не открывалась.
+    let html = `<a data-path="" onclick="loadFileList(this.dataset.path)">${esc(t('files.home'))}</a>`;
     if (path) {
         const parts = path.split('/');
         let p = '';
         parts.forEach((part, i) => {
             p += (i > 0 ? '/' : '') + part;
-            html += ` <span>/</span> <a onclick="loadFileList('${p}')">${esc(part)}</a>`;
+            html += ` <span>/</span> <a data-path="${escAttr(p)}" onclick="loadFileList(this.dataset.path)">${esc(part)}</a>`;
         });
     }
     el.innerHTML = html;
@@ -4870,18 +5533,18 @@ function renderFileList() {
 
     if (fileViewMode === 'grid') {
         list.className = 'file-grid';
-        list.innerHTML = fileItems.map(item => {
+        list.innerHTML = fileItems.map((item, i) => {
             const isImage = !item.is_dir && ['image'].includes(item.type);
-            const thumbUrl = isImage ? srv(`/uploads/${currentUser}/${item.path}`) : '';
+            const thumbUrl = isImage ? srv(item.thumb || item.url || fileUrlPath(item.path)) : '';
             const icon = item.is_dir ? 'folder' : getFileIcon(item.type);
             const iconSize = fileGridSize === 0 ? '36px' : (fileGridSize === 2 ? '64px' : '48px');
             const preview = isImage
                 ? `<img src="${thumbUrl}" loading="lazy">`
                 : `<span class="material-icons-round" style="font-size:${iconSize}">${icon}</span>`;
             const size = item.is_dir ? '' : formatFileSize(item.size);
-            return `<div class="file-card" onclick="onFileClick('${esc(item.path)}', ${item.is_dir})"
-                         oncontextmenu="showFileContextMenu(event, '${esc(item.path)}', ${item.is_dir})">
-                <button class="file-card-menu btn-icon" onclick="event.stopPropagation(); showFileContextMenu(event, '${esc(item.path)}', ${item.is_dir})">
+            return `<div class="file-card" onclick="onFileClick(fileItems[${i}].path, ${item.is_dir})"
+                         oncontextmenu="showFileContextMenu(event, fileItems[${i}].path, ${item.is_dir})">
+                <button class="file-card-menu btn-icon" onclick="event.stopPropagation(); showFileContextMenu(event, fileItems[${i}].path, ${item.is_dir})">
                     <span class="material-icons-round">more_vert</span>
                 </button>
                 <div class="file-card-preview">${preview}</div>
@@ -4891,12 +5554,12 @@ function renderFileList() {
         }).join('');
     } else {
         list.className = 'file-list';
-        list.innerHTML = fileItems.map(item => {
+        list.innerHTML = fileItems.map((item, i) => {
             const icon = item.is_dir ? 'folder' : getFileIcon(item.type);
             const size = item.is_dir ? '' : formatFileSize(item.size);
             const date = item.added ? new Date(item.added).toLocaleDateString() : '';
-            return `<div class="file-row" onclick="onFileClick('${esc(item.path)}', ${item.is_dir})"
-                         oncontextmenu="showFileContextMenu(event, '${esc(item.path)}', ${item.is_dir})">
+            return `<div class="file-row" onclick="onFileClick(fileItems[${i}].path, ${item.is_dir})"
+                         oncontextmenu="showFileContextMenu(event, fileItems[${i}].path, ${item.is_dir})">
                 <div class="file-name-cell">
                     <span class="material-icons-round">${icon}</span>
                     <span class="file-name">${esc(item.name)}</span>
@@ -4904,7 +5567,7 @@ function renderFileList() {
                 <span class="file-size">${size}</span>
                 <span class="file-date">${date}</span>
                 <span class="file-actions">
-                    <button class="btn-icon" onclick="event.stopPropagation(); showFileContextMenu(event, '${esc(item.path)}', ${item.is_dir})">
+                    <button class="btn-icon" onclick="event.stopPropagation(); showFileContextMenu(event, fileItems[${i}].path, ${item.is_dir})">
                         <span class="material-icons-round" style="font-size:18px;">more_vert</span>
                     </button>
                 </span>
@@ -4916,33 +5579,18 @@ function renderFileList() {
 function onFileClick(path, isDir) { isDir ? loadFileList(path) : previewFile(path); }
 
 async function uploadFiles(files) {
-    if (!files.length) return;
-    const BATCH = 5;
-    const total = files.length;
-    const progress = document.getElementById('upload-progress');
-    const fill = document.getElementById('upload-bar-fill');
-    const status = document.getElementById('upload-status');
-    progress.style.display = 'block';
-    fill.style.width = '0%';
-    let uploaded = 0;
-    let failed = 0;
-    for (let i = 0; i < total; i += BATCH) {
-        const batch = Array.from(files).slice(i, i + BATCH);
-        const formData = new FormData();
-        for (const f of batch) formData.append('files', f);
-        formData.append('path', currentPath);
-        try {
-            const res = await apiFetch('/upload', { method: 'POST', body: formData });
-            if (res && res.ok) uploaded += batch.length;
-            else failed += batch.length;
-        } catch (e) { failed += batch.length; }
-        const pct = Math.round(((i + batch.length) / total) * 100);
-        fill.style.width = pct + '%';
-        status.textContent = `${i + batch.length} / ${total}`;
+    const path = currentPath;
+    const res = await uploadWithProgress('upload-progress', files, '/upload', f => {
+        const fd = new FormData();
+        fd.append('files', f);
+        fd.append('path', path);
+        return fd;
+    });
+    const total = (files && files.length) || 0;
+    if (res.ok > 0) {
+        loadFileList(currentPath);
+        if (!res.errors.length && !res.cancelled) showToast(`${t('files.uploaded')}: ${res.ok}/${total}`, 'success');
     }
-    setTimeout(() => { progress.style.display = 'none'; status.textContent = ''; }, 800);
-    if (uploaded > 0) { loadFileList(currentPath); showToast(`${t('files.uploaded')}: ${uploaded}/${total}`, failed ? 'warning' : 'success'); }
-    if (failed > 0 && uploaded === 0) showToast(t('files.uploadError'), 'error');
     document.getElementById('file-input').value = '';
     document.getElementById('file-input-media').value = '';
 }
@@ -4957,19 +5605,93 @@ async function createFolder() {
     loadFileList(currentPath);
 }
 
-function previewFile(path) {
-    const ext = path.split('.').pop().toLowerCase();
-    const url = srv(`/uploads/${currentUser}/${path}`);
-    document.getElementById('preview-title').textContent = path.split('/').pop();
-    document.getElementById('preview-download').href = API + `/files/download?path=${encodeURIComponent(path)}`;
-    const body = document.getElementById('preview-body');
-    if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) body.innerHTML = `<img src="${url}" style="max-width:100%;max-height:70vh;">`;
-    else if (['mp4','webm','mov'].includes(ext)) body.innerHTML = `<video src="${url}" controls style="max-width:100%;max-height:70vh;"></video>`;
-    else if (['mp3','wav','ogg'].includes(ext)) body.innerHTML = `<audio src="${url}" controls></audio>`;
-    else body.innerHTML = '<p style="padding:20px;color:var(--text2);">Preview not available</p>';
-    document.getElementById('preview-modal').style.display = 'flex';
+// Ссылка на свой файл: каждый кусок пути закодирован («#», «%», пробелы).
+function fileUrlPath(path) {
+    return `/uploads/${encodeURIComponent(currentUser)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 }
-function closePreview() { document.getElementById('preview-modal').style.display = 'none'; }
+function escAttr(str) { return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+const PREVIEW_TEXT_EXT = ['txt','md','csv','tsv','json','log','xml','yml','yaml','ini','conf','cfg','py','js','ts','html','css','sql','sh','env'];
+const PREVIEW_TEXT_MAX = 1024 * 1024;
+let previewPath = '';
+
+// Скачать свой файл. Ссылка /api/files/download требует токен в заголовке,
+// поэтому обычная <a href> и window.open получали 401 — «Скачать» в «Файлах»
+// не работало. Берём файл через fetch с токеном и отдаём браузеру как blob.
+async function downloadUserFile(path) {
+    const res = await apiFetch(`/files/download?path=${encodeURIComponent(path)}`);
+    if (!res || !res.ok) { showToast(t('preview.loadError'), 'error'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = path.split('/').pop();
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+function csvToTable(text) {
+    const sep = (text.split('\n')[0].match(/;/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? ';' : ',';
+    const rows = text.split(/\r?\n/).filter(Boolean).slice(0, 300).map(line => line.split(sep));
+    return `<div class="preview-table-wrap"><table class="preview-table">${rows.map((r, i) =>
+        `<tr>${r.map(c => i === 0 ? `<th>${esc(c)}</th>` : `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`;
+}
+
+async function previewFile(path) {
+    previewPath = path;
+    const name = path.split('/').pop();
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    const item = fileItems.find(f => f.path === path) || {};
+    const url = srv(item.url || fileUrlPath(path));
+    document.getElementById('preview-title').textContent = name;
+    const dl = document.getElementById('preview-download');
+    dl.href = '#';
+    dl.onclick = e => { e.preventDefault(); downloadUserFile(path); };
+    const body = document.getElementById('preview-body');
+    const modal = document.getElementById('preview-modal');
+    modal.querySelector('.modal-content').classList.add('preview-wide');
+    const nav = previewSiblings();
+    document.getElementById('preview-prev').title = t('preview.prev');
+    document.getElementById('preview-next').title = t('preview.next');
+    document.getElementById('preview-prev').style.visibility = nav.length > 1 ? '' : 'hidden';
+    document.getElementById('preview-next').style.visibility = nav.length > 1 ? '' : 'hidden';
+    const na = msg => `<div class="preview-na"><span class="material-icons-round">${getFileIcon(item.type || 'file')}</span>
+        <b>${esc(name)}</b><span>${item.size ? formatFileSize(item.size) : ''}</span><p>${esc(msg)}</p></div>`;
+    if (['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)) body.innerHTML = `<img src="${url}" alt="${escAttr(name)}" class="preview-media">`;
+    else if (['mp4','webm','mov','m4v'].includes(ext)) body.innerHTML = `<video src="${url}" controls class="preview-media"></video>`;
+    else if (['mp3','wav','ogg','m4a','aac','flac','opus','oga','weba'].includes(ext)) body.innerHTML = `<audio src="${url}" controls style="width:100%"></audio>`;
+    else if (ext === 'pdf') body.innerHTML = `<iframe src="${url}" class="preview-pdf" title="${escAttr(name)}"></iframe>`;
+    else if (PREVIEW_TEXT_EXT.includes(ext)) {
+        if (item.size && item.size > PREVIEW_TEXT_MAX) body.innerHTML = na(t('preview.tooBig'));
+        else {
+            body.innerHTML = '<div class="preview-na"><span class="material-icons-round">hourglass_empty</span></div>';
+            try {
+                const r = await fetch(url);
+                if (!r.ok) throw new Error(r.status);
+                const text = await r.text();
+                if (previewPath !== path) return;
+                body.innerHTML = (ext === 'csv' || ext === 'tsv') ? csvToTable(text) : `<pre class="preview-text">${esc(text)}</pre>`;
+            } catch (e) { body.innerHTML = na(t('preview.loadError')); }
+        }
+    }
+    else body.innerHTML = na(t('preview.na'));
+    modal.style.display = 'flex';
+}
+function previewSiblings() { return fileItems.filter(f => !f.is_dir); }
+function previewStep(delta) {
+    const list = previewSiblings();
+    if (list.length < 2) return;
+    const i = list.findIndex(f => f.path === previewPath);
+    previewFile(list[(i + delta + list.length) % list.length].path);
+}
+document.addEventListener('keydown', e => {
+    const modal = document.getElementById('preview-modal');
+    if (!modal || modal.style.display !== 'flex') return;
+    if (e.key === 'Escape') closePreview();
+    else if (e.key === 'ArrowRight') previewStep(1);
+    else if (e.key === 'ArrowLeft') previewStep(-1);
+});
+function closePreview() { previewPath = ''; document.getElementById('preview-modal').style.display = 'none'; document.getElementById('preview-body').innerHTML = ''; }
 
 // Context menu (universal)
 function showFileContextMenu(e, path, isDir) {
@@ -5001,7 +5723,7 @@ function showFileContextMenu(e, path, isDir) {
 }
 function hideContextMenu() { document.getElementById('context-menu').style.display = 'none'; }
 function ctxPreview() { hideContextMenu(); if (ctxTarget && !ctxTarget.isDir) previewFile(ctxTarget.path); }
-function ctxDownload() { hideContextMenu(); if (ctxTarget) window.open(API + `/files/download?path=${encodeURIComponent(ctxTarget.path)}`, '_blank'); }
+function ctxDownload() { hideContextMenu(); if (ctxTarget && !ctxTarget.isDir) downloadUserFile(ctxTarget.path); }
 function ctxCopyLink() {
     hideContextMenu();
     if (!ctxTarget) return;
@@ -5294,7 +6016,7 @@ function filterSidebarSearch(value) {
         (u.nickname && u.nickname.toLowerCase().includes(q))
     )).slice(0, 5);
     if (users.length > 0) {
-        html += '<div class="sidebar-search-section">People</div>';
+        html += `<div class="sidebar-search-section">${t('search.people')}</div>`;
         users.forEach(u => {
             const av = u.avatar_path ? `<img src="${srv(u.avatar_path)}">` : (u.display_name || u.username).charAt(0).toUpperCase();
             const online = onlineUsers[u.username]?.online ? ' ●' : '';
@@ -7011,4 +7733,289 @@ function onInviteRedeemed(data) {
     const who = (data.user && data.user.display_name) || '';
     showToast(`${who} ${t('fed.redeemedByYou')}`, 'success');
     loadChannels();
+}
+
+
+// ── Устройства и сеансы ──────────────────────────────────────
+// Свои входы — из настроек; у админа — входы любого пользователя.
+let sessionsTarget = null;      // null — свои, иначе username
+let sessionsTargetName = '';
+
+function sessionIcon(s) {
+    if (s.kind === 'mobile') return 'smartphone';
+    if (s.kind === 'desktop') return 'computer';
+    if (s.kind === 'web') return 'language';
+    return 'devices_other';
+}
+function sessionLabel(s) {
+    if (s.title) return s.title;
+    return s.kind === 'mobile' ? t('sessions.mobile') : t('sessions.unknown');
+}
+function sessionWhen(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 120) return t('sessions.now');
+    const lang = (typeof currentLang !== 'undefined' && currentLang) || 'ru';
+    try {
+        const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
+        if (diff < 3600) return rtf.format(-Math.round(diff / 60), 'minute');
+        if (diff < 86400) return rtf.format(-Math.round(diff / 3600), 'hour');
+        if (diff < 7 * 86400) return rtf.format(-Math.round(diff / 86400), 'day');
+    } catch (_) {}
+    return d.toLocaleDateString(lang, { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
+
+function openSessions(target, name) {
+    closeSettingsMenu();
+    sessionsTarget = target || null;
+    sessionsTargetName = name || target || '';
+    const title = document.getElementById('sessions-title');
+    const hint = document.getElementById('sessions-hint');
+    const allLbl = document.getElementById('sessions-end-all-label');
+    if (sessionsTarget) {
+        title.textContent = t('sessions.titleAdmin').replace('{name}', sessionsTargetName);
+        hint.textContent = t('sessions.hintAdmin').replace('{name}', sessionsTargetName);
+        allLbl.textContent = t('sessions.endAll');
+    } else {
+        title.textContent = t('sessions.title');
+        hint.textContent = t('sessions.hint');
+        allLbl.textContent = t('sessions.endOthers');
+    }
+    document.getElementById('sessions-list').innerHTML = '';
+    document.getElementById('sessions-own-extra').style.display = sessionsTarget ? 'none' : '';
+    document.getElementById('sessions-modal').style.display = 'flex';
+    loadSessions();
+    if (!sessionsTarget) loadSessionAuto();
+}
+function closeSessions() { document.getElementById('sessions-modal').style.display = 'none'; }
+
+async function loadSessions() {
+    const url = sessionsTarget ? `/admin/users/${encodeURIComponent(sessionsTarget)}/sessions` : '/me/sessions';
+    const res = await apiFetch(url);
+    if (res && res.status === 404) {
+        document.getElementById('sessions-list').innerHTML = `<div class="sessions-empty">${t('sessions.serverOld')}</div>`;
+        document.getElementById('sessions-end-all').style.display = 'none';
+        return;
+    }
+    if (!res || !res.ok) return;
+    const data = await res.json();
+    const list = data.sessions || [];
+    const box = document.getElementById('sessions-list');
+    const others = list.filter(s => !s.current);
+    document.getElementById('sessions-end-all').style.display = (sessionsTarget ? list.length : others.length) ? '' : 'none';
+    if (!list.length) { box.innerHTML = `<div class="sessions-empty">${t('sessions.empty')}</div>`; return; }
+    box.innerHTML = list.map(s => {
+        const meta = [s.current ? '' : t('sessions.active').replace('{when}', sessionWhen(s.last_used_at)), s.ip]
+            .filter(Boolean).join(' · ');
+        return `<div class="session-row${s.current ? ' current' : ''}">
+            <span class="session-ic"><span class="material-icons-round">${sessionIcon(s)}</span></span>
+            <div class="session-info">
+                <div class="session-name">${esc(sessionLabel(s))}${s.current ? `<span class="session-tag">${t('sessions.thisDevice')}</span>` : ''}</div>
+                <div class="session-meta" title="${esc(t('sessions.signedIn').replace('{when}', new Date(s.created_at).toLocaleString()))}">${esc(meta || t('sessions.signedIn').replace('{when}', sessionWhen(s.created_at)))}</div>
+            </div>
+            ${s.current ? '' : `<button class="session-end" onclick="endSession('${esc(s.id)}')">${t('sessions.end')}</button>`}
+        </div>`;
+    }).join('');
+}
+
+async function endSession(id) {
+    if (!confirm(t('sessions.endConfirm'))) return;
+    const url = sessionsTarget
+        ? `/admin/users/${encodeURIComponent(sessionsTarget)}/sessions/${encodeURIComponent(id)}`
+        : `/me/sessions/${encodeURIComponent(id)}`;
+    const res = await apiFetch(url, { method: 'DELETE' });
+    if (res && res.ok) showToast(t('sessions.ended'), 'success');
+    loadSessions();
+}
+
+async function endOtherSessions() {
+    const ask = sessionsTarget ? t('sessions.endAllConfirm').replace('{name}', sessionsTargetName) : t('sessions.endOthersConfirm');
+    if (!confirm(ask)) return;
+    const url = sessionsTarget
+        ? `/admin/users/${encodeURIComponent(sessionsTarget)}/sessions/revoke-all`
+        : '/me/sessions/revoke-others';
+    const res = await apiFetch(url, { method: 'POST' });
+    if (res && res.status === 409) { showToast(t('sessions.relogin'), 'error'); return; }
+    if (res && res.ok) {
+        const d = await res.json().catch(() => ({}));
+        showToast(t('sessions.endedN').replace('{n}', d.ended ?? 0), 'success');
+    }
+    loadSessions();
+}
+
+// ── Двухфакторная аутентификация (по желанию) ─────────────────
+let twofaState = null;
+
+async function refreshTwofaState() {
+    const el = document.getElementById('settings-2fa-state');
+    if (!el) return;
+    try {
+        const res = await apiFetch('/me/2fa');
+        if (!res || !res.ok) { el.textContent = ''; return; }
+        twofaState = await res.json();
+        el.textContent = twofaState.enabled ? t('2fa.on') : t('2fa.off');
+        el.classList.toggle('on', !!twofaState.enabled);
+    } catch (_) { el.textContent = ''; }
+}
+
+function closeTwofa() { document.getElementById('twofa-modal').style.display = 'none'; }
+
+async function openTwofa() {
+    closeSettingsMenu();
+    document.getElementById('twofa-modal').style.display = 'flex';
+    const body = document.getElementById('twofa-body');
+    body.innerHTML = '';
+    const res = await apiFetch('/me/2fa');
+    if (!res) return;
+    if (res.status === 404) { body.innerHTML = `<p class="twofa-text">${t('2fa.serverOld')}</p>`; return; }
+    if (!res.ok) return;
+    twofaState = await res.json();
+    renderTwofa();
+}
+
+function renderTwofa() {
+    const body = document.getElementById('twofa-body');
+    if (twofaState.enabled) {
+        body.innerHTML = `
+            <div class="twofa-state on"><span class="material-icons-round">verified_user</span>${t('2fa.isOn')}</div>
+            <p class="twofa-text">${t('2fa.onHint').replace('{n}', twofaState.backup_left)}</p>
+            <div class="twofa-actions">
+                <button class="btn-action" onclick="twofaAskNewCodes()"><span class="material-icons-round">key</span>${t('2fa.newCodes')}</button>
+                <button class="btn-action twofa-danger" onclick="twofaAskDisable()"><span class="material-icons-round">remove_moderator</span>${t('2fa.disable')}</button>
+            </div>`;
+    } else {
+        body.innerHTML = `
+            <div class="twofa-state"><span class="material-icons-round">shield</span>${t('2fa.isOff')}</div>
+            <p class="twofa-text">${t('2fa.offHint')}</p>
+            <input type="password" id="twofa-pw" class="twofa-input" placeholder="${t('2fa.password')}" autocomplete="current-password">
+            <div class="twofa-err" id="twofa-err"></div>
+            <div class="twofa-actions"><button class="btn-action twofa-primary" onclick="twofaStart()">${t('2fa.enable')}</button></div>`;
+    }
+}
+
+async function twofaPost(url, body) {
+    const res = await apiFetch(url, { method: 'POST', body });
+    if (!res) return { ok: false, status: 0, data: {} };
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+}
+function twofaErrText(r) {
+    if (r.status === 429) return t('2fa.tooMany');
+    if (r.data && r.data.detail === 'Incorrect password') return t('2fa.badPassword');
+    return t('2fa.badCode');
+}
+
+async function twofaStart() {
+    const pw = document.getElementById('twofa-pw').value;
+    const r = await twofaPost('/me/2fa/setup', { password: pw });
+    if (!r.ok) { document.getElementById('twofa-err').textContent = twofaErrText(r); return; }
+    const body = document.getElementById('twofa-body');
+    const secretPretty = r.data.secret.replace(/(.{4})/g, '$1 ').trim();
+    body.innerHTML = `
+        <p class="twofa-text">${t('2fa.scan')}</p>
+        ${r.data.qr_svg ? `<div class="twofa-qr">${r.data.qr_svg}</div>` : ''}
+        <p class="twofa-text">${t('2fa.manual')}</p>
+        <div class="twofa-secret">${esc(secretPretty)}</div>
+        <input type="text" id="twofa-code" class="twofa-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="${t('2fa.code')}">
+        <div class="twofa-err" id="twofa-err"></div>
+        <div class="twofa-actions">
+            <button class="btn-action" onclick="renderTwofa()">${t('common.cancel')}</button>
+            <button class="btn-action twofa-primary" onclick="twofaConfirm()">${t('2fa.verify')}</button>
+        </div>`;
+    setTimeout(() => document.getElementById('twofa-code')?.focus(), 50);
+}
+
+async function twofaConfirm() {
+    const code = document.getElementById('twofa-code').value;
+    const r = await twofaPost('/me/2fa/enable', { code });
+    if (!r.ok) { document.getElementById('twofa-err').textContent = twofaErrText(r); return; }
+    twofaState = { enabled: true, backup_left: r.data.backup_codes.length };
+    showBackupCodes(r.data.backup_codes, t('2fa.enabledDone'));
+    refreshTwofaState();
+}
+
+function showBackupCodes(codes, head) {
+    const body = document.getElementById('twofa-body');
+    body.innerHTML = `
+        <div class="twofa-state on"><span class="material-icons-round">verified_user</span>${head}</div>
+        <p class="twofa-text">${t('2fa.codesHint')}</p>
+        <div class="twofa-codes">${codes.map(c => `<span>${esc(c)}</span>`).join('')}</div>
+        <div class="twofa-actions">
+            <button class="btn-action" id="twofa-copy"><span class="material-icons-round">content_copy</span>${t('2fa.copy')}</button>
+            <button class="btn-action twofa-primary" onclick="renderTwofa()">${t('2fa.done')}</button>
+        </div>`;
+    document.getElementById('twofa-copy').onclick = () => {
+        navigator.clipboard?.writeText(codes.join('\n')).then(() => showToast(t('2fa.copied'), 'success')).catch(() => {});
+    };
+}
+
+function twofaAskCode(title, needPassword, onSubmit) {
+    const body = document.getElementById('twofa-body');
+    body.innerHTML = `
+        <p class="twofa-text">${title}</p>
+        ${needPassword ? `<input type="password" id="twofa-pw" class="twofa-input" placeholder="${t('2fa.password')}" autocomplete="current-password">` : ''}
+        <input type="text" id="twofa-code" class="twofa-input" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="${needPassword ? t('2fa.codeOrBackup') : t('2fa.code')}">
+        <div class="twofa-err" id="twofa-err"></div>
+        <div class="twofa-actions">
+            <button class="btn-action" onclick="renderTwofa()">${t('common.cancel')}</button>
+            <button class="btn-action twofa-primary" id="twofa-go">${t('2fa.verify')}</button>
+        </div>`;
+    document.getElementById('twofa-go').onclick = onSubmit;
+}
+
+function twofaAskDisable() {
+    twofaAskCode(t('2fa.disableHint'), true, async () => {
+        const r = await twofaPost('/me/2fa/disable', {
+            password: document.getElementById('twofa-pw').value,
+            code: document.getElementById('twofa-code').value,
+        });
+        if (!r.ok) { document.getElementById('twofa-err').textContent = twofaErrText(r); return; }
+        twofaState = { enabled: false, backup_left: 0 };
+        renderTwofa();
+        refreshTwofaState();
+        showToast(t('2fa.disabledDone'), 'success');
+    });
+}
+
+function twofaAskNewCodes() {
+    twofaAskCode(t('2fa.newCodesHint'), false, async () => {
+        const r = await twofaPost('/me/2fa/backup-codes', { code: document.getElementById('twofa-code').value });
+        if (!r.ok) { document.getElementById('twofa-err').textContent = twofaErrText(r); return; }
+        twofaState.backup_left = r.data.backup_codes.length;
+        showBackupCodes(r.data.backup_codes, t('2fa.newCodesDone'));
+    });
+}
+
+async function adminReset2fa(username) {
+    if (!confirm(t('2fa.adminResetConfirm').replace('{name}', username))) return;
+    const res = await apiFetch(`/admin/users/${encodeURIComponent(username)}/2fa`, { method: 'DELETE' });
+    if (res && res.ok) showToast(t('2fa.adminResetDone'), 'success');
+    loadAdminUsers();
+}
+
+
+// Автовыход с неактивных устройств и «выйти везде».
+async function loadSessionAuto() {
+    const sel = document.getElementById('sessions-auto');
+    const res = await apiFetch('/me/sessions/settings');
+    if (!res || !res.ok) { sel.closest('.sessions-auto').style.display = 'none'; return; }
+    sel.closest('.sessions-auto').style.display = '';
+    const d = await res.json();
+    sel.value = String(d.inactive_days || 0);
+}
+
+async function saveSessionAuto(value) {
+    const res = await apiFetch('/me/sessions/settings', { method: 'PUT', body: { inactive_days: Number(value) } });
+    if (!res || !res.ok) { showToast(t('toast.error'), 'error'); loadSessionAuto(); return; }
+    const d = await res.json();
+    showToast(d.ended ? t('sessions.autoSavedN').replace('{n}', d.ended) : t('sessions.autoSaved'), 'success');
+    if (d.ended) loadSessions();
+}
+
+async function endAllSessionsEverywhere() {
+    if (!confirm(t('sessions.endEverywhereConfirm'))) return;
+    const res = await apiFetch('/me/sessions/revoke-all', { method: 'POST' });
+    if (res && res.ok) logout(t('sessions.endedEverywhere'));
 }

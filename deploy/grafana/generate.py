@@ -216,15 +216,14 @@ def usage():
                   "WHERE status = 'ended' AND duration_sec > 0 AND " + ts("started_at"), 20, y, w=4, color="purple"))
     p.append(stat("Не дозвонились", "SELECT COUNT(*) AS value FROM call_log WHERE status IN ('missed', 'rejected', 'cancelled') AND "
                   + ts("started_at"), 12, y + 4, w=4, color="red"))
-    p.append(stat("Видеозвонков", "SELECT COUNT(*) AS value FROM call_log WHERE (mode = 'video' OR callee IS NULL) AND "
-                  + ts("started_at"), 16, y + 4, w=4, color="orange", desc="Общие звонки в каналах — всегда видео."))
+    p.append(stat("Звонили, человек", "SELECT COUNT(DISTINCT started_by) AS value FROM call_log WHERE "
+                  + ts("started_at"), 16, y + 4, w=4, color="orange", desc="Сколько разных сотрудников начинали звонки."))
     p.append(stat("Самый длинный, мин", "SELECT ROUND(MAX(duration_sec) / 60.0) AS value FROM call_log WHERE status = 'ended' AND "
                   + ts("started_at"), 20, y + 4, w=4, color="yellow"))
     y += 8
     p.append(table("Последние звонки",
                    "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", "
                    "started_by AS \"Кто звонил\", COALESCE(callee, 'общий звонок') AS \"Кому\", "
-                   "CASE COALESCE(mode, 'video') WHEN 'audio' THEN 'голос' ELSE 'видео' END AS \"Тип\", "
                    + CALL_STATUS.format(c="status") + " AS \"Итог\", "
                    "ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" "
                    "FROM call_log WHERE " + ts("started_at") + " ORDER BY started_at DESC LIMIT 300", 0, y, h=10))

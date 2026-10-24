@@ -60,6 +60,13 @@ async def register_device(data: dict, sess: tuple = Depends(get_current_session)
             "INSERT INTO user_devices (id, username, fcm_token, platform, created_at, updated_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), username, fcm_token, platform, now, now, sid),
         )
+    # Один вход — один push-токен. Телефон время от времени получает новый
+    # токен; старый, оставшись в базе, продолжал получать звонки.
+    if sid:
+        await db.execute(
+            "DELETE FROM user_devices WHERE session_id = ? AND fcm_token != ?",
+            (sid, fcm_token),
+        )
 
     await db.commit()
     return {"ok": True}

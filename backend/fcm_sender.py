@@ -29,11 +29,25 @@ def init_firebase():
 
 async def get_user_tokens(username: str) -> list[dict]:
     db = await get_db()
+    # Только устройства с живым входом. Записи без сеанса остались с тех пор,
+    # когда push-токен ко входу не привязывался: телефон давно получил новый
+    # токен, а старые продолжали получать каждый звонок — у одного человека их
+    # набиралось по десятку, и один вызов показывался несколько раз.
+    # Свежие записи без сеанса (обновлены за неделю) пока оставляем.
     cursor = await db.execute(
-        "SELECT fcm_token, platform FROM user_devices WHERE username = ?",
-        (username,),
+        """SELECT d.fcm_token, d.platform FROM user_devices d
+           LEFT JOIN user_sessions s ON s.id = d.session_id
+           WHERE d.username = ?
+             AND ((d.session_id IS NOT NULL AND s.revoked_at IS NULL AND s.id IS NOT NULL)
+                  OR (d.session_id IS NULL AND d.updated_at > ?))""",
+        (username, _week_ago()),
     )
     return [{"token": r["fcm_token"], "platform": r["platform"]} for r in await cursor.fetchall()]
+
+
+def _week_ago() -> str:
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
 
 async def get_user_voip_tokens(username: str) -> list[str]:

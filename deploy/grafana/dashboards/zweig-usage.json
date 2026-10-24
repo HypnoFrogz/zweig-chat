@@ -1099,8 +1099,8 @@
     {
       "id": 24,
       "type": "stat",
-      "title": "Видеозвонков",
-      "description": "Общие звонки в каналах — всегда видео.",
+      "title": "Звонили, человек",
+      "description": "Сколько разных сотрудников начинали звонки.",
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "zweig-sqlite"
@@ -1118,8 +1118,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "zweig-sqlite"
           },
-          "queryText": "SELECT COUNT(*) AS value FROM call_log WHERE (mode = 'video' OR callee IS NULL) AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
-          "rawQueryText": "SELECT COUNT(*) AS value FROM call_log WHERE (mode = 'video' OR callee IS NULL) AND started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "queryText": "SELECT COUNT(DISTINCT started_by) AS value FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
+          "rawQueryText": "SELECT COUNT(DISTINCT started_by) AS value FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch')",
           "queryType": "table"
         }
       ],
@@ -1220,8 +1220,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "zweig-sqlite"
           },
-          "queryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", started_by AS \"Кто звонил\", COALESCE(callee, 'общий звонок') AS \"Кому\", CASE COALESCE(mode, 'video') WHEN 'audio' THEN 'голос' ELSE 'видео' END AS \"Тип\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
-          "rawQueryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", started_by AS \"Кто звонил\", COALESCE(callee, 'общий звонок') AS \"Кому\", CASE COALESCE(mode, 'video') WHEN 'audio' THEN 'голос' ELSE 'видео' END AS \"Тип\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "queryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", started_by AS \"Кто звонил\", COALESCE(callee, 'общий звонок') AS \"Кому\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
+          "rawQueryText": "SELECT replace(substr(datetime(started_at, '$tz hours'), 1, 16), 'T', ' ') AS \"Начало\", started_by AS \"Кто звонил\", COALESCE(callee, 'общий звонок') AS \"Кому\", CASE status WHEN 'ended' THEN 'состоялся' WHEN 'missed' THEN 'пропущен' WHEN 'rejected' THEN 'отклонён' WHEN 'cancelled' THEN 'отменён' WHEN 'active' THEN 'идёт' ELSE status END AS \"Итог\", ROUND(COALESCE(duration_sec, 0) / 60.0, 1) AS \"Минут\" FROM call_log WHERE started_at >= strftime('%Y-%m-%dT%H:%M:%S', ${__from:date:seconds}, 'unixepoch') AND started_at < strftime('%Y-%m-%dT%H:%M:%S', ${__to:date:seconds}, 'unixepoch') ORDER BY started_at DESC LIMIT 300",
           "queryType": "table"
         }
       ],

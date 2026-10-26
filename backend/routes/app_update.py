@@ -5,6 +5,10 @@
 есть, — центральный сервер для этого не нужен, и до организаций со своим
 сервером ничего не доходит без решения их администратора.
 
+Тот же путь использует рассылка из панели оператора (adm.zweig.services):
+`kind=announce` — обычное объявление, без перехода в стор и кнопки
+«Обновить».
+
 Телефоны: push в формате обычного сообщения (см. _send_push), поэтому его
 показывают и уже установленные версии приложения. В новых версиях нажатие
 ведёт в стор.
@@ -32,8 +36,11 @@ DEFAULT_BODY = "Обновите приложение, чтобы получит
 COOLDOWN_SEC = 10 * 60
 # Служебный «адрес беседы» для уведомления об обновлении (см. _send_push).
 UPDATE_SLUG = "__zweig_app_update__"
+# Обычное объявление (рассылка из панели оператора): нажатие просто
+# открывает приложение, в вебе плашка без кнопки «Обновить».
+ANNOUNCE_SLUG = "__zweig_announce__"
 
-_last_sent = 0.0
+_last_sent: dict[str, float] = {}
 
 
 async def _device_tokens(platforms: set[str]) -> list[tuple[str, str]]:
@@ -64,7 +71,7 @@ async def _people_with_phones() -> int:
     return (await cur.fetchone())["n"]
 
 
-def _send_push(tokens: list[tuple[str, str]], title: str, body: str) -> dict:
+def _send_push(tokens: list[tuple[str, str]], title: str, body: str, kind: str = "app_update") -> dict:
     """Отправить push. Возвращает счётчики по платформам и мёртвые токены."""
     import fcm_sender
     out = {"android": 0, "ios": 0, "failed": 0, "dead": [], "enabled": True}
@@ -74,7 +81,7 @@ def _send_push(tokens: list[tuple[str, str]], title: str, body: str) -> dict:
     from firebase_admin import messaging
 
     for token, platform in tokens:
-        url = APP_STORE_URL if platform == "ios" else PLAY_URL
+        url = (APP_STORE_URL if platform == "ios" else PLAY_URL) if kind == "app_update" else ""
         # Формат обычного сообщения из чата: именно его показывают все уже
         # установленные версии приложения — и в фоне, и когда приложение
         # открыто. Отдельный тип `app_update` старые версии молча пропускали,
@@ -85,9 +92,9 @@ def _send_push(tokens: list[tuple[str, str]], title: str, body: str) -> dict:
             token=token,
             data={
                 "type": "message",
-                "kind": "app_update",
+                "kind": kind,
                 "url": url,
-                "channel_slug": UPDATE_SLUG,
+                "channel_slug": UPDATE_SLUG if kind == "app_update" else ANNOUNCE_SLUG,
                 "channel_name": "Zweig",
                 "sender_name": title,
                 "text": body,
@@ -122,15 +129,16 @@ async def app_update_stats(username: str = Depends(get_current_user)):
         "ios": sum(1 for _, p in tokens if p == "ios"),
         "online": online,
         "people": await _people_with_phones(),
-        "cooldown": max(0, int(COOLDOWN_SEC - (time.time() - _last_sent))),
+        "cooldown": max(0, int(COOLDOWN_SEC - (time.time() - _last_sent.get("app_update", 0)))),
     }
 
 
 @router.post("/app-update/notify")
 async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
     await require_admin(admin)
-    global _last_sent
-    wait = COOLDOWN_SEC - (time.time() - _last_sent)
+    kind = data.get("kind") if data.get("kind") in ("app_update", "announce") else "app_update"
+    # Объявления шлёт оператор осознанно — им хватит защиты от двойного клика.
+    wait = (COOLDOWN_SEC if kind == "app_update" else 60) - (time.time() - _last_sent.get(kind, 0))
     if wait > 0:
         raise HTTPException(status_code=429, detail=f"Уведомление уже отправлено. Повторить можно через {int(wait // 60) + 1} мин.")
 
@@ -141,13 +149,13 @@ async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
     body = (data.get("body") or DEFAULT_BODY).strip()[:240]
     version = (data.get("version") or "").strip()[:20]
 
-    _last_sent = time.time()
+    _last_sent[kind] = time.time()
     result = {"android": 0, "ios": 0, "failed": 0, "web": 0}
 
     phone_platforms = platforms & {"android", "ios"}
     if phone_platforms:
         tokens = await _device_tokens(phone_platforms)
-        sent = await asyncio.to_thread(_send_push, tokens, title, body)
+        sent = await asyncio.to_thread(_send_push, tokens, title, body, kind)
         result.update(android=sent["android"], ios=sent["ios"], failed=sent["failed"])
         if not sent["enabled"]:
             result["push_disabled"] = True
@@ -158,8 +166,8 @@ async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
 
     if "web" in platforms:
         users = list((getattr(manager, "active_connections", {}) or {}).keys())
-        await manager.broadcast_all({"event": "app_update", "title": title, "text": body, "version": version})
+        await manager.broadcast_all({"event": "app_update", "kind": kind, "title": title, "text": body, "version": version})
         result["web"] = len(users)
 
-    print(f"[app-update] by {admin}: {result}")
+    print(f"[app-update] {kind} by {admin}: {result}")
     return result

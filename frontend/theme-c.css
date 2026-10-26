@@ -484,3 +484,10 @@ body { font-family: var(--font); font-size: 14.5px; }
   .secm-open .secm-main { transform: none; }
   .secm-back { display: inline-flex; margin: -4px 0 6px -6px; }
 }
+.secm-link { display: block; width: 100%; text-align: left; padding: 12px 14px; border: 0; border-top: 1px solid var(--border); background: none; color: var(--accent); font: 800 13.5px var(--font); cursor: pointer; }
+.secm-link:hover { background: var(--bg3); }
+.secm-tag-warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.secm-tag-err { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.secm-tag-:not(.secm-tag-ok) { color: var(--text3); background: var(--bg3); }
+#acct-fed-body > .modal-body { padding: 0; }
+#acct-fed-body .fed-hint { margin-top: 0; }

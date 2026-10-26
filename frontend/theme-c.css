@@ -491,3 +491,42 @@ body { font-family: var(--font); font-size: 14.5px; }
 .secm-tag-:not(.secm-tag-ok) { color: var(--text3); background: var(--bg3); }
 #acct-fed-body > .modal-body { padding: 0; }
 #acct-fed-body .fed-hint { margin-top: 0; }
+
+/* ═══ Окно «Новая папка» (как в мобильном приложении) ═══ */
+.modal.fsheet { z-index: 950; align-items: center; justify-content: center; }
+.fsheet-box { position: relative; width: min(480px, calc(100vw - 24px)); max-height: min(760px, calc(100vh - 40px)); display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 26px; padding: 22px 22px 18px; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+.fsheet-close { position: absolute; top: 14px; right: 14px; }
+.fsheet-eyebrow { font: 500 12px var(--font-mono); color: var(--label); }
+.fsheet-title { font: 800 22px var(--font-display); letter-spacing: -.5px; color: var(--text); margin: 4px 0 14px; }
+.fsheet-namerow { display: flex; gap: 10px; align-items: center; }
+.fsheet-preview { width: 54px; height: 54px; flex: none; border-radius: 16px; background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+.fsheet-preview .material-icons-round { font-size: 28px; }
+.fsheet-name { flex: 1; min-width: 0; height: 54px; border-radius: 16px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); padding: 0 16px; font: 700 16px var(--font); outline: none; }
+.fsheet-name:focus { border-color: var(--accent); }
+.fsheet-icons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.fsheet-ic { width: 44px; height: 44px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.fsheet-ic .material-icons-round { font-size: 22px; }
+.fsheet-ic:hover { border-color: var(--text3); }
+.fsheet-ic.on { background: var(--sidebar-active); border: 1.5px solid var(--accent); color: var(--accent); }
+.fsheet-label { font: 500 12px var(--font-mono); color: var(--text3); margin: 16px 2px 8px; }
+.fsheet-search { display: flex; align-items: center; gap: 8px; height: 42px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg2); padding: 0 6px 0 12px; color: var(--text3); }
+.fsheet-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: 500 14.5px var(--font); outline: none; }
+.fsheet-search .material-icons-round { font-size: 20px; }
+.fsheet-list { flex: 1; min-height: 120px; overflow-y: auto; margin: 6px -6px 12px; padding: 0 6px; }
+.fsheet-chat { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 6px; border: 0; border-radius: 12px; background: none; text-align: left; cursor: pointer; color: var(--text); }
+.fsheet-chat:hover { background: var(--bg2); }
+.fsheet-ava { width: 36px; height: 36px; flex: none; border-radius: 12px; background: var(--bg3); color: var(--text2); display: flex; align-items: center; justify-content: center; overflow: hidden; font-weight: 800; }
+.fsheet-ava.round { border-radius: 50%; }
+.fsheet-ava img { width: 100%; height: 100%; object-fit: cover; }
+.fsheet-ava .material-icons-round { font-size: 19px; }
+.fsheet-cname { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fsheet-cname b { font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fsheet-cname small { font: 500 11.5px var(--font-mono); color: var(--text3); }
+.fsheet-check { width: 24px; height: 24px; flex: none; border-radius: 8px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; }
+.fsheet-chat.on .fsheet-check { background: var(--btn-primary, var(--accent)); border-color: var(--btn-primary, var(--accent)); color: var(--btn-primary-text, var(--on-accent)); }
+.fsheet-check .material-icons-round { font-size: 16px; }
+.fsheet-empty { padding: 18px; text-align: center; color: var(--text3); }
+.fsheet-submit { height: 52px; border-radius: 16px; justify-content: center; font-size: 15px; }
+.fsheet-submit:disabled { opacity: .45; cursor: default; }
+.sidebar-category-icon { font-size: 16px !important; color: var(--accent); margin-right: 2px; }

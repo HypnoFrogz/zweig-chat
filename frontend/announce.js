@@ -24,11 +24,12 @@
       document.body.appendChild(bar);
     }
     const title = data.title || 'Вышла новая версия Zweig';
-    bar.innerHTML = `${ico('system_update')}<div><b>${escH(title)}</b><small>${escH(data.text || 'Обновите страницу, чтобы получить новую версию.')}</small></div>
-      <button type="button" class="btn-action btn-accent" id="update-banner-go">Обновить</button>
-      <button type="button" class="btn-icon" id="update-banner-x" aria-label="Позже">${ico('close')}</button>`;
+    const isUpdate = data.kind !== 'announce';
+    bar.innerHTML = `${ico(isUpdate ? 'system_update' : 'campaign')}<div><b>${escH(title)}</b><small>${escH(data.text || 'Обновите страницу, чтобы получить новую версию.')}</small></div>
+      ${isUpdate ? '<button type="button" class="btn-action btn-accent" id="update-banner-go">Обновить</button>' : ''}
+      <button type="button" class="btn-icon" id="update-banner-x" aria-label="${isUpdate ? 'Позже' : 'Закрыть'}">${ico('close')}</button>`;
     bar.classList.add('show');
-    $('update-banner-go').onclick = () => location.reload();
+    if (isUpdate) $('update-banner-go').onclick = () => location.reload();
     $('update-banner-x').onclick = () => bar.classList.remove('show');
   }
 

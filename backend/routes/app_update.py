@@ -15,6 +15,7 @@
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -36,14 +37,31 @@ _last_sent = 0.0
 
 
 async def _device_tokens(platforms: set[str]) -> list[tuple[str, str]]:
-    """Токены телефонов с живым входом, без повторов: (token, platform)."""
+    """Токены телефонов, без повторов: (token, platform).
+
+    Берём устройства с живым входом и те, у кого вход к токену ещё не
+    привязан. Таких большинство у старых версий приложения: они получили
+    токен до появления «Устройств» и с тех пор его не перерегистрировали, —
+    ровно им и нужно напомнить об обновлении. Совсем старые записи (больше
+    двух месяцев без обновления) не трогаем, а мёртвые токены Firebase
+    вернёт с ошибкой, и они удалятся после рассылки.
+    """
     db = await get_db()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
     cur = await db.execute(
         """SELECT DISTINCT d.fcm_token, d.platform FROM user_devices d
-           JOIN user_sessions s ON s.id = d.session_id
-           WHERE s.revoked_at IS NULL"""
+           LEFT JOIN user_sessions s ON s.id = d.session_id
+           WHERE (d.session_id IS NOT NULL AND s.id IS NOT NULL AND s.revoked_at IS NULL)
+              OR (d.session_id IS NULL AND COALESCE(NULLIF(d.updated_at, ''), d.created_at) > ?)""",
+        (cutoff,),
     )
     return [(r["fcm_token"], r["platform"]) for r in await cur.fetchall() if r["platform"] in platforms]
+
+
+async def _people_with_phones() -> int:
+    db = await get_db()
+    cur = await db.execute("SELECT COUNT(DISTINCT username) AS n FROM user_devices")
+    return (await cur.fetchone())["n"]
 
 
 def _send_push(tokens: list[tuple[str, str]], title: str, body: str) -> dict:
@@ -103,6 +121,7 @@ async def app_update_stats(username: str = Depends(get_current_user)):
         "android": sum(1 for _, p in tokens if p == "android"),
         "ios": sum(1 for _, p in tokens if p == "ios"),
         "online": online,
+        "people": await _people_with_phones(),
         "cooldown": max(0, int(COOLDOWN_SEC - (time.time() - _last_sent))),
     }
 

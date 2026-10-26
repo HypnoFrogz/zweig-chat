@@ -78,7 +78,8 @@
     const res = await apiFetch('/admin/app-update/stats');
     if (!res || !res.ok) { box.textContent = ''; return; }
     const s = await res.json();
-    box.innerHTML = `<span>${ico('android')}<b>${s.android}</b> Android</span><span>${ico('phone_iphone')}<b>${s.ios}</b> iPhone</span><span>${ico('computer')}<b>${s.online}</b> сейчас в сети</span>`;
+    box.innerHTML = `<span>${ico('android')}<b>${s.android}</b> Android</span><span>${ico('phone_iphone')}<b>${s.ios}</b> iPhone</span><span>${ico('computer')}<b>${s.online}</b> сейчас в сети</span>`
+      + (s.people != null ? `<div class="upd-note">Телефоны с включёнными уведомлениями есть у ${s.people} чел. Кто ни разу не открывал приложение на телефоне или запретил уведомления, push не получит.</div>` : '');
     if (s.cooldown > 0) $('upd-result').textContent = `Уже отправлено, повторить можно через ${Math.ceil(s.cooldown / 60)} мин.`;
   }
 
@@ -93,7 +94,7 @@
     const d = res ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) { $('upd-result').textContent = d.detail || 'Не удалось отправить'; return; }
     const parts = [];
-    if (platforms.includes('android')) parts.push(`Android: ${d.android}`);
+    if (platforms.includes('android')) parts.push(`Android-устройств: ${d.android}`);
     if (platforms.includes('ios')) parts.push(`iPhone: ${d.ios}`);
     if (platforms.includes('web')) parts.push(`в сети: ${d.web}`);
     let msg = 'Отправлено — ' + parts.join(', ');

@@ -446,9 +446,10 @@ const I18N = {
         'msg.welcomeHint': 'Это самое начало канала. Напишите первое сообщение!',
         'msg.welcomeDm': 'Начало беседы',
         'msg.welcomeDmHint': 'Это начало вашей переписки.',
-        'cat.uncategorized': 'Без категории',
+        'cat.uncategorized': 'Без папки',
         'cat.rename': 'Переименовать',
-        'cat.delete': 'Удалить категорию',
+        'cat.edit': 'Изменить папку',
+        'cat.delete': 'Удалить папку',
         'cat.newName': 'Название категории:',
         'files.copyLink': 'Копировать ссылку',
         'userCard.sendMessage': 'Написать',
@@ -787,7 +788,8 @@ const I18N = {
         'msg.welcomeDmHint': 'This is the beginning of your conversation.',
         'cat.uncategorized': 'Uncategorized',
         'cat.rename': 'Rename',
-        'cat.delete': 'Delete category',
+        'cat.edit': 'Edit folder',
+        'cat.delete': 'Delete folder',
         'cat.newName': 'Category name:',
         'files.copyLink': 'Copy link',
         'userCard.sendMessage': 'Send message',
@@ -1379,6 +1381,7 @@ async function loadCategories() {
             categories = folders.map(f => ({
                 id: f.id,
                 name: f.name,
+                icon: f.icon || '',
                 collapsed: false,
                 channelIds: [], // Will map slugs to IDs below
                 _channelSlugs: f.channel_slugs || [],
@@ -1456,6 +1459,7 @@ function showCategoryContextMenu(e, catId) {
     e.stopPropagation();
     const menu = document.getElementById('context-menu');
     menu.innerHTML = `
+        <div class="ctx-item" onclick="hideContextMenu(); openFolderSheet('${catId}')"><span class="material-icons-round">tune</span> ${t('cat.edit')}</div>
         <div class="ctx-item" onclick="renameCategory('${catId}')"><span class="material-icons-round">edit</span> ${t('cat.rename')}</div>
         <div class="ctx-item ctx-danger" onclick="deleteCategory('${catId}')"><span class="material-icons-round">delete</span> ${t('cat.delete')}</div>
     `;
@@ -1609,6 +1613,7 @@ function renderSidebar() {
                       ondrop="onCategoryDrop(event, '${cat.id}')"
                       oncontextmenu="showCategoryContextMenu(event, '${cat.id}')">
             <span class="material-icons-round collapse-icon" onclick="toggleCategoryCollapse('${cat.id}')">${arrow}</span>
+            ${cat.icon ? `<span class="material-icons-round sidebar-category-icon" onclick="toggleCategoryCollapse('${cat.id}')">${esc(cat.icon)}</span>` : ''}
             <span class="sidebar-category-name" onclick="toggleCategoryCollapse('${cat.id}')">${esc(cat.name)}</span>
             <span class="sidebar-category-count">${catChannels.length}</span>
         </div>`;

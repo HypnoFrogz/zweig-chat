@@ -28,7 +28,7 @@
       intDocs: 'Документация API', intAdmin: 'Вебхуки и боты для каналов', open: 'Открыть',
       fedHint: 'Переписка и звонки с сотрудниками других организаций на своих серверах Zweig.',
       // канал
-      chBasic: 'Основное', chMembers: 'Участники', chNotif: 'Уведомления', chInt: 'Интеграции', chDanger: 'Опасная зона',
+      chBasic: 'Основное', chMembers: 'Участники', chNotif: 'Уведомления', chInt: 'Интеграции', chDanger: 'Удаление канала', chLeaveSec: 'Выход из канала',
       chChannel: 'канал', chAdd: 'Пригласить', chMute: 'Без звука', chMuteHint: 'Новые сообщения из этого канала не будут звенеть и всплывать.',
       chHookNew: 'новый вебхук', chHookName: 'Откуда, напр. GitLab CI', chHookBot: 'Общий бот «Вебхук»', chHookCreate: 'Создать адрес',
       chHookHint: 'Внешний сервис отправляет POST с {"text": "…"} — сообщение появляется в этом канале.',
@@ -37,6 +37,8 @@
       chHookUrl: 'Адрес вебхука', chHookOnce: 'Сохраните адрес: второй раз он не показывается. Адрес работает как пароль.',
       chLeave: 'Покинуть канал', chDelete: 'Удалить канал', chResync: 'Синхронизировать с серверами',
       chDangerHint: 'Удаление нельзя отменить: канал и вся переписка исчезнут у всех участников.',
+      chLeaveHint: 'Канал пропадёт из вашего списка. Вернуться можно, если вас снова пригласят.',
+      fedServers: 'связанные серверы', fedInvites: 'люди с других серверов', fedNone: 'Подключённых серверов пока нет', fedManage: 'Управлять в администрировании',
     },
     en: {
       account: 'account', app: 'app', security: 'security', server: 'server', help: 'help',
@@ -53,7 +55,7 @@
       intSoon: 'Coming soon: a webhook to your direct messages — notifications just for you.',
       intDocs: 'API documentation', intAdmin: 'Channel webhooks and bots', open: 'Open',
       fedHint: 'Messages and calls with people at other organizations on their own Zweig servers.',
-      chBasic: 'General', chMembers: 'Members', chNotif: 'Notifications', chInt: 'Integrations', chDanger: 'Danger zone',
+      chBasic: 'General', chMembers: 'Members', chNotif: 'Notifications', chInt: 'Integrations', chDanger: 'Delete channel', chLeaveSec: 'Leave channel',
       chChannel: 'channel', chAdd: 'Invite', chMute: 'Mute', chMuteHint: 'New messages in this channel won’t ring or pop up.',
       chHookNew: 'new webhook', chHookName: 'Source, e.g. GitLab CI', chHookBot: 'Shared “Webhook” bot', chHookCreate: 'Create URL',
       chHookHint: 'An external service sends POST with {"text": "…"} and the message appears in this channel.',
@@ -62,6 +64,8 @@
       chHookUrl: 'Webhook URL', chHookOnce: 'Save the URL: it is shown only once. It works like a password.',
       chLeave: 'Leave channel', chDelete: 'Delete channel', chResync: 'Sync with servers',
       chDangerHint: 'Deleting cannot be undone: the channel and its history disappear for every member.',
+      chLeaveHint: 'The channel disappears from your list. You can come back if someone invites you again.',
+      fedServers: 'linked servers', fedInvites: 'people on other servers', fedNone: 'No linked servers yet', fedManage: 'Manage in administration',
     },
   };
   const tr = (k) => (L[((typeof currentLang !== 'undefined' && currentLang) || 'ru') === 'en' ? 'en' : 'ru'][k] || L.ru[k] || k);
@@ -99,7 +103,7 @@
     sections.filter((s) => !s.cond || s.cond()).forEach((s) => {
       if (s.group !== group) { group = s.group; html += `<div class="secm-group">// ${escH(tr(s.group))}</div>`; }
       html += `<button type="button" class="secm-item${s.id === active ? ' active' : ''}${s.danger ? ' danger' : ''}" data-sec="${s.id}">
-        ${icon(s.icon)}<span>${escH(tr(s.title))}</span>${s.badge ? `<small>${escH(s.badge())}</small>` : ''}</button>`;
+        ${icon(typeof s.icon === 'function' ? s.icon() : s.icon)}<span>${escH(tr(typeof s.title === 'function' ? s.title() : s.title))}</span>${s.badge ? `<small>${escH(s.badge())}</small>` : ''}</button>`;
     });
     items.innerHTML = html;
     items.querySelectorAll('.secm-item').forEach((b) => { b.onclick = () => onPick(b.dataset.sec); });
@@ -108,7 +112,7 @@
   function showPane(root, sections, id) {
     const s = sections.find((x) => x.id === id);
     root.querySelector('.secm-eyebrow').textContent = '// ' + tr(s.group);
-    root.querySelector('.secm-title').textContent = tr(s.title);
+    root.querySelector('.secm-title').textContent = tr(typeof s.title === 'function' ? s.title() : s.title);
     root.querySelectorAll('.secm-pane').forEach((p) => { p.hidden = p.dataset.sec !== id; });
     root.querySelector('.secm-main').scrollTop = 0;
     root.classList.add('secm-open');
@@ -201,9 +205,10 @@
     $('acct-int-open').onclick = () => { closeAccount(); window.navigateToAdmin().then(() => window.switchAdminTab && window.switchAdminTab('bots')); };
 
     // Федерация
-    pane(acct, 'federation').innerHTML = `<div class="secm-card secm-pad"><p class="secm-hint" style="margin-top:0">${escH(tr('fedHint'))}</p>
-      <button class="btn-action btn-accent" type="button" id="acct-fed">${icon('hub')}${escH(tr('open'))}</button></div>`;
-    $('acct-fed').onclick = () => window.openFederationDialog();
+    // Без промежуточной кнопки: серверы и ссылки-приглашения видны сразу.
+    const fed = pane(acct, 'federation');
+    fed.innerHTML = `<div id="acct-fed-servers"></div><div class="secm-label">// ${escH(tr('fedInvites'))}</div><div class="secm-card secm-pad" id="acct-fed-body"></div>`;
+    relocate(document.querySelector('#federation-dialog .modal-body'), $('acct-fed-body'));
 
     // О приложении: ссылки на документы и поддержку
     const about = pane(acct, 'about');
@@ -224,12 +229,35 @@
     if (b) b.onclick = async () => { try { await Notification.requestPermission(); } catch (_) {} renderNotifPane(); };
   }
 
+  async function renderFederation() {
+    const fi = $('fed-redeem-input');
+    if (fi) fi.value = '';
+    if (window.loadInvites) window.loadInvites();
+    const box = $('acct-fed-servers');
+    if (userRole !== 'admin') { box.innerHTML = ''; return; }
+    let data = null;
+    try {
+      const res = await window.apiFetch('/admin/federation/servers');
+      if (res && res.ok) data = await res.json();
+    } catch (_) { /* покажем пустой список */ }
+    const servers = (data && data.servers) || [];
+    const ST = { active: ['подключён', 'ok'], pending_in: ['входящая заявка', 'warn'], pending_out: ['ждёт подтверждения', ''], declined: ['отклонён', 'err'], revoked: ['отключён', 'err'] };
+    box.innerHTML = `<div class="secm-label" style="margin-top:0">// ${escH(tr('fedServers'))} · ${servers.length}</div>
+      <div class="secm-card">${servers.length ? servers.map((s) => {
+        const st = ST[s.status] || [s.status, ''];
+        return `<div class="secm-member"><div class="secm-mava secm-hook">${icon('dns')}</div><div class="secm-mname"><b>${escH(s.domain)}</b><small>${s.direction === 'incoming' ? 'запрос от них' : 'запрос от нас'}${s.last_error ? ' · ' + escH(s.last_error) : ''}</small></div><small class="secm-tag secm-tag-${st[1]}">${escH(st[0])}</small></div>`;
+      }).join('') : `<div class="secm-empty">${escH(tr('fedNone'))}</div>`}
+      <button type="button" class="secm-link" id="acct-fed-admin">${escH(tr('fedManage'))} →</button></div>`;
+    $('acct-fed-admin').onclick = () => { closeAccount(); window.navigateToAdmin().then(() => window.switchAdminTab && window.switchAdminTab('servers')); };
+  }
+
   function pickAccount(id) {
     if (id === 'admin') { closeAccount(); window.navigateToAdmin(); return; }
     acctSec = id;
     renderNav(acct, ACCT, id, pickAccount);
     if (id === 'profile') loadProfile();
     if (id === 'notifications') renderNotifPane();
+    if (id === 'federation') renderFederation();
     if (id === 'devices') {
       // старая функция настроит заголовки «свои устройства» и загрузит список
       origOpenSessions();
@@ -274,10 +302,16 @@
     { id: 'members', group: 'chChannel', icon: 'group', title: 'chMembers', badge: () => String((currentChannel && (currentChannel.member_details || currentChannel.members || []).length) || '') },
     { id: 'notif', group: 'chChannel', icon: 'notifications', title: 'chNotif' },
     { id: 'integrations', group: 'chChannel', icon: 'webhook', title: 'chInt' },
-    { id: 'danger', group: 'chChannel', icon: 'warning', title: 'chDanger', danger: true },
+    { id: 'danger', group: 'chChannel', icon: () => (canDeleteCh() ? 'delete' : 'logout'), title: () => (canDeleteCh() ? 'chDanger' : 'chLeaveSec'), danger: true },
   ];
 
   function closeChannel() { if (chm) chm.style.display = 'none'; }
+
+  // Кнопку «Удалить» старое окно показывает только тем, кому можно удалять.
+  function canDeleteCh() {
+    const b = $('ch-settings-delete-btn');
+    return !!b && b.style.display !== 'none';
+  }
 
   function buildChannel() {
     chm = makeShell('chset-modal', closeChannel);
@@ -287,9 +321,11 @@
     $('chset-save').onclick = () => window.saveChannelSettings();
     // Удалить/покинуть и пересинхронизация — в «Опасной зоне»
     const danger = pane(chm, 'danger');
-    danger.innerHTML = `<div class="secm-card secm-pad" id="chset-danger"><p class="secm-hint" style="margin-top:0">${escH(tr('chDangerHint'))}</p><div class="secm-btns" id="chset-danger-btns"></div></div>`;
+    danger.innerHTML = `<div class="secm-card secm-pad" id="chset-danger"><p class="secm-hint" style="margin-top:0" id="chset-danger-hint"></p><div class="secm-btns" id="chset-danger-btns"></div></div>`;
     ['ch-settings-leave-btn', 'ch-settings-delete-btn'].forEach((bid) => relocate($(bid), $('chset-danger-btns')));
-    relocate($('ch-settings-resync-row'), $('chset-danger'));
+    // Синхронизация с серверами — обычное действие, ей место в «Основном».
+    const resync = $('ch-settings-resync-row');
+    if (resync) basic.insertBefore(resync, basic.querySelector('.secm-actions'));
     pane(chm, 'members'); pane(chm, 'notif'); pane(chm, 'integrations');
   }
 
@@ -389,6 +425,7 @@
     if (id === 'members') renderMembers();
     if (id === 'notif') renderNotif();
     if (id === 'integrations') renderIntegrations();
+    if (id === 'danger') $('chset-danger-hint').textContent = tr(canDeleteCh() ? 'chDangerHint' : 'chLeaveHint');
     showPane(chm, CH, id);
   }
 
@@ -417,6 +454,7 @@
   window.showSettingsMenu = () => openAccount('appearance');
   window.showProfileDialog = () => openAccount('profile');
   window.openTwofa = () => openAccount('security');
+  window.openFederationDialog = () => openAccount('federation');
   window.openSessions = function (target, name) {
     if (target) {
       // админ смотрит чужие устройства — в отдельном окне, как раньше

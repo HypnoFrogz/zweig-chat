@@ -5,9 +5,9 @@
 есть, — центральный сервер для этого не нужен, и до организаций со своим
 сервером ничего не доходит без решения их администратора.
 
-Телефоны: push с видимым уведомлением (Android — блок notification, iOS —
-alert), поэтому его покажут и версии приложения, которые ещё не знают тип
-`app_update`. Нажатие ведёт в стор.
+Телефоны: push в формате обычного сообщения (см. _send_push), поэтому его
+показывают и уже установленные версии приложения. В новых версиях нажатие
+ведёт в стор.
 Веб и компьютер: событие по WebSocket всем, кто сейчас в сети, — страница
 показывает плашку «Обновить». Интерфейс у них и так берётся с сервера, так
 что достаточно перезагрузки.
@@ -29,6 +29,8 @@ PLAY_URL = "https://play.google.com/store/apps/details?id=ru.nebenan.app"
 DEFAULT_TITLE = "Вышла новая версия Zweig"
 DEFAULT_BODY = "Обновите приложение, чтобы получить новые возможности и исправления."
 COOLDOWN_SEC = 10 * 60
+# Служебный «адрес беседы» для уведомления об обновлении (см. _send_push).
+UPDATE_SLUG = "__zweig_app_update__"
 
 _last_sent = 0.0
 
@@ -55,13 +57,25 @@ def _send_push(tokens: list[tuple[str, str]], title: str, body: str) -> dict:
 
     for token, platform in tokens:
         url = APP_STORE_URL if platform == "ios" else PLAY_URL
+        # Формат обычного сообщения из чата: именно его показывают все уже
+        # установленные версии приложения — и в фоне, и когда приложение
+        # открыто. Отдельный тип `app_update` старые версии молча пропускали,
+        # а системное уведомление Android при открытом приложении не выводит.
+        # Нажатие в старых версиях просто открывает приложение (беседы
+        # UPDATE_SLUG нет), новые по этому slug ведут в стор.
         msg = messaging.Message(
             token=token,
-            data={"type": "app_update", "url": url, "title": title, "text": body},
-            # Видимое уведомление: его показывает сама система, даже если
-            # установленная версия приложения не знает тип app_update.
-            notification=messaging.Notification(title=title, body=body),
-            android=messaging.AndroidConfig(priority="normal"),
+            data={
+                "type": "message",
+                "kind": "app_update",
+                "url": url,
+                "channel_slug": UPDATE_SLUG,
+                "channel_name": "Zweig",
+                "sender_name": title,
+                "text": body,
+                "is_group": "0",
+            },
+            android=messaging.AndroidConfig(priority="high"),
             apns=messaging.APNSConfig(
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(alert=messaging.ApsAlert(title=title, body=body), sound="default"),

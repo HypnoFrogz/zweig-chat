@@ -275,6 +275,9 @@ body { font-family: var(--font); font-size: 14.5px; }
     font-weight: 600;
 }
 .msg-row.msg-own .msg-text a, .msg-row.msg-own .msg-text .mention { color: var(--own-text); }
+/* Файл без подписи: в «пузыре» только галочки — сам пузырь не нужен,
+   иначе рядом с вложением висит пустая зелёная плашка. */
+.msg-row.msg-own .msg-text.msg-text-meta { background: none; border: none; padding: 0 2px; color: var(--text3); }
 .msg-text .mention { border-radius: 6px; }
 .msg-file-attach { border-radius: 14px; background: var(--bg3); }
 .msg-date-sep { font-family: var(--font-mono); font-weight: 500; font-size: 11.5px; color: var(--text3); }

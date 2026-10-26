@@ -25,3 +25,17 @@ POST_RESTART=""
 HEALTH_URL=https://example.com/api/health
 HEALTH_TRIES=30
 HEALTH_DELAY=3
+
+# Локальные правки, которые есть только на этом сервере (обычно nginx с
+# настоящим доменом). Без этого git pull --ff-only на них останавливается,
+# и обновление из adm.zweig.services падает. Перед pull файлы возвращаются
+# к версии из репозитория, после pull правки накатываются обратно.
+#KEEP_LOCAL="nginx/nginx.conf nginx/nginx-ssl.conf"
+
+# Команда после pull (выполняется в REPO_DIR). Если задана — правки
+# пересоздаются ею, а не переносятся патчем. Пример для домашнего сервера:
+#AFTER_PULL="sed -i 's/chat\.example\.com/nebenan.tech/g' nginx/nginx-ssl.conf && cp nginx/nginx-ssl.conf nginx/nginx.conf"
+
+# Сервер за NAT часто не открывает сам себя по внешнему домену — проверка
+# здоровья висит и вызывает откат. Тогда идём на этот адрес, сохраняя домен.
+#HEALTH_RESOLVE=127.0.0.1

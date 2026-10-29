@@ -2069,7 +2069,10 @@ function renderMessages(messages, scroll = true, prepend = false) {
             : (msg.sender_name || msg.sender).charAt(0).toUpperCase();
 
         // Actions: reply + reaction + edit/delete
-        let actionBtns = `<button class="msg-action-btn" onclick="startReply('${msg.id}','${esc(msg.sender_name || msg.sender).replace(/'/g,"\\'")}','${esc((msg.text||'').substring(0,80)).replace(/'/g,"\\'")}')"><span class="material-icons-round">reply</span></button>`;
+        // Имя и текст — в data-атрибутах, а не строкой JS внутри onclick:
+        // апостроф, кавычка или перенос строки в сообщении ломали разметку,
+        // и кнопка «Ответить» молча не срабатывала.
+        let actionBtns = `<button class="msg-action-btn" title="${escAttr(t('msg.reply'))}" data-mid="${msg.id}" data-rname="${escAttr(msg.sender_name || msg.sender)}" data-rtext="${escAttr(replySnippet(msg))}" onclick="startReply(this.dataset.mid, this.dataset.rname, this.dataset.rtext)"><span class="material-icons-round">reply</span></button>`;
         actionBtns += `<button class="msg-action-btn" onclick="showReactionPicker(event,'${msg.id}')"><span class="material-icons-round">add_reaction</span></button>`;
         actionBtns += `<button class="msg-action-btn" onclick="showForwardModal('${msg.id}')"><span class="material-icons-round">shortcut</span></button>`;
         const isPinned = msg.is_pinned || pinnedMessages.some(p => p.id === msg.id);
@@ -2119,7 +2122,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
                 <div class="msg-body">
                     ${actions}
                     ${replyPreview}
-                    <div class="msg-text${msgTextFor(msg) ? '' : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${editedBadge ? ' ' + editedBadge : ''}${checkmarks}</div>
+                    <div class="msg-text${msgTextFor(msg) ? emojiOnlyClass(msgTextFor(msg)) : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${editedBadge ? ' ' + editedBadge : ''}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
@@ -2133,7 +2136,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
                         <span class="msg-time">${time}</span>${editedBadge}
                     </div>
                     ${replyPreview}
-                    <div class="msg-text${msgTextFor(msg) ? '' : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${checkmarks}</div>
+                    <div class="msg-text${msgTextFor(msg) ? emojiOnlyClass(msgTextFor(msg)) : ' msg-text-meta'}" id="msg-text-${msg.id}">${formatMsgText(msgTextFor(msg))}${checkmarks}</div>
                     ${renderMsgFile(msg)}
                     ${reactions}${threadIndicator}
                 </div></div>`;
@@ -2640,6 +2643,14 @@ async function cancelScheduled(id) {
 }
 
 // ── Reply ──────────────────────────────────────────────────────
+// Короткая строка для плашки «Ответ для…»: первая строка текста, а у
+// сообщения без текста — что в нём лежит.
+function replySnippet(msg) {
+    const text = (msgTextFor(msg) || '').replace(/\s+/g, ' ').trim();
+    if (text) return text.substring(0, 80);
+    if (msg.file || (msg.files && msg.files.length)) return '📎 ' + ((msg.file && msg.file.name) || 'файл');
+    return '';
+}
 function startReply(msgId, senderName, text) {
     replyToMsg = { id: msgId, sender_name: senderName, text };
     const preview = document.getElementById('reply-preview');
@@ -5975,9 +5986,82 @@ function cancelFileDelete(btn) {
     if (confirm) confirm.remove();
 }
 
+// ── Крупные эмодзи ─────────────────────────────────────────────
+// Сообщение только из эмодзи (до трёх) показываем крупно и без пузыря — как
+// в привычных мессенджерах. Цифры и # тоже «эмодзи-компоненты», поэтому без
+// хотя бы одного настоящего пиктографа строка крупной не станет.
+const EMOJI_ONLY_RE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|\u200d|\ufe0f|\u20e3|\s)+$/u;
+const EMOJI_PIC_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+function emojiCount(text) {
+    const t = (text || '').trim();
+    if (!t || t.length > 40 || !EMOJI_ONLY_RE.test(t) || !EMOJI_PIC_RE.test(t)) return 0;
+    const flat = t.replace(/\s+/g, '');
+    const n = typeof Intl !== 'undefined' && Intl.Segmenter
+        ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(flat)].length
+        : Array.from(flat).length;
+    return n <= 3 ? n : 0;
+}
+function emojiOnlyClass(text) {
+    const n = emojiCount(text);
+    return n === 1 ? ' msg-text-emoji msg-text-emoji-1' : (n ? ' msg-text-emoji' : '');
+}
+
+// ── Цвет акцента ───────────────────────────────────────────────
+// Как в мобильном приложении: готовые цвета и свой. Хранится в браузере.
+const ACCENT_PRESETS = [
+    ['Хвоя', '#3A5A48'], ['Янтарь', '#E0A458'], ['Терракота', '#D97B4F'], ['Море', '#2F6F8F'],
+    ['Мята', '#3E8E7E'], ['Сирень', '#6E5A9E'], ['Роза', '#B5566E'], ['Графит', '#5A5F66'],
+];
+const ACCENT_VARS = ['--accent', '--accent-hover', '--accent-bg', '--on-accent', '--sidebar-active', '--label',
+    '--active-line', '--own-bg', '--own-border', '--own-text', '--own-meta', '--btn-primary', '--btn-primary-text',
+    '--btn-primary-hover'];
+function hexToRgb(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return null;
+    const v = parseInt(m[1], 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function lighten([r, g, b], k) { return '#' + [r, g, b].map(c => Math.round(c + (255 - c) * k).toString(16).padStart(2, '0')).join(''); }
+function applyAccent(hex) {
+    const root = document.documentElement.style;
+    const rgb = hexToRgb(hex);
+    if (!rgb) { ACCENT_VARS.forEach(v => root.removeProperty(v)); return; }
+    const [r, g, b] = rgb;
+    // Текст на акценте — по его светлоте: на светлом тёмный, на тёмном белый.
+    const light = (0.299 * r + 0.587 * g + 0.114 * b) > 150;
+    const on = light ? '#14181A' : '#FFFFFF';
+    const a = (k) => `rgba(${r}, ${g}, ${b}, ${k})`;
+    const set = {
+        '--accent': hex, '--accent-hover': lighten(rgb, 0.12), '--accent-bg': a(0.14), '--on-accent': on,
+        '--sidebar-active': a(0.14), '--label': hex, '--active-line': a(0.45),
+        '--own-bg': hex, '--own-border': hex, '--own-text': on, '--own-meta': light ? 'rgba(20,24,26,.6)' : 'rgba(255,255,255,.7)',
+        '--btn-primary': hex, '--btn-primary-text': on, '--btn-primary-hover': lighten(rgb, 0.12),
+    };
+    Object.entries(set).forEach(([k, v]) => root.setProperty(k, v));
+}
+function setAccent(hex) {
+    try { hex ? localStorage.setItem('ch_accent', hex) : localStorage.removeItem('ch_accent'); } catch (e) {}
+    applyAccent(hex);
+    renderAccentPicker();
+}
+function renderAccentPicker() {
+    const box = document.getElementById('accent-swatches');
+    if (!box) return;
+    let cur = '';
+    try { cur = (localStorage.getItem('ch_accent') || '').toUpperCase(); } catch (e) {}
+    const isPreset = ACCENT_PRESETS.some(([, c]) => c === cur);
+    box.innerHTML = `<button class="accent-sw accent-sw-theme${cur ? '' : ' active'}" onclick="setAccent(null)" title="Как в теме"><span class="material-icons-round">restart_alt</span></button>`
+        + ACCENT_PRESETS.map(([name, c]) => `<button class="accent-sw${c === cur ? ' active' : ''}" style="--sw:${c}" onclick="setAccent('${c}')" title="${name}"></button>`).join('')
+        + `<label class="accent-sw accent-sw-custom${cur && !isPreset ? ' active' : ''}" title="Свой цвет" style="--sw:${cur && !isPreset ? cur : 'transparent'}"><span class="material-icons-round">colorize</span><input type="color" value="${cur || '#7FE0B0'}" oninput="applyAccent(this.value.toUpperCase())" onchange="setAccent(this.value.toUpperCase())"></label>`;
+    const lbl = document.getElementById('accent-current');
+    if (lbl) lbl.textContent = !cur ? 'Как в теме' : (ACCENT_PRESETS.find(([, c]) => c === cur) || ['Свой цвет'])[0];
+}
+
 // ── Theme ──────────────────────────────────────────────────────
 function loadTheme() {
     setTheme(localStorage.getItem('ch_theme') || 'dark', false);
+    try { applyAccent(localStorage.getItem('ch_accent')); } catch (e) {}
+    renderAccentPicker();
     setLanguage(localStorage.getItem('ch_lang') || 'ru', false);
 }
 function setTheme(theme, save = true) {

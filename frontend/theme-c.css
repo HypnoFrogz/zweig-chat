@@ -575,3 +575,34 @@ body { font-family: var(--font); font-size: 14.5px; }
 #update-banner b { font-weight: 800; font-size: 14.5px; color: var(--text); }
 #update-banner small { font-size: 12.5px; color: var(--text3); }
 .upd-note { flex-basis: 100%; font-size: 12.5px; color: var(--text3); margin-top: 2px; }
+
+/* ═══ Галочки прочтения ═══
+   В своём пузыре галочки рисуются цветом текста пузыря: акцентом они
+   сливались с мятным фоном — «прочитано» выглядело как пропавшая галочка. */
+.msg-row.msg-own .msg-text .msg-checkmark .material-icons-round { color: var(--own-meta); }
+.msg-row.msg-own .msg-text .msg-checkmark.read .material-icons-round { color: var(--own-text); }
+.msg-row.msg-own .msg-text.msg-text-meta .msg-checkmark .material-icons-round,
+.msg-row.msg-own .msg-text.msg-text-emoji .msg-checkmark .material-icons-round { color: var(--text3); }
+.msg-row.msg-own .msg-text.msg-text-meta .msg-checkmark.read .material-icons-round,
+.msg-row.msg-own .msg-text.msg-text-emoji .msg-checkmark.read .material-icons-round { color: var(--accent); }
+
+/* ═══ Сообщение из одних эмодзи ═══ */
+.msg-row .msg-text.msg-text-emoji {
+    background: none !important; border: none !important; padding: 0 2px !important;
+    font-size: 26px; line-height: 1.25; font-weight: 400;
+}
+.msg-row .msg-text.msg-text-emoji-1 { font-size: 34px; }
+.msg-row .msg-text.msg-text-emoji .msg-checkmark,
+.msg-row .msg-text.msg-text-emoji .msg-edited { font-size: 11px; }
+
+/* ═══ Цвет акцента ═══ */
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.accent-sw { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border); background: var(--sw, var(--bg3));
+    cursor: pointer; padding: 0; position: relative; display: grid; place-items: center; color: var(--text2); }
+.accent-sw .material-icons-round { font-size: 18px; }
+.accent-sw.active { box-shadow: 0 0 0 2px var(--bg2), 0 0 0 4px var(--text); }
+.accent-sw-custom { overflow: hidden; background: conic-gradient(#F07A6A, #E0A458, #7FE0B0, #2F6F8F, #6E5A9E, #F07A6A); color: #fff; }
+.accent-sw-custom[style*="--sw:#"] { background: var(--sw); }
+.accent-sw-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: 0; padding: 0; }
+.settings-field.settings-field-accent { flex-direction: column; align-items: stretch; gap: 10px; }
+.settings-field-accent .settings-hint { font-weight: 500; color: var(--text3); margin-left: 6px; }

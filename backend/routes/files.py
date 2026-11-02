@@ -5,7 +5,7 @@ import errno
 import hashlib
 import re
 import shutil
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -359,6 +359,24 @@ async def recent_files(limit: int = Query(5), username: str = Depends(get_curren
 async def download_file(path: str = Query(...), username: str = Depends(get_current_user)):
     target = safe_path(username, _normalize_path(path))
     if not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(target, filename=target.name)
+
+
+# ── Медиа из чата для приложения на другом адресе ───────────────
+# /uploads/ отдаёт nginx без CORS: картинку в <img> показать можно, а
+# забрать файл через fetch (сохранение в папку) из приложения для
+# компьютера — нет, оно открыто с 127.0.0.1. Тот же файл через API
+# (здесь CORS включён), только для вошедших.
+
+@router.get("/media/raw")
+async def media_raw(url: str = Query(...), username: str = Depends(get_current_user)):
+    path = unquote(urlsplit(url).path)
+    if not path.startswith("/uploads/"):
+        raise HTTPException(status_code=404, detail="File not found")
+    root = UPLOAD_DIR.resolve()
+    target = (root / path[len("/uploads/"):]).resolve()
+    if root not in target.parents or not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(target, filename=target.name)
 

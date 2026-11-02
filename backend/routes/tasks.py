@@ -48,6 +48,91 @@ async def _get_project_by_slug(db, slug: str, username: str):
     return dict(row)
 
 
+# ── Статусы (колонки доски) ─────────────────────────────────────
+# Ключи todo/in_progress/review/done совпадают со старыми жёстко заданными
+# статусами, поэтому задачи, созданные до настраиваемых колонок, встают на
+# свои места без миграции данных.
+STATUS_TEMPLATES = {
+    "simple": [
+        ("todo", "Нужно сделать", "#E0A458", "new"),
+        ("in_progress", "В работе", "#8FB8E8", "work"),
+        ("done", "Готово", "#7FE0B0", "done"),
+    ],
+    "object": [
+        ("todo", "Нужно сделать", "#E0A458", "new"),
+        ("in_progress", "В работе", "#8FB8E8", "work"),
+        ("review", "На проверке", "#C8A2E0", "work"),
+        ("done", "Готово", "#7FE0B0", "done"),
+    ],
+    "requests": [
+        ("todo", "Новая", "#F07A6A", "new"),
+        ("in_progress", "В работе", "#8FB8E8", "work"),
+        ("waiting", "Ждёт ответа", "#E0A458", "work"),
+        ("done", "Решена", "#7FE0B0", "done"),
+    ],
+}
+STATUS_KINDS = ("new", "work", "done")
+COLOR_RE = __import__("re").compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+async def _seed_statuses(db, project_id: str, template: str = "object") -> None:
+    for pos, (key, name, color, kind) in enumerate(STATUS_TEMPLATES.get(template) or STATUS_TEMPLATES["object"]):
+        await db.execute(
+            "INSERT OR IGNORE INTO task_statuses (id, project_id, key, name, color, kind, on_board, position) VALUES (?,?,?,?,?,?,1,?)",
+            (str(uuid.uuid4()), project_id, key, name, color, kind, pos),
+        )
+
+
+async def _get_statuses(db, project_id: str) -> list[dict]:
+    """Статусы проекта по порядку. Проекты, созданные до настраиваемых
+    колонок, получают стандартный набор при первом обращении."""
+    cur = await db.execute(
+        "SELECT key, name, color, kind, on_board, position FROM task_statuses WHERE project_id = ? ORDER BY position",
+        (project_id,),
+    )
+    rows = [dict(r) for r in await cur.fetchall()]
+    if not rows:
+        await _seed_statuses(db, project_id)
+        await db.commit()
+        return await _get_statuses(db, project_id)
+    for r in rows:
+        r["on_board"] = bool(r["on_board"])
+    return rows
+
+
+async def _done_keys(db, project_id: str) -> set[str]:
+    return {s["key"] for s in await _get_statuses(db, project_id) if s["kind"] == "done"}
+
+
+async def _check_status(db, project_id: str, status: str) -> str:
+    keys = [s["key"] for s in await _get_statuses(db, project_id)]
+    if status not in keys:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    return status
+
+
+def _make_prefix(name: str) -> str:
+    """«Объект на Лесной» → «ЛЕС»: первые буквы последнего значимого слова."""
+    import re as _re
+    words = [w for w in _re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", name) if len(w) > 2]
+    base = words[-1] if words else (name.strip() or "ZW")
+    return base[:3].upper()
+
+
+async def _unique_prefix(db, prefix: str, exclude_project: str = "") -> str:
+    """Номер задачи — ключ ссылки в чате, поэтому префиксы не должны
+    повторяться: к занятому дописываем цифру."""
+    base, n = prefix, 1
+    while True:
+        c = await db.execute(
+            "SELECT 1 FROM task_projects WHERE UPPER(prefix) = ? AND id != ?", (prefix.upper(), exclude_project)
+        )
+        if not await c.fetchone():
+            return prefix
+        n += 1
+        prefix = f"{base}{n}"
+
+
 async def _get_project_members(db, project_id: str) -> list[str]:
     cursor = await db.execute(
         "SELECT username FROM task_project_members WHERE project_id = ?", (project_id,)
@@ -150,6 +235,17 @@ async def list_projects(
     rows = [dict(r) for r in await cursor.fetchall()]
     for r in rows:
         r["is_member"] = bool(r.get("is_member"))
+        done = await _done_keys(db, r["id"])
+        marks = ",".join("?" * len(done)) or "''"
+        c = await db.execute(
+            f"""SELECT SUM(CASE WHEN status IN ({marks}) THEN 0 ELSE 1 END) AS open,
+                       SUM(CASE WHEN status NOT IN ({marks}) AND due_date IS NOT NULL AND due_date < date('now') THEN 1 ELSE 0 END) AS overdue
+                FROM tasks WHERE project_id = ?""",
+            (*done, *done, r["id"]),
+        )
+        cr = await c.fetchone()
+        r["open_count"] = cr["open"] or 0
+        r["overdue_count"] = cr["overdue"] or 0
     return rows
 
 
@@ -182,7 +278,9 @@ async def dashboard_stats(username: str = Depends(get_current_user)):
     c3 = await db.execute(
         """SELECT COUNT(*) as count FROM tasks t
         JOIN task_project_members pm ON pm.project_id = t.project_id AND pm.username = ?
-        WHERE t.due_date IS NOT NULL AND t.due_date < date('now') AND t.status != 'done'""",
+        WHERE t.due_date IS NOT NULL AND t.due_date < date('now')
+          AND t.status NOT IN (SELECT key FROM task_statuses s WHERE s.project_id = t.project_id AND s.kind = 'done')
+          AND t.status != 'done'""",
         (username,),
     )
     overdue = (await c3.fetchone())[0]
@@ -209,9 +307,14 @@ async def create_project(data: dict, username: str = Depends(get_current_user)):
     if visibility not in ("public", "private"):
         visibility = "private"
 
-    prefix = (data.get("prefix") or "").strip().upper()
+    prefix = (data.get("prefix") or "").strip().upper()[:6] or _make_prefix(name)
+    prefix = await _unique_prefix(db, prefix)
+    color = data.get("color") or ""
+    if color and not COLOR_RE.match(color):
+        color = ""
+    discussion_default = 1 if data.get("discussion_default", True) else 0
 
-    slug = slugify(name)
+    slug = slugify(name) or "project"
     # Ensure unique slug
     c = await db.execute("SELECT 1 FROM task_projects WHERE slug = ?", (slug,))
     if await c.fetchone():
@@ -220,9 +323,10 @@ async def create_project(data: dict, username: str = Depends(get_current_user)):
     now = now_iso()
     project_id = str(uuid.uuid4())
     await db.execute(
-        "INSERT INTO task_projects (id, name, slug, description, parent_id, created_by, created_at, updated_at, visibility, prefix, task_number_seq) VALUES (?,?,?,?,?,?,?,?,?,?,0)",
-        (project_id, name, slug, data.get("description", ""), parent_id, username, now, now, visibility, prefix),
+        "INSERT INTO task_projects (id, name, slug, description, parent_id, created_by, created_at, updated_at, visibility, prefix, task_number_seq, color, discussion_default) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?)",
+        (project_id, name, slug, data.get("description", ""), parent_id, username, now, now, visibility, prefix, color, discussion_default),
     )
+    await _seed_statuses(db, project_id, data.get("template") or "object")
     await db.execute(
         "INSERT INTO task_project_members (project_id, username, role, joined_at) VALUES (?,?,?,?)",
         (project_id, username, "owner", now),
@@ -275,7 +379,7 @@ async def create_project(data: dict, username: str = Depends(get_current_user)):
         "project": {"id": project_id, "name": name, "slug": slug},
     })
 
-    return {"id": project_id, "name": name, "slug": slug}
+    return {"id": project_id, "name": name, "slug": slug, "prefix": prefix}
 
 
 @router.get("/projects/{slug}")
@@ -321,6 +425,7 @@ async def get_project(slug: str, username: str = Depends(get_current_user)):
         breadcrumb.insert(0, {"id": pr["id"], "name": pr["name"], "slug": pr["slug"]})
         pid = pr["parent_id"]
     project["breadcrumb"] = breadcrumb
+    project["statuses"] = await _get_statuses(db, project["id"])
     return project
 
 
@@ -336,20 +441,27 @@ async def update_project(slug: str, data: dict, username: str = Depends(get_curr
     if visibility not in ("public", "private"):
         visibility = "private"
     default_assignee = data.get("default_assignee") or None
-    prefix = (data.get("prefix") or "").strip().upper() if "prefix" in data else (project.get("prefix") or "")
+    prefix = (data.get("prefix") or "").strip().upper()[:6] if "prefix" in data else (project.get("prefix") or "")
+    if prefix and prefix.upper() != (project.get("prefix") or "").upper():
+        prefix = await _unique_prefix(db, prefix, project["id"])
+    color = data.get("color", project.get("color") or "")
+    if color and not COLOR_RE.match(color):
+        color = project.get("color") or ""
+    discussion_default = (1 if data["discussion_default"] else 0) if "discussion_default" in data else project.get("discussion_default", 1)
     now = now_iso()
     await db.execute(
-        "UPDATE task_projects SET name = ?, description = ?, visibility = ?, default_assignee = ?, prefix = ?, updated_at = ? WHERE id = ?",
-        (name, desc, visibility, default_assignee, prefix, now, project["id"]),
+        "UPDATE task_projects SET name = ?, description = ?, visibility = ?, default_assignee = ?, prefix = ?, color = ?, discussion_default = ?, updated_at = ? WHERE id = ?",
+        (name, desc, visibility, default_assignee, prefix, color, discussion_default, now, project["id"]),
     )
     await db.commit()
 
     members = await _get_project_members(db, project["id"])
     await manager.send_to_channel(members, {
         "event": "project_updated", "project_id": project["id"],
-        "project": {"id": project["id"], "name": name, "description": desc, "visibility": visibility},
+        "project": {"id": project["id"], "name": name, "description": desc, "visibility": visibility,
+                    "prefix": prefix, "color": color, "discussion_default": discussion_default},
     })
-    return {"ok": True}
+    return {"ok": True, "prefix": prefix}
 
 
 @router.delete("/projects/{slug}")
@@ -388,7 +500,7 @@ async def list_members(slug: str, username: str = Depends(get_current_user)):
 async def add_member(slug: str, data: dict, username: str = Depends(get_current_user)):
     db = await get_db()
     project = await _get_project_by_slug(db, slug, username)
-    await _require_role(db, project["id"], username, ["owner"])
+    await _require_role(db, project["id"], username, ["owner", "lead"])
 
     new_user = data.get("username", "").strip()
     role = data.get("role", "member")
@@ -428,6 +540,8 @@ async def update_member_role(slug: str, member_username: str, data: dict, userna
     role = data.get("role", "member")
     if role not in ("lead", "member", "viewer"):
         raise HTTPException(status_code=400, detail="Invalid role")
+    if await _get_project_role(db, project["id"], member_username) == "owner":
+        raise HTTPException(status_code=400, detail="Owner role cannot be changed")
 
     await db.execute(
         "UPDATE task_project_members SET role = ? WHERE project_id = ? AND username = ?",
@@ -445,6 +559,8 @@ async def remove_member(slug: str, member_username: str, username: str = Depends
 
     if member_username == username:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
+    if await _get_project_role(db, project["id"], member_username) == "owner":
+        raise HTTPException(status_code=400, detail="Owner cannot be removed")
 
     await db.execute(
         "DELETE FROM task_project_members WHERE project_id = ? AND username = ?",
@@ -473,10 +589,8 @@ async def list_tasks(
 ):
     db = await get_db()
     project = await _get_project_by_slug(db, slug, username)
-    # Only members can view tasks
-    role = await _get_project_role(db, project["id"], username)
-    if role is None:
-        raise HTTPException(status_code=403, detail="Only project members can view tasks")
+    # «Вся компания»: открытый проект видят все сотрудники, менять — участники.
+    # _get_project_by_slug уже отсеял закрытые проекты, где человек не участник.
 
     query = "SELECT * FROM tasks WHERE project_id = ?"
     params: list = [project["id"]]
@@ -512,11 +626,16 @@ async def create_task(slug: str, data: dict, username: str = Depends(get_current
 
     now = now_iso()
     task_id = str(uuid.uuid4())
+    statuses = await _get_statuses(db, project["id"])
+    status = data.get("status") or statuses[0]["key"]
+    await _check_status(db, project["id"], status)
+    discussion = data.get("discussion")
+    discussion = (1 if discussion else 0) if discussion is not None else int(project.get("discussion_default", 1) or 0)
 
     # Get max position for the status column
     pos_cursor = await db.execute(
         "SELECT COALESCE(MAX(position), 0) + 1 FROM tasks WHERE project_id = ? AND status = ?",
-        (project["id"], data.get("status", "todo")),
+        (project["id"], status),
     )
     position = (await pos_cursor.fetchone())[0]
 
@@ -537,16 +656,16 @@ async def create_task(slug: str, data: dict, username: str = Depends(get_current
     task_key = f"{prefix}-{task_number}" if prefix else ""
 
     await db.execute(
-        """INSERT INTO tasks (id, project_id, title, description, status, priority, assignee, created_by, due_date, issue_type_id, position, task_number, task_key, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        """INSERT INTO tasks (id, project_id, title, description, status, priority, assignee, created_by, due_date, issue_type_id, position, task_number, task_key, discussion, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             task_id, project["id"], title,
             data.get("description", ""),
-            data.get("status", "todo"),
+            status,
             data.get("priority", "medium"),
             data.get("assignee") or None,
             username, data.get("due_date") or None,
-            issue_type_id, position, task_number, task_key, now, now,
+            issue_type_id, position, task_number, task_key, discussion, now, now,
         ),
     )
 
@@ -654,10 +773,11 @@ async def submit_ticket(slug: str, data: dict, username: str = Depends(get_curre
 
     await db.execute(
         """INSERT INTO tasks (id, project_id, title, description, status, priority,
-           assignee, created_by, due_date, issue_type_id, position, task_number, task_key, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           assignee, created_by, due_date, issue_type_id, position, task_number, task_key, discussion, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (task_id, project["id"], title, (data.get("description") or "").strip(),
-         "todo", priority, default_assignee, username, None, None, position, task_number, task_key, now, now),
+         (await _get_statuses(db, project["id"]))[0]["key"], priority, default_assignee, username, None, None, position, task_number, task_key,
+         int(project.get("discussion_default", 1) or 0), now, now),
     )
     await db.execute("UPDATE task_projects SET updated_at = ? WHERE id = ?", (now, project["id"]))
     await db.commit()
@@ -676,10 +796,8 @@ async def submit_ticket(slug: str, data: dict, username: str = Depends(get_curre
 async def get_task(slug: str, task_id: str, username: str = Depends(get_current_user)):
     db = await get_db()
     project = await _get_project_by_slug(db, slug, username)
-    # Only members can view tasks
-    role = await _get_project_role(db, project["id"], username)
-    if role is None:
-        raise HTTPException(status_code=403, detail="Only project members can view tasks")
+    # «Вся компания»: открытый проект видят все сотрудники, менять — участники.
+    # _get_project_by_slug уже отсеял закрытые проекты, где человек не участник.
 
     cursor = await db.execute(
         "SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project["id"])
@@ -724,7 +842,8 @@ async def update_task(slug: str, task_id: str, data: dict, username: str = Depen
         raise HTTPException(status_code=404, detail="Task not found")
 
     role = await _get_project_role(db, project["id"], username)
-    if role not in ("owner", "lead") and task_row["created_by"] != username:
+    # Свою задачу ведёт и исполнитель: двигает статус, ставит срок, правит описание.
+    if role not in ("owner", "lead") and username not in (task_row["created_by"], task_row["assignee"]):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
     now = now_iso()
@@ -732,6 +851,14 @@ async def update_task(slug: str, task_id: str, data: dict, username: str = Depen
     for f in ("title", "description", "status", "priority", "assignee", "due_date", "issue_type_id"):
         if f in data:
             fields[f] = data[f] if data[f] != "" else None
+    if "status" in fields:
+        if not fields["status"]:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        await _check_status(db, project["id"], fields["status"])
+    if "title" in fields and not (fields["title"] or "").strip():
+        raise HTTPException(status_code=400, detail="Title required")
+    if "discussion" in data:
+        fields["discussion"] = 1 if data["discussion"] else 0
 
     if fields:
         set_clause = ", ".join(f"{k} = ?" for k in fields)
@@ -794,9 +921,8 @@ async def change_task_status(slug: str, task_id: str, data: dict, username: str 
     project = await _get_project_by_slug(db, slug, username)
     await _require_role(db, project["id"], username, ["owner", "lead", "member"])
 
-    new_status = data.get("status")
-    if new_status not in ("todo", "in_progress", "review", "done"):
-        raise HTTPException(status_code=400, detail="Invalid status")
+    new_status = data.get("status") or ""
+    await _check_status(db, project["id"], new_status)
 
     cursor = await db.execute(
         "SELECT status FROM tasks WHERE id = ? AND project_id = ?", (task_id, project["id"])
@@ -969,6 +1095,12 @@ async def add_comment(slug: str, task_id: str, data: dict, username: str = Depen
     text = (data.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Comment text required")
+    c_t = await db.execute("SELECT discussion FROM tasks WHERE id = ? AND project_id = ?", (task_id, project["id"]))
+    t_row = await c_t.fetchone()
+    if not t_row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not t_row["discussion"]:
+        raise HTTPException(status_code=409, detail="Discussion is off for this task")
 
     display_name = await get_display_name(username)
     comment_id = str(uuid.uuid4())
@@ -1316,3 +1448,108 @@ async def unbind_field_from_issue_type(
     )
     await db.commit()
     return {"ok": True}
+
+
+# ── Статусы проекта ───────────────────────────────────────────────
+
+@router.get("/projects/{slug}/statuses")
+async def list_statuses(slug: str, username: str = Depends(get_current_user)):
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    return await _get_statuses(db, project["id"])
+
+
+@router.put("/projects/{slug}/statuses")
+async def save_statuses(slug: str, data: dict, username: str = Depends(get_current_user)):
+    """Сохранить весь список разом: порядок, названия, цвета, типы.
+    Задачи из удалённых статусов переезжают в первый статус списка."""
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    await _require_role(db, project["id"], username, ["owner", "lead"])
+
+    items = data.get("statuses") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="At least one status required")
+    if len(items) > 20:
+        raise HTTPException(status_code=400, detail="Too many statuses")
+
+    clean, seen = [], set()
+    for it in items:
+        name = (it.get("name") or "").strip()[:40]
+        if not name:
+            raise HTTPException(status_code=400, detail="Status name required")
+        key = (it.get("key") or "").strip()[:40] or ("s_" + uuid.uuid4().hex[:8])
+        if key in seen:
+            raise HTTPException(status_code=400, detail="Duplicate status")
+        seen.add(key)
+        kind = it.get("kind") if it.get("kind") in STATUS_KINDS else "work"
+        color = it.get("color") or "#8A958F"
+        if not COLOR_RE.match(color):
+            color = "#8A958F"
+        clean.append((key, name, color, kind, 1 if it.get("on_board", True) else 0))
+    if not any(c[4] for c in clean):
+        raise HTTPException(status_code=400, detail="At least one status must be on the board")
+    if not any(c[3] == "done" for c in clean):
+        raise HTTPException(status_code=400, detail="At least one status must close the task")
+
+    first = clean[0][0]
+    keep = [c[0] for c in clean]
+    marks = ",".join("?" * len(keep))
+    await db.execute(
+        f"UPDATE tasks SET status = ? WHERE project_id = ? AND status NOT IN ({marks})",
+        (first, project["id"], *keep),
+    )
+    await db.execute("DELETE FROM task_statuses WHERE project_id = ?", (project["id"],))
+    for pos, (key, name, color, kind, on_board) in enumerate(clean):
+        await db.execute(
+            "INSERT INTO task_statuses (id, project_id, key, name, color, kind, on_board, position) VALUES (?,?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), project["id"], key, name, color, kind, on_board, pos),
+        )
+    await db.execute("UPDATE task_projects SET updated_at = ? WHERE id = ?", (now_iso(), project["id"]))
+    await db.commit()
+
+    statuses = await _get_statuses(db, project["id"])
+    members = await _get_project_members(db, project["id"])
+    await manager.send_to_channel(members, {
+        "event": "project_statuses_changed", "project_id": project["id"], "statuses": statuses,
+    })
+    return statuses
+
+
+# ── Номера задач в чате ───────────────────────────────────────────
+
+@router.get("/keys")
+async def resolve_task_keys(keys: str = Query(""), username: str = Depends(get_current_user)):
+    """ЛЕС-24 в сообщении → карточка задачи. Без доступа к проекту отдаём
+    только сам номер: название чужой задачи не должно утекать в чат."""
+    db = await get_db()
+    wanted = [k.strip() for k in keys.split(",") if k.strip()][:50]
+    out = []
+    for key in wanted:
+        c = await db.execute(
+            """SELECT t.*, p.slug AS project_slug, p.name AS project_name, p.visibility,
+                      pm.username AS me
+               FROM tasks t JOIN task_projects p ON p.id = t.project_id
+               LEFT JOIN task_project_members pm ON pm.project_id = p.id AND pm.username = ?
+               WHERE UPPER(t.task_key) = UPPER(?) AND t.task_key != ''""",
+            (username, key),
+        )
+        row = await c.fetchone()
+        if not row:
+            out.append({"key": key, "found": False})
+            continue
+        if row["me"] is None and row["visibility"] != "public":
+            out.append({"key": row["task_key"], "found": True, "access": False})
+            continue
+        st = {s["key"]: s for s in await _get_statuses(db, row["project_id"])}.get(row["status"]) or {}
+        task = await _build_task(db, row)
+        out.append({
+            "key": row["task_key"], "found": True, "access": True,
+            "task_id": row["id"], "title": row["title"],
+            "project_slug": row["project_slug"], "project_name": row["project_name"],
+            "status": row["status"], "status_name": st.get("name", row["status"]),
+            "status_color": st.get("color", ""), "status_kind": st.get("kind", "work"),
+            "assignee_name": task.get("assignee_name", ""), "due_date": row["due_date"],
+            "attachment_count": task.get("attachment_count", 0),
+        })
+    return out

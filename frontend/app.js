@@ -2908,7 +2908,15 @@ async function uniqueHandle(dir, name) {
 }
 
 async function fetchBlob(url) {
-    const res = await fetch(srv(url));
+    const full = srv(url);
+    // Приложение для компьютера открыто с 127.0.0.1, а /uploads/ на сервере
+    // отдаётся без CORS — fetch туда падает. Такие файлы берём через API.
+    let crossOrigin = false;
+    try { crossOrigin = new URL(full, location.href).origin !== location.origin; } catch (e) {}
+    const viaApi = crossOrigin && /^\/uploads\//.test(String(url));
+    const res = viaApi
+        ? await fetch(`${API}/media/raw?url=${encodeURIComponent(url)}`, { headers: { 'Authorization': `Bearer ${token}` } })
+        : await fetch(full);
     if (!res.ok) throw new Error(res.status);
     return res.blob();
 }

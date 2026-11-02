@@ -120,38 +120,10 @@ let pinnedMessages = [];
 // явного выхода. Держим id, а не элементы: лента перерисовывается, элементы
 // исчезают, а выбор должен пережить это.
 let selectedMsgIds = new Set();
+// Сами сообщения по id. Пересылке и сохранению файлов нужно вложение целиком
+// (ссылки, имена, альбом), а из разметки его не достать — только текст.
+const msgStore = new Map();
 let pinnedBarIndex = 0;
-// ChaosTracker state
-let taskProjects = [];
-let currentTaskProject = null;
-let currentTaskProjectSlug = null;
-let taskProjectTasks = [];
-let taskProjectLabels = [];
-let taskProjectMembers = [];
-let taskProjectIssueTypes = [];
-let taskProjectCustomFields = [];
-let currentTaskDetail = null;
-let tasksViewMode = 'board';
-let draggedTaskId = null;
-let taskBreadcrumb = []; // for navigating back through subprojects
-let projectCreationMembers = [];
-let allUsersCache = [];
-let submitTicketSlug = null;
-let submitProjectData = null;
-let createTaskFiles = [];
-const STATUS_RU = { todo: 'К выполнению', in_progress: 'В работе', review: 'На проверке', done: 'Готово' };
-const PRIORITY_RU = { low: 'Низкий', medium: 'Средний', high: 'Высокий', critical: 'Критический' };
-
-// Task list column visibility
-const TASK_COLUMNS = [
-    { key: 'tl-type',     label: 'Тип',         fr: '0.8fr' },
-    { key: 'tl-title',    label: 'Название',    fr: '3fr',   locked: true },
-    { key: 'tl-status',   label: 'Статус',      fr: '1fr'   },
-    { key: 'tl-priority', label: 'Приоритет',   fr: '1fr'   },
-    { key: 'tl-assignee', label: 'Исполнитель', fr: '1fr'   },
-    { key: 'tl-date',     label: 'Срок',        fr: '1fr'   },
-];
-let taskColVis = (() => { try { const s = JSON.parse(localStorage.getItem('ch_task_cols')); if (s && typeof s === 'object') return s; } catch {} const d = {}; TASK_COLUMNS.forEach(c => d[c.key] = true); return d; })();
 
 // ── Client-side routing ─────────────────────────────────────────
 let _skipPushState = false;
@@ -177,15 +149,11 @@ async function handleRoute(path) {
             loadFileList(filePath);
         } else if (path === '/admin') {
             await navigateToAdmin();
-        } else if (path.startsWith('/tracker/') && path.endsWith('/submit')) {
-            const slug = decodeURIComponent(path.slice('/tracker/'.length, path.length - '/submit'.length));
-            showPage('tasks');
-            await openSubmitTicketPage(slug);
+        } else if (path.startsWith('/t/')) {
+            await Tracker.openByKey(decodeURIComponent(path.slice(3)));
         } else if (path.startsWith('/tracker/')) {
-            const slug = decodeURIComponent(path.slice('/tracker/'.length));
-            showPage('tasks');
-            taskBreadcrumb = [];
-            await openTaskProject(slug);
+            const rest = decodeURIComponent(path.slice('/tracker/'.length)).split('/');
+            await Tracker.openProject(rest[0], rest[1] || null);
         } else if (path === '/tracker') {
             await navigateToTasks();
         } else {
@@ -431,6 +399,19 @@ const I18N = {
         'forward.search': 'Поиск чата...',
         'forward.empty': 'Нет доступных чатов',
         'forward.success': 'Сообщение переслано',
+        'forward.successMany': 'Переслано сообщений',
+        'forward.titleMany': 'Переслать сообщения',
+        'msg.forward': 'Переслать',
+        'msg.download': 'Скачать',
+        'media.downloadAll': 'Скачать все',
+        'media.download': 'Скачать',
+        'media.pickFolder': 'Выберите папку для сохранения',
+        'media.saving': 'Сохраняем файлы',
+        'media.saved': 'Сохранено файлов',
+        'media.saveFailed': 'Не удалось сохранить',
+        'media.nothing': 'В выбранных сообщениях нет файлов',
+        'media.prev': 'Предыдущее',
+        'media.next': 'Следующее',
         'feedback.title': 'Обратная связь',
         'feedback.hint': 'Помогите нам улучшить наш сервис! Пишите предложения и жалобы — они будут использованы только для улучшения качества нашего продукта.',
         'feedback.placeholder': 'Ваше сообщение...',
@@ -771,6 +752,19 @@ const I18N = {
         'forward.search': 'Search chat...',
         'forward.empty': 'No available chats',
         'forward.success': 'Message forwarded',
+        'forward.successMany': 'Messages forwarded',
+        'forward.titleMany': 'Forward messages',
+        'msg.forward': 'Forward',
+        'msg.download': 'Download',
+        'media.downloadAll': 'Download all',
+        'media.download': 'Download',
+        'media.pickFolder': 'Choose a folder to save to',
+        'media.saving': 'Saving files',
+        'media.saved': 'Files saved',
+        'media.saveFailed': 'Could not save',
+        'media.nothing': 'No files in the selected messages',
+        'media.prev': 'Previous',
+        'media.next': 'Next',
         'feedback.title': 'Feedback',
         'feedback.hint': 'Help us improve! Share your suggestions or report issues — your feedback will only be used to make the product better.',
         'feedback.placeholder': 'Your message...',
@@ -917,10 +911,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!e.target.closest('.emoji-picker') && !e.target.closest('[onclick*="toggleEmojiPicker"]')) {
                 picker.style.display = 'none';
             }
-        }
-        const colPicker = document.getElementById('tasks-col-picker');
-        if (colPicker && colPicker.style.display !== 'none' && !e.target.closest('.tasks-col-picker-wrap')) {
-            colPicker.style.display = 'none';
         }
     });
     document.addEventListener('keydown', e => {
@@ -2047,6 +2037,7 @@ function renderMessages(messages, scroll = true, prepend = false) {
     }
 
     messages.forEach(msg => {
+        msgStore.set(msg.id, msg);
         if (existingIds.has(msg.id)) return;
         const date = formatDate(msg.timestamp);
         if (date !== lastDate) {
@@ -2183,6 +2174,8 @@ function renderMsgFile(msg) {
     const fileUrl = srv(f.url);
     // Альбом: несколько снимков одним сообщением. Проверяем раньше картинки —
     // в самом `file` лежит первый снимок, и без этой ветки показался бы он один.
+    // Плитка «+N» тоже открывает просмотр — с того снимка, на котором стоит,
+    // и дальше листается весь альбом. Раньше дальше четвёртого было не попасть.
     if (Array.isArray(f.album) && f.album.length > 1) {
         const visible = f.album.slice(0, 4);
         const hidden = f.album.length - visible.length;
@@ -2190,14 +2183,15 @@ function renderMsgFile(msg) {
             const u = srv(a.url);
             const more = (hidden > 0 && i === visible.length - 1)
                 ? `<span class="msg-album-more">+${hidden}</span>` : '';
-            return `<div class="msg-album-tile" onclick="window.open('${u}','_blank')">
-                <img src="${u}" alt="${esc(a.name || '')}">${more}
-            </div>`;
+            const media = isVideoFile(a)
+                ? `<video src="${u}#t=0.1" preload="metadata" muted playsinline></video><span class="msg-album-play material-icons-round">play_arrow</span>`
+                : `<img src="${u}" alt="${escAttr(a.name || '')}" loading="lazy">`;
+            return `<div class="msg-album-tile" data-mid="${msg.id}" data-i="${i}" onclick="openMsgMedia(this.dataset.mid, +this.dataset.i)">${media}${more}</div>`;
         }).join('');
         return `<div class="msg-album">${tiles}</div>`;
     }
     if (f.type === 'image') {
-        return `<img class="msg-file-image" src="${fileUrl}" alt="${esc(f.name)}" onclick="window.open('${fileUrl}','_blank')">`;
+        return `<img class="msg-file-image" src="${fileUrl}" alt="${escAttr(f.name || '')}" data-mid="${msg.id}" onclick="openMsgMedia(this.dataset.mid, 0)">`;
     }
     // Голосовое — проигрыватель, а не строка со скрепкой. Признак ставит тот,
     // кто записывал: по расширению голосовое не отличить от присланной музыки.
@@ -2225,17 +2219,24 @@ function formatMsgText(text) {
     if (!text) return '';
     let html = esc(text);
     html = html.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
-    // Replace URLs: show short filename for /uploads/ links, otherwise show domain+path
-    html = html.replace(/(https?:\/\/[^\s<]+)/g, (match) => {
+    // Ссылки и номера задач разбираем по кускам: номер вида ЛЕС-24 ищем только
+    // вне адресов, иначе он сломал бы ссылку, внутри которой стоит.
+    const refs = window.TaskRefs;
+    html = html.split(/(https?:\/\/[^\s<]+)/g).map((part, i) => {
+        if (i % 2 === 0) return refs ? refs.markText(part) : part;
+        const match = part;
         try {
             const url = new URL(match);
+            // Ссылка на задачу (кнопка «Ссылка» в карточке) → её номер.
+            const ref = refs && refs.fromUrl(match);
+            if (ref) return ref;
             if (url.pathname.startsWith('/uploads/')) {
                 const fileName = decodeURIComponent(url.pathname.split('/').pop());
                 return `<a href="${match}" target="_blank" rel="noopener" title="${match}">📎 ${esc(fileName)}</a>`;
             }
         } catch(e) {}
         return `<a href="${match}" target="_blank" rel="noopener">${match}</a>`;
-    });
+    }).join('');
     return html;
 }
 
@@ -2444,6 +2445,12 @@ function renderSelection() {
             <span class="material-icons-round">close</span>
         </button>
         <span class="selection-count">${esc(t('msg.selected'))}: ${selectedMsgIds.size}</span>
+        <button class="btn-action" onclick="showForwardModalMany()">
+            <span class="material-icons-round">shortcut</span> ${esc(t('msg.forward'))}
+        </button>
+        ${selectedFiles().length ? `<button class="btn-action" onclick="downloadSelectedFiles()">
+            <span class="material-icons-round">download</span> ${esc(t('msg.download'))} · ${selectedFiles().length}
+        </button>` : ''}
         <button class="btn-action btn-danger" onclick="deleteSelectedMessages()">
             <span class="material-icons-round">delete</span> ${esc(t('channel.delete'))}
         </button>`;
@@ -2679,13 +2686,24 @@ function cancelReply() {
 let forwardMsgData = null;
 
 function showForwardModal(msgId) {
-    const row = document.querySelector(`.msg-row[data-id="${msgId}"]`);
-    if (!row) return;
-    const textEl = row.querySelector('.msg-text');
-    const senderEl = row.querySelector('.msg-sender-name');
-    const text = textEl ? textEl.textContent.trim() : '';
-    const senderName = senderEl ? senderEl.textContent.trim() : '';
-    forwardMsgData = { id: msgId, text, senderName };
+    openForwardModal([msgId]);
+}
+
+// Пересылка пачкой — из режима выбора. Порядок — как в ленте, по времени.
+function showForwardModalMany() {
+    const ids = [...selectedMsgIds].filter(id => msgStore.has(id))
+        .sort((a, b) => String(msgStore.get(a).timestamp).localeCompare(String(msgStore.get(b).timestamp)));
+    if (ids.length) openForwardModal(ids);
+}
+
+function openForwardModal(ids) {
+    // Берём сами сообщения, а не текст из разметки: у вложения текста может
+    // не быть вовсе, и пересылалась пустая строка вместо фотографий.
+    const items = ids.map(id => msgStore.get(id)).filter(m => m && m.type !== 'call');
+    if (!items.length) return;
+    forwardMsgData = { items };
+    const title = document.querySelector('#forward-modal .modal-title');
+    if (title) title.textContent = items.length > 1 ? `${t('forward.titleMany')} · ${items.length}` : t('forward.title');
 
     const list = document.getElementById('forward-channel-list');
     const available = channels.filter(ch => !currentChannel || ch.slug !== currentChannel.slug);
@@ -2707,7 +2725,7 @@ function showForwardModal(msgId) {
                 name = ch.name;
                 icon = ch.type === 'private' ? '🔒' : '#';
             }
-            return `<div class="forward-channel-item" data-name="${esc(name).toLowerCase()}" onclick="forwardToChannel('${ch.slug}')">
+            return `<div class="forward-channel-item" data-name="${escAttr(name.toLowerCase())}" data-slug="${escAttr(ch.slug)}" onclick="forwardToChannel(this.dataset.slug)">
                 <div class="forward-channel-icon">${icon}</div>
                 <div class="forward-channel-name">${esc(name)}</div>
             </div>`;
@@ -2730,16 +2748,210 @@ function filterForwardList(query) {
     });
 }
 
+/** Тело пересылаемого сообщения: подпись «↩ Автор» плюс исходный текст,
+ *  а вложение — целиком, вместе с альбомом. */
+function forwardBody(m) {
+    const author = m.sender_name || m.sender || '';
+    const text = (msgTextFor(m) || '').trim();
+    if (m.file) {
+        return { type: 'file', file: m.file, text: text ? `↩ ${author}:\n${text}` : `↩ ${author}` };
+    }
+    return { type: 'text', text: `↩ ${author}:\n${m.text || ''}` };
+}
+
 async function forwardToChannel(slug) {
     if (!forwardMsgData) return;
-    const text = `↩ ${forwardMsgData.senderName}:\n${forwardMsgData.text}`;
-    const res = await apiFetch(`/channels/${slug}/messages`, { method: 'POST', body: { text, type: 'text' } });
-    if (res && res.ok) {
-        showToast(t('forward.success'), 'success');
+    const items = forwardMsgData.items || [];
+    let ok = 0;
+    for (const m of items) {
+        const res = await apiFetch(`/channels/${slug}/messages`, { method: 'POST', body: forwardBody(m) });
+        if (res && res.ok) ok += 1;
+    }
+    if (ok === items.length) {
+        showToast(items.length > 1 ? `${t('forward.successMany')}: ${ok}` : t('forward.success'), 'success');
         closeForwardModal();
+        if (selectionActive()) exitSelectMode();
     } else {
         showToast(t('toast.forwardError'), 'error');
     }
+}
+
+// ── Просмотр фото и видео из переписки ─────────────────────────
+// Альбом листается целиком: стрелки, клавиатура, миниатюры снизу. Отсюда же
+// можно сохранить один снимок или весь альбом в выбранную папку.
+
+function isVideoFile(a) {
+    return (a && (a.type === 'video' || /^video\//.test(a.mime || '') || /\.(mp4|mov|m4v|webm|3gp)$/i.test(a.name || a.url || '')));
+}
+
+function msgMediaList(m) {
+    const f = m && m.file;
+    if (!f) return [];
+    if (Array.isArray(f.album) && f.album.length > 1) return f.album.map(a => ({ url: a.url, name: a.name || '', video: isVideoFile(a) }));
+    return [{ url: f.url, name: f.name || '', video: isVideoFile(f) }];
+}
+
+let mediaViewer = null;
+
+function openMsgMedia(msgId, index) {
+    if (selectionActive()) return;
+    const m = msgStore.get(msgId);
+    const list = msgMediaList(m);
+    if (!list.length) return;
+    mediaViewer = { list, i: Math.max(0, Math.min(index || 0, list.length - 1)), sender: (m.sender_name || m.sender || '') };
+    let el = document.getElementById('media-viewer');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'media-viewer';
+        el.className = 'media-viewer';
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-modal', 'true');
+        el.addEventListener('click', e => {
+            if (e.target === el || e.target.classList.contains('mv-stage')) closeMediaViewer();
+        });
+        document.body.appendChild(el);
+    }
+    renderMediaViewer();
+    el.style.display = 'flex';
+}
+
+function renderMediaViewer() {
+    const el = document.getElementById('media-viewer');
+    if (!el || !mediaViewer) return;
+    const { list, i } = mediaViewer;
+    const cur = list[i];
+    const u = srv(cur.url);
+    const many = list.length > 1;
+    const media = cur.video
+        ? `<video class="mv-media" src="${u}" controls autoplay playsinline></video>`
+        : `<img class="mv-media" src="${u}" alt="${escAttr(cur.name)}">`;
+    const thumbs = many ? `<div class="mv-thumbs">${list.map((x, k) => `<button class="mv-thumb${k === i ? ' on' : ''}" data-k="${k}" onclick="mediaViewerGo(+this.dataset.k)" aria-label="${k + 1}">${x.video
+        ? `<video src="${srv(x.url)}#t=0.1" preload="metadata" muted></video><span class="material-icons-round">play_arrow</span>`
+        : `<img src="${srv(x.url)}" alt="" loading="lazy">`}</button>`).join('')}</div>` : '';
+    el.innerHTML = `
+        <div class="mv-top">
+            <span class="mv-title">${esc(mediaViewer.sender)}${many ? ` · ${i + 1} / ${list.length}` : ''}</span>
+            <span class="mv-actions">
+                <button class="mv-btn" onclick="downloadFiles([mediaViewer.list[mediaViewer.i]])" title="${escAttr(t('media.download'))}"><span class="material-icons-round">download</span></button>
+                ${many ? `<button class="mv-btn mv-btn-text" onclick="downloadFiles(mediaViewer.list)"><span class="material-icons-round">download_for_offline</span>${esc(t('media.downloadAll'))} · ${list.length}</button>` : ''}
+                <button class="mv-btn" onclick="closeMediaViewer()" title="${escAttr(t('msg.cancel'))}"><span class="material-icons-round">close</span></button>
+            </span>
+        </div>
+        <div class="mv-stage">
+            ${many ? `<button class="mv-nav mv-prev" onclick="mediaViewerGo(mediaViewer.i - 1)" aria-label="${escAttr(t('media.prev'))}"><span class="material-icons-round">chevron_left</span></button>` : ''}
+            ${media}
+            ${many ? `<button class="mv-nav mv-next" onclick="mediaViewerGo(mediaViewer.i + 1)" aria-label="${escAttr(t('media.next'))}"><span class="material-icons-round">chevron_right</span></button>` : ''}
+        </div>
+        ${thumbs}`;
+    const on = el.querySelector('.mv-thumb.on');
+    if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function mediaViewerGo(k) {
+    if (!mediaViewer) return;
+    const n = mediaViewer.list.length;
+    mediaViewer.i = (k + n) % n;
+    renderMediaViewer();
+}
+
+function closeMediaViewer() {
+    const el = document.getElementById('media-viewer');
+    if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+    mediaViewer = null;
+}
+
+document.addEventListener('keydown', e => {
+    if (!mediaViewer) return;
+    if (e.key === 'Escape') { e.stopPropagation(); closeMediaViewer(); }
+    else if (e.key === 'ArrowRight') mediaViewerGo(mediaViewer.i + 1);
+    else if (e.key === 'ArrowLeft') mediaViewerGo(mediaViewer.i - 1);
+}, true);
+
+// ── Сохранение файлов в выбранную папку ────────────────────────
+// Где браузер умеет (Chrome, Edge, приложение для компьютера), человек
+// выбирает папку один раз, и все файлы ложатся туда. Где не умеет (Safari,
+// Firefox) — каждый файл скачивается обычной загрузкой.
+
+function selectedFiles() {
+    const out = [];
+    [...selectedMsgIds].map(id => msgStore.get(id)).filter(Boolean)
+        .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+        .forEach(m => {
+            const f = m.file;
+            if (!f || !f.url) return;
+            if (Array.isArray(f.album) && f.album.length > 1) f.album.forEach(a => a.url && out.push({ url: a.url, name: a.name || '' }));
+            else out.push({ url: f.url, name: f.name || '' });
+        });
+    return out;
+}
+
+async function downloadSelectedFiles() {
+    const files = selectedFiles();
+    if (!files.length) return showToast(t('media.nothing'), 'error');
+    const done = await downloadFiles(files);
+    if (done) exitSelectMode();
+}
+
+function fileNameFor(f, k) {
+    let name = (f.name || '').trim() || decodeURIComponent(String(f.url).split('/').pop().split('?')[0]) || `file-${k + 1}`;
+    return name.replace(/[\\/:*?"<>|]+/g, '_');
+}
+
+async function uniqueHandle(dir, name) {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+    for (let n = 0; n < 1000; n++) {
+        const candidate = n ? `${stem} (${n})${ext}` : name;
+        try { await dir.getFileHandle(candidate); } catch (e) { return dir.getFileHandle(candidate, { create: true }); }
+    }
+    return dir.getFileHandle(`${stem}-${Date.now()}${ext}`, { create: true });
+}
+
+async function fetchBlob(url) {
+    const res = await fetch(srv(url));
+    if (!res.ok) throw new Error(res.status);
+    return res.blob();
+}
+
+/** Сохранить список файлов. true — если человек не отменил выбор папки. */
+async function downloadFiles(files) {
+    if (!files || !files.length) return false;
+    if (window.showDirectoryPicker) {
+        let dir;
+        try { dir = await window.showDirectoryPicker({ id: 'zweig-media', mode: 'readwrite' }); }
+        catch (e) { return false; }   // закрыли окно выбора — ничего не делаем
+        let ok = 0, failed = 0;
+        showToast(`${t('media.saving')}: ${files.length}`);
+        for (let k = 0; k < files.length; k++) {
+            try {
+                const blob = await fetchBlob(files[k].url);
+                const h = await uniqueHandle(dir, fileNameFor(files[k], k));
+                const w = await h.createWritable();
+                await w.write(blob);
+                await w.close();
+                ok += 1;
+            } catch (e) { failed += 1; }
+        }
+        showToast(failed ? `${t('media.saved')}: ${ok} · ${t('media.saveFailed')}: ${failed}` : `${t('media.saved')}: ${ok}`, failed ? 'error' : 'success');
+        return true;
+    }
+    // Запасной путь: обычные загрузки по одной. Через blob, чтобы имя файла
+    // сохранилось и для сервера на другом адресе (приложение для компьютера).
+    let failed = 0;
+    for (let k = 0; k < files.length; k++) {
+        try {
+            const blob = await fetchBlob(files[k].url);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = fileNameFor(files[k], k);
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+            await new Promise(r => setTimeout(r, 350));
+        } catch (e) { failed += 1; }
+    }
+    if (failed) showToast(`${t('media.saveFailed')}: ${failed}`, 'error');
+    return true;
 }
 
 // ── Reactions ──────────────────────────────────────────────────
@@ -3317,6 +3529,7 @@ function handleWsEvent(data) {
         case 'task_comment_added': case 'project_created':
         case 'project_updated': case 'project_deleted':
         case 'project_member_added': case 'project_member_removed':
+        case 'project_statuses_changed':
             handleTaskWsEvent(data); break;
         case 'pong': break;
         case 'session_revoked':
@@ -6225,1493 +6438,6 @@ function filterGlobalSearch() {
         });
     }
     results.innerHTML = html || '<p style="padding:16px;color:var(--text2);text-align:center">No results</p>';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CHAOSTRACKER
-// ═══════════════════════════════════════════════════════════════
-
-async function navigateToTasks() {
-    closeSettingsMenu();
-    const sb = document.getElementById('sidebar');
-    if (sb && sb.classList.contains('open')) toggleSidebar();
-    pushRoute('/tracker');
-    showPage('tasks');
-    taskBreadcrumb = [];
-    await loadTaskProjects();
-}
-
-// ── Projects ────────────────────────────────────────────────
-async function loadTaskProjects(parentId) {
-    const url = parentId ? `/tasks/projects?parent_id=${parentId}` : '/tasks/projects';
-    const res = await apiFetch(url);
-    if (!res || !res.ok) return;
-    taskProjects = await res.json();
-    renderTaskProjects();
-}
-
-const PROJECT_ROLE_RU = { owner: 'Владелец', lead: 'Руководитель', member: 'Участник', viewer: 'Наблюдатель' };
-
-// Dashboard config
-const DASHBOARD_WIDGETS = [
-    { key: 'total_status', label: 'Все задачи по статусам' },
-    { key: 'per_project', label: 'Задачи по проектам' },
-    { key: 'my_tasks', label: 'Мои задачи' },
-    { key: 'overdue', label: 'Просроченные задачи' },
-];
-let dashboardConfig = (() => { try { const s = JSON.parse(localStorage.getItem('ch_dashboard_cfg')); if (s && typeof s === 'object') return s; } catch {} const d = {}; DASHBOARD_WIDGETS.forEach(w => d[w.key] = true); return d; })();
-
-function renderTaskProjects() {
-    document.getElementById('tasks-project-list').style.display = 'flex';
-    document.getElementById('tasks-board-view').style.display = 'none';
-    const tbody = document.getElementById('tasks-projects-tbody');
-    if (!taskProjects.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="tasks-empty-td"><span class="material-icons-round">assignment</span>Проектов пока нет. Создайте первый!</td></tr>';
-        renderTasksDashboard();
-        return;
-    }
-    tbody.innerHTML = '';
-    taskProjects.forEach(p => {
-        const tr = document.createElement('tr');
-        tr.className = 'tasks-project-row';
-        tr.onclick = () => openTaskProject(p.slug);
-        const dateStr = (p.created_at || '').slice(0, 10);
-        const visIcon = p.visibility === 'public' ? '<span class="material-icons-round vis-icon vis-public">public</span> Публичный' : '<span class="material-icons-round vis-icon vis-private">lock</span> Приватный';
-        tr.innerHTML = `<td class="tp-name">${esc(p.name)}</td>
-            <td class="tp-desc">${esc(p.description || '—')}</td>
-            <td class="tp-creator">${esc(p.creator_name || p.created_by || '')}</td>
-            <td class="tp-visibility">${visIcon}</td>
-            <td class="tp-members">${p.member_count || 0}</td>
-            <td class="tp-tasks">${p.task_count || 0}</td>
-            <td class="tp-children">${p.child_count || 0}</td>
-            <td class="tp-role">${PROJECT_ROLE_RU[p.my_role] || p.my_role || ''}</td>
-            <td class="tp-date">${dateStr}</td>`;
-        tbody.appendChild(tr);
-    });
-    renderTasksDashboard();
-}
-
-// ── Dashboard ────────────────────────────────────────────────
-async function renderTasksDashboard() {
-    const container = document.getElementById('tasks-dashboard');
-    if (!container) return;
-    const res = await apiFetch('/tasks/dashboard');
-    if (!res || !res.ok) { container.style.display = 'none'; return; }
-    const stats = await res.json();
-    container.style.display = 'block';
-    container.innerHTML = '';
-    // Header with config
-    const header = document.createElement('div');
-    header.className = 'dashboard-header';
-    header.innerHTML = `<h3 class="dashboard-title">Статистика</h3>
-        <button class="btn-icon" onclick="toggleDashboardConfig()" title="Настроить виджеты"><span class="material-icons-round">tune</span></button>`;
-    container.appendChild(header);
-    // Config panel
-    const cfg = document.createElement('div');
-    cfg.id = 'dashboard-config-panel';
-    cfg.className = 'dashboard-config-panel';
-    cfg.style.display = 'none';
-    DASHBOARD_WIDGETS.forEach(w => {
-        const label = document.createElement('label');
-        label.className = 'dashboard-config-item';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = dashboardConfig[w.key] !== false;
-        cb.onchange = () => { dashboardConfig[w.key] = cb.checked; localStorage.setItem('ch_dashboard_cfg', JSON.stringify(dashboardConfig)); renderTasksDashboard(); };
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(' ' + w.label));
-        cfg.appendChild(label);
-    });
-    container.appendChild(cfg);
-    // Widgets grid
-    const grid = document.createElement('div');
-    grid.className = 'dashboard-widgets';
-    container.appendChild(grid);
-    if (dashboardConfig.total_status !== false) grid.appendChild(buildStatusWidget('Все задачи', stats.totals));
-    if (dashboardConfig.per_project !== false && taskProjects.length) grid.appendChild(buildProjectBarsWidget(taskProjects));
-    if (dashboardConfig.my_tasks !== false) grid.appendChild(buildStatusWidget('Мои задачи', stats.my_tasks));
-    if (dashboardConfig.overdue !== false) grid.appendChild(buildOverdueWidget(stats.overdue_count));
-}
-
-function buildStatusWidget(title, data) {
-    const w = document.createElement('div');
-    w.className = 'dashboard-widget';
-    const total = data.total || 0, todo = data.todo || 0, ip = data.in_progress || 0, rev = data.review || 0, done = data.done || 0;
-    const bar = total > 0 ? `<div class="status-bar">
-        <div class="status-bar-seg" style="width:${todo/total*100}%;background:var(--text3)" title="К выполнению: ${todo}"></div>
-        <div class="status-bar-seg" style="width:${ip/total*100}%;background:#4a90d9" title="В работе: ${ip}"></div>
-        <div class="status-bar-seg" style="width:${rev/total*100}%;background:#f39c12" title="На проверке: ${rev}"></div>
-        <div class="status-bar-seg" style="width:${done/total*100}%;background:#2ecc71" title="Готово: ${done}"></div>
-    </div>` : '<div class="status-bar-empty">Нет задач</div>';
-    w.innerHTML = `<div class="dashboard-widget-title">${title}</div>
-        <div class="dashboard-widget-number">${total}</div>${bar}
-        <div class="status-legend">
-            <span><span class="legend-dot" style="background:var(--text3)"></span>К выполнению: ${todo}</span>
-            <span><span class="legend-dot" style="background:#4a90d9"></span>В работе: ${ip}</span>
-            <span><span class="legend-dot" style="background:#f39c12"></span>На проверке: ${rev}</span>
-            <span><span class="legend-dot" style="background:#2ecc71"></span>Готово: ${done}</span>
-        </div>`;
-    return w;
-}
-
-function buildProjectBarsWidget(projects) {
-    const w = document.createElement('div');
-    w.className = 'dashboard-widget dashboard-widget-wide';
-    const maxT = Math.max(...projects.map(p => p.task_count || 0), 1);
-    let bars = '';
-    projects.forEach(p => {
-        const total = p.task_count || 0, done = p.done_count || 0;
-        const pct = total / maxT * 100, donePct = total > 0 ? done / total * 100 : 0;
-        bars += `<div class="project-bar-row">
-            <span class="project-bar-label">${esc(p.name)}</span>
-            <div class="project-bar-track"><div class="project-bar-fill" style="width:${pct}%"><div class="project-bar-done" style="width:${donePct}%"></div></div></div>
-            <span class="project-bar-count">${done}/${total}</span></div>`;
-    });
-    w.innerHTML = `<div class="dashboard-widget-title">Задачи по проектам</div><div class="project-bars">${bars}</div>`;
-    return w;
-}
-
-function buildOverdueWidget(count) {
-    const w = document.createElement('div');
-    w.className = 'dashboard-widget';
-    const color = count > 0 ? '#e74c3c' : '#2ecc71';
-    w.innerHTML = `<div class="dashboard-widget-title">Просроченные</div>
-        <div class="dashboard-widget-number" style="color:${color}">${count || 0}</div>
-        <div class="dashboard-widget-hint">${count > 0 ? 'Задачи с истекшим сроком' : 'Нет просроченных задач'}</div>`;
-    return w;
-}
-
-function toggleDashboardConfig() {
-    const p = document.getElementById('dashboard-config-panel');
-    if (p) p.style.display = p.style.display === 'none' ? 'flex' : 'none';
-}
-
-async function showCreateProjectDialog() {
-    document.getElementById('create-project-dialog').style.display = 'flex';
-    document.getElementById('project-name-input').value = '';
-    document.getElementById('project-prefix-input').value = '';
-    document.getElementById('project-desc-input').value = '';
-    projectCreationMembers = [];
-    renderProjectCreationChips();
-    // Load users for member picker
-    if (!allUsersCache.length) {
-        const res = await apiFetch('/users');
-        if (res && res.ok) allUsersCache = await res.json();
-    }
-    const sel = document.getElementById('project-member-select');
-    sel.innerHTML = '<option value="">Добавить участника...</option>';
-    allUsersCache.forEach(u => {
-        if (u.username === currentUser) return;
-        const opt = document.createElement('option');
-        opt.value = u.username;
-        opt.textContent = u.display_name || u.nickname || u.username;
-        sel.appendChild(opt);
-    });
-    document.getElementById('project-name-input').focus();
-}
-function closeCreateProjectDialog() { document.getElementById('create-project-dialog').style.display = 'none'; }
-
-function addProjectCreationMember() {
-    const sel = document.getElementById('project-member-select');
-    const username = sel.value;
-    if (!username) return;
-    const role = document.getElementById('project-member-role').value;
-    if (projectCreationMembers.find(m => m.username === username)) return;
-    const user = allUsersCache.find(u => u.username === username);
-    projectCreationMembers.push({ username, role, display_name: user?.display_name || user?.nickname || username, avatar_path: user?.avatar_path || '' });
-    sel.querySelector(`option[value="${username}"]`).remove();
-    sel.value = '';
-    renderProjectCreationChips();
-}
-
-function removeProjectCreationMember(username) {
-    const member = projectCreationMembers.find(m => m.username === username);
-    projectCreationMembers = projectCreationMembers.filter(m => m.username !== username);
-    if (member) {
-        const sel = document.getElementById('project-member-select');
-        const opt = document.createElement('option');
-        opt.value = username;
-        opt.textContent = member.display_name;
-        sel.appendChild(opt);
-    }
-    renderProjectCreationChips();
-}
-
-function renderProjectCreationChips() {
-    const container = document.getElementById('project-members-chips');
-    container.innerHTML = '';
-    projectCreationMembers.forEach(m => {
-        const chip = document.createElement('span');
-        chip.className = 'member-chip';
-        const avatar = m.avatar_path ? `<img src="${srv(m.avatar_path)}" alt="">` : `<span class="material-icons-round" style="font-size:20px">person</span>`;
-        const CHIP_ROLE_RU = { member: 'участник', lead: 'руководитель', viewer: 'наблюдатель' };
-        chip.innerHTML = `${avatar} <span class="chip-name"></span> <span class="chip-role">${CHIP_ROLE_RU[m.role] || m.role}</span><span class="remove-chip material-icons-round" onclick="removeProjectCreationMember('${m.username}')">close</span>`;
-        chip.querySelector('.chip-name').textContent = m.display_name;
-        container.appendChild(chip);
-    });
-}
-
-async function createProject() {
-    const name = document.getElementById('project-name-input').value.trim();
-    if (!name) return showToast('Введите название проекта', 'error');
-    const prefix = document.getElementById('project-prefix-input').value.trim().toUpperCase();
-    const desc = document.getElementById('project-desc-input').value.trim();
-    const members = projectCreationMembers.map(m => ({ username: m.username, role: m.role }));
-    try {
-        const res = await apiFetch('/tasks/projects', { method: 'POST', body: { name, description: desc, members, prefix } });
-        if (!res) return showToast('Ошибка сети', 'error');
-        if (!res.ok) {
-            const err = await res.text().catch(() => '');
-            return showToast('Ошибка создания: ' + (err || res.status), 'error');
-        }
-        closeCreateProjectDialog();
-        await loadTaskProjects();
-        showToast('Проект создан');
-    } catch (e) {
-        showToast('Ошибка: ' + e.message, 'error');
-    }
-}
-
-function showCreateSubprojectDialog() {
-    if (!currentTaskProject) return;
-    document.getElementById('create-subproject-dialog').style.display = 'flex';
-    document.getElementById('subproject-name-input').value = '';
-    document.getElementById('subproject-prefix-input').value = '';
-    document.getElementById('subproject-name-input').focus();
-}
-function closeCreateSubprojectDialog() {
-    document.getElementById('create-subproject-dialog').style.display = 'none';
-}
-
-async function createSubproject() {
-    const name = document.getElementById('subproject-name-input').value.trim();
-    if (!name) return showToast('Введите название подпроекта', 'error');
-    const prefix = document.getElementById('subproject-prefix-input').value.trim().toUpperCase();
-    const res = await apiFetch('/tasks/projects', {
-        method: 'POST',
-        body: { name, description: '', parent_id: currentTaskProject.id, prefix },
-    });
-    if (!res || !res.ok) return showToast('Ошибка создания подпроекта', 'error');
-    closeCreateSubprojectDialog();
-    showToast('Подпроект создан');
-    await openTaskProject(currentTaskProjectSlug);
-}
-
-function tasksShowProjectList() {
-    currentTaskProject = null;
-    currentTaskProjectSlug = null;
-    taskProjectTasks = [];
-    taskBreadcrumb = [];
-    pushRoute('/tracker');
-    document.getElementById('tasks-project-list').style.display = 'flex';
-    document.getElementById('tasks-board-view').style.display = 'none';
-    document.getElementById('tasks-submit-view').style.display = 'none';
-}
-
-function tasksGoBack() {
-    if (taskBreadcrumb.length > 0) {
-        const parent = taskBreadcrumb.pop();
-        openTaskProject(parent.slug);
-    } else {
-        tasksShowProjectList();
-    }
-}
-
-async function openTaskProject(slug) {
-    pushRoute('/tracker/' + encodeURIComponent(slug));
-    currentTaskProjectSlug = slug;
-    const res = await apiFetch(`/tasks/projects/${slug}`);
-    if (!res || !res.ok) return;
-    currentTaskProject = await res.json();
-    taskProjectMembers = currentTaskProject.members || [];
-
-    // Non-member of public project → redirect to submit page
-    if (!currentTaskProject.is_member && currentTaskProject.visibility === 'public') {
-        await openSubmitTicketPage(slug);
-        return;
-    }
-
-    // Set breadcrumb from server data
-    if (currentTaskProject.breadcrumb && currentTaskProject.breadcrumb.length > 0) {
-        taskBreadcrumb = currentTaskProject.breadcrumb;
-    }
-
-    const hasChildren = (currentTaskProject.children || []).length > 0;
-
-    // Always load labels, issue-types, fields (needed for settings dialog)
-    // Only skip tasks for parent projects with sub-projects
-    if (!hasChildren) {
-        const [tasksRes, labelsRes, typesRes, fieldsRes] = await Promise.all([
-            apiFetch(`/tasks/projects/${slug}/tasks`),
-            apiFetch(`/tasks/projects/${slug}/labels`),
-            apiFetch(`/tasks/projects/${slug}/issue-types`),
-            apiFetch(`/tasks/projects/${slug}/fields`),
-        ]);
-        taskProjectTasks = tasksRes && tasksRes.ok ? await tasksRes.json() : [];
-        taskProjectLabels = labelsRes && labelsRes.ok ? await labelsRes.json() : [];
-        taskProjectIssueTypes = typesRes && typesRes.ok ? await typesRes.json() : [];
-        taskProjectCustomFields = fieldsRes && fieldsRes.ok ? await fieldsRes.json() : [];
-    } else {
-        const [labelsRes, typesRes, fieldsRes] = await Promise.all([
-            apiFetch(`/tasks/projects/${slug}/labels`),
-            apiFetch(`/tasks/projects/${slug}/issue-types`),
-            apiFetch(`/tasks/projects/${slug}/fields`),
-        ]);
-        taskProjectTasks = [];
-        taskProjectLabels = labelsRes && labelsRes.ok ? await labelsRes.json() : [];
-        taskProjectIssueTypes = typesRes && typesRes.ok ? await typesRes.json() : [];
-        taskProjectCustomFields = fieldsRes && fieldsRes.ok ? await fieldsRes.json() : [];
-    }
-
-    document.getElementById('tasks-project-list').style.display = 'none';
-    document.getElementById('tasks-board-view').style.display = 'flex';
-    document.getElementById('tasks-submit-view').style.display = 'none';
-    document.getElementById('tasks-board-title').textContent = currentTaskProject.name;
-    document.getElementById('tasks-board-desc').textContent = currentTaskProject.description || '';
-
-    // Hide task-related UI when project has sub-projects
-    const createTaskBtn = document.querySelector('.btn-action.btn-accent[onclick="showCreateTaskDialog()"]');
-    const filterBar = document.getElementById('tasks-filter-bar');
-    const viewToggle = document.querySelector('.tasks-view-toggle');
-    if (hasChildren) {
-        if (createTaskBtn) createTaskBtn.style.display = 'none';
-        if (filterBar) filterBar.style.display = 'none';
-        if (viewToggle) viewToggle.style.display = 'none';
-        document.getElementById('tasks-kanban').style.display = 'none';
-        document.getElementById('tasks-list').style.display = 'none';
-    } else {
-        if (createTaskBtn) createTaskBtn.style.display = '';
-        if (filterBar) filterBar.style.display = '';
-        if (viewToggle) viewToggle.style.display = '';
-    }
-
-    // Render breadcrumb
-    renderTasksBreadcrumb();
-
-    // Render sub-projects (table for parent, cards hidden for leaf)
-    renderSubprojects();
-
-    if (!hasChildren) {
-        populateTaskDropdowns();
-        renderTaskBoard();
-    }
-}
-
-function renderTasksBreadcrumb() {
-    const bc = document.getElementById('tasks-breadcrumb');
-    const crumbs = currentTaskProject.breadcrumb || [];
-    if (crumbs.length === 0) {
-        bc.style.display = 'none';
-        return;
-    }
-    bc.style.display = 'flex';
-    let html = `<span class="breadcrumb-item" onclick="tasksShowProjectList();loadTaskProjects()">Проекты</span>`;
-    crumbs.forEach(c => {
-        html += ` <span class="breadcrumb-sep">›</span> <span class="breadcrumb-item" onclick="openTaskProject('${esc(c.slug)}')">${esc(c.name)}</span>`;
-    });
-    html += ` <span class="breadcrumb-sep">›</span> <span class="breadcrumb-current">${esc(currentTaskProject.name)}</span>`;
-    bc.innerHTML = html;
-}
-
-function renderSubprojects() {
-    const container = document.getElementById('tasks-subprojects');
-    const children = currentTaskProject.children || [];
-    if (children.length === 0) {
-        container.style.display = 'none';
-        return;
-    }
-    container.style.display = 'block';
-    container.innerHTML = '';
-
-    // Render as a table
-    const table = document.createElement('div');
-    table.className = 'subprojects-table';
-    // Header
-    const header = document.createElement('div');
-    header.className = 'subprojects-table-header';
-    header.innerHTML = `<span class="sp-col-name">Подпроект</span><span class="sp-col-prefix">Префикс</span><span class="sp-col-tasks">Задачи</span>`;
-    table.appendChild(header);
-    // Rows
-    children.forEach(c => {
-        const row = document.createElement('div');
-        row.className = 'subprojects-table-row';
-        row.onclick = () => {
-            taskBreadcrumb.push({ slug: currentTaskProjectSlug, name: currentTaskProject.name });
-            openTaskProject(c.slug);
-        };
-        row.innerHTML = `<span class="sp-col-name"><span class="material-icons-round" style="font-size:16px;color:var(--accent);vertical-align:middle">account_tree</span> ${esc(c.name)}</span><span class="sp-col-prefix">${esc(c.prefix || '—')}</span><span class="sp-col-tasks">${c.task_count || 0}</span>`;
-        table.appendChild(row);
-    });
-    container.appendChild(table);
-}
-
-function populateTaskDropdowns() {
-    // Assignee dropdowns
-    const assigneeSelectors = ['task-assignee-input', 'task-detail-assignee', 'tasks-filter-assignee'];
-    assigneeSelectors.forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        const val = sel.value;
-        sel.innerHTML = '<option value="">Не назначен</option>';
-        if (id === 'tasks-filter-assignee') sel.innerHTML = '<option value="">Все исполнители</option>';
-        taskProjectMembers.forEach(m => {
-            sel.innerHTML += `<option value="${esc(m.username)}">${esc(m.display_name || m.username)}</option>`;
-        });
-        sel.value = val;
-    });
-    // Creator dropdown for filter
-    const creatorSel = document.getElementById('tasks-filter-creator');
-    if (creatorSel) {
-        const val = creatorSel.value;
-        creatorSel.innerHTML = '<option value="">Все авторы</option>';
-        taskProjectMembers.forEach(m => {
-            creatorSel.innerHTML += `<option value="${esc(m.username)}">${esc(m.display_name || m.username)}</option>`;
-        });
-        creatorSel.value = val;
-    }
-    // Issue type dropdowns
-    const typeSelectors = ['task-issue-type-input', 'task-detail-issue-type', 'tasks-filter-type'];
-    typeSelectors.forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        const val = sel.value;
-        sel.innerHTML = '<option value="">Без типа</option>';
-        if (id === 'tasks-filter-type') sel.innerHTML = '<option value="">Все типы</option>';
-        taskProjectIssueTypes.forEach(it => {
-            sel.innerHTML += `<option value="${esc(it.id)}">${it.icon} ${esc(it.name)}</option>`;
-        });
-        sel.value = val;
-    });
-    // Label filter
-    const labelSel = document.getElementById('tasks-filter-label');
-    if (labelSel) {
-        const val = labelSel.value;
-        labelSel.innerHTML = '<option value="">Все метки</option>';
-        taskProjectLabels.forEach(l => {
-            labelSel.innerHTML += `<option value="${esc(l.id)}">${esc(l.name)}</option>`;
-        });
-        labelSel.value = val;
-    }
-    // Custom field filters (for select-type fields)
-    renderCustomFieldFilters();
-}
-
-// ── Kanban Board ────────────────────────────────────────────
-function renderTaskBoard() {
-    if (tasksViewMode === 'board') {
-        document.getElementById('tasks-kanban').style.display = 'flex';
-        document.getElementById('tasks-list').style.display = 'none';
-        renderKanban();
-    } else {
-        document.getElementById('tasks-kanban').style.display = 'none';
-        document.getElementById('tasks-list').style.display = 'flex';
-        renderTaskList();
-    }
-}
-
-function renderCustomFieldFilters() {
-    const container = document.getElementById('tasks-filter-custom');
-    if (!container) return;
-    container.innerHTML = '';
-    // Only render select-type custom fields as filters
-    taskProjectCustomFields.filter(f => f.field_type === 'select').forEach(f => {
-        const sel = document.createElement('select');
-        sel.id = 'tasks-filter-cf-' + f.id;
-        sel.className = 'tasks-filter-input';
-        sel.onchange = () => applyTaskFilters();
-        sel.innerHTML = `<option value="">${esc(f.name)}</option>`;
-        const opts = typeof f.options === 'string' ? JSON.parse(f.options) : (f.options || []);
-        opts.forEach(o => { sel.innerHTML += `<option value="${esc(o)}">${esc(o)}</option>`; });
-        container.appendChild(sel);
-    });
-}
-
-function getFilteredTasks() {
-    let tasks = taskProjectTasks;
-    const fa = document.getElementById('tasks-filter-assignee');
-    const fp = document.getElementById('tasks-filter-priority');
-    const fc = document.getElementById('tasks-filter-creator');
-    const ft = document.getElementById('tasks-filter-type');
-    const fl = document.getElementById('tasks-filter-label');
-    const fs = document.getElementById('tasks-filter-search');
-    const fdf = document.getElementById('tasks-filter-date-from');
-    const fdt = document.getElementById('tasks-filter-date-to');
-    if (fa && fa.value) tasks = tasks.filter(t => t.assignee === fa.value);
-    if (fp && fp.value) tasks = tasks.filter(t => t.priority === fp.value);
-    if (fc && fc.value) tasks = tasks.filter(t => t.created_by === fc.value);
-    if (ft && ft.value) tasks = tasks.filter(t => t.issue_type_id === ft.value);
-    if (fl && fl.value) tasks = tasks.filter(t => (t.labels || []).some(l => l.id === fl.value));
-    if (fs && fs.value) {
-        const q = fs.value.toLowerCase();
-        tasks = tasks.filter(t => t.title.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q));
-    }
-    if (fdf && fdf.value) tasks = tasks.filter(t => t.due_date && t.due_date >= fdf.value);
-    if (fdt && fdt.value) tasks = tasks.filter(t => t.due_date && t.due_date <= fdt.value);
-    // Custom field filters (select-type)
-    taskProjectCustomFields.filter(f => f.field_type === 'select').forEach(f => {
-        const cfSel = document.getElementById('tasks-filter-cf-' + f.id);
-        if (cfSel && cfSel.value) {
-            tasks = tasks.filter(t => {
-                const cv = (t.custom_values || []).find(v => v.field_id === f.id);
-                return cv && cv.value === cfSel.value;
-            });
-        }
-    });
-    return tasks;
-}
-
-function clearTaskFilters() {
-    ['tasks-filter-assignee', 'tasks-filter-priority', 'tasks-filter-creator', 'tasks-filter-type', 'tasks-filter-label'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    ['tasks-filter-search', 'tasks-filter-date-from', 'tasks-filter-date-to'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    // Clear custom field filters
-    taskProjectCustomFields.filter(f => f.field_type === 'select').forEach(f => {
-        const el = document.getElementById('tasks-filter-cf-' + f.id);
-        if (el) el.value = '';
-    });
-    applyTaskFilters();
-}
-
-function renderKanban() {
-    const statuses = ['todo', 'in_progress', 'review', 'done'];
-    const filtered = getFilteredTasks();
-    statuses.forEach(status => {
-        const col = document.getElementById(`kanban-${status}`);
-        const countEl = document.getElementById(`kanban-count-${status}`);
-        const tasks = filtered.filter(t => t.status === status).sort((a, b) => a.position - b.position);
-        countEl.textContent = tasks.length;
-        col.innerHTML = '';
-        tasks.forEach(task => col.appendChild(renderKanbanCard(task)));
-    });
-}
-
-function renderKanbanCard(task) {
-    const card = document.createElement('div');
-    card.className = 'kanban-card';
-    card.draggable = true;
-    card.dataset.taskId = task.id;
-    card.ondragstart = (e) => { draggedTaskId = task.id; e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); };
-    card.ondragend = () => { card.classList.remove('dragging'); draggedTaskId = null; };
-    card.onclick = () => openTaskDetail(task.id);
-    const pColors = { critical: '#e74c3c', high: '#f39c12', medium: 'var(--accent)', low: 'var(--text3)' };
-    const labels = (task.labels || []).map(l => `<span class="kanban-label" style="background:${l.color}">${esc(l.name)}</span>`).join('');
-    let assigneeHtml = '';
-    if (task.assignee_name) {
-        const avatarUrl = task.assignee_avatar ? (API.replace('/api', '') + task.assignee_avatar) : '';
-        assigneeHtml = `<div class="kanban-card-assignee"><div class="kanban-assignee-avatar">${avatarUrl ? `<img src="${avatarUrl}">` : (task.assignee_name[0] || '?')}</div></div>`;
-    }
-    const typeTag = task.issue_type ? `<span class="kanban-type-tag" style="color:${task.issue_type.color}">${task.issue_type.icon} ${esc(task.issue_type.name)}</span>` : '';
-    const keyTag = task.task_key ? `<span class="task-key">${esc(task.task_key)}</span>` : '';
-    card.innerHTML = `${labels ? `<div class="kanban-card-labels">${labels}</div>` : ''}
-        ${typeTag}
-        ${keyTag}
-        <div class="kanban-card-title">${esc(task.title)}</div>
-        <div class="kanban-card-meta">
-            <span class="kanban-priority" style="color:${pColors[task.priority] || pColors.medium}">${PRIORITY_RU[task.priority] || task.priority}</span>
-            ${task.due_date ? `<span>📅 ${task.due_date}</span>` : ''}
-            ${task.subtask_total ? `<span>☑ ${task.subtask_done}/${task.subtask_total}</span>` : ''}
-            ${task.comment_count ? `<span>💬 ${task.comment_count}</span>` : ''}
-            ${task.attachment_count ? `<span>📎 ${task.attachment_count}</span>` : ''}
-        </div>${assigneeHtml}`;
-    return card;
-}
-
-function onKanbanDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('kanban-drop-target'); }
-function onKanbanDragLeave(e) { e.currentTarget.classList.remove('kanban-drop-target'); }
-
-async function onKanbanDrop(e, newStatus) {
-    e.preventDefault();
-    e.currentTarget.classList.remove('kanban-drop-target');
-    if (!draggedTaskId) return;
-    const task = taskProjectTasks.find(t => t.id === draggedTaskId);
-    if (!task || task.status === newStatus) return;
-    const oldStatus = task.status;
-    task.status = newStatus;
-    renderTaskBoard();
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${draggedTaskId}/status`, { method: 'PATCH', body: { status: newStatus } });
-    if (!res || !res.ok) { task.status = oldStatus; renderTaskBoard(); showToast('Ошибка обновления статуса', 'error'); }
-}
-
-// ── Column Picker ───────────────────────────────────────────
-function toggleColumnPicker() {
-    const p = document.getElementById('tasks-col-picker');
-    if (!p) return;
-    const show = p.style.display === 'none';
-    p.style.display = show ? 'block' : 'none';
-    if (show) buildColumnPickerOptions();
-}
-function buildColumnPickerOptions() {
-    const p = document.getElementById('tasks-col-picker');
-    if (!p) return;
-    p.innerHTML = '<div class="tasks-col-picker-title">Столбцы</div>';
-    TASK_COLUMNS.forEach(col => {
-        const label = document.createElement('label');
-        label.className = 'tasks-col-option' + (col.locked ? ' tasks-col-option-locked' : '');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = taskColVis[col.key] !== false;
-        cb.disabled = !!col.locked;
-        if (!col.locked) cb.onchange = () => { taskColVis[col.key] = cb.checked; localStorage.setItem('ch_task_cols', JSON.stringify(taskColVis)); applyTaskColVisibility(); };
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(' ' + col.label));
-        p.appendChild(label);
-    });
-}
-function applyTaskColVisibility() {
-    const visible = TASK_COLUMNS.filter(c => taskColVis[c.key] !== false);
-    const grid = visible.map(c => c.fr).join(' ') + ' auto';
-    const header = document.querySelector('.tasks-list-header');
-    if (header) header.style.gridTemplateColumns = grid;
-    document.querySelectorAll('.tasks-list-row').forEach(r => r.style.gridTemplateColumns = grid);
-    TASK_COLUMNS.forEach(col => {
-        const show = taskColVis[col.key] !== false;
-        document.querySelectorAll('.' + col.key).forEach(el => el.style.display = show ? '' : 'none');
-    });
-}
-
-// ── List View ───────────────────────────────────────────────
-function renderTaskList() {
-    const body = document.getElementById('tasks-list-body');
-    body.innerHTML = '';
-    const filtered = getFilteredTasks();
-    const order = { critical: 0, high: 1, medium: 2, low: 3 };
-    filtered.sort((a, b) => (order[a.priority] ?? 2) - (order[b.priority] ?? 2));
-    filtered.forEach(task => {
-        const row = document.createElement('div');
-        row.className = 'tasks-list-row';
-        row.onclick = () => openTaskDetail(task.id);
-        const typeHtml = task.issue_type ? `<span style="color:${task.issue_type.color}">${task.issue_type.icon} ${esc(task.issue_type.name)}</span>` : '<span style="color:var(--text3)">—</span>';
-        const keyHtml = task.task_key ? `<span class="task-key">${esc(task.task_key)}</span> ` : '';
-        row.innerHTML = `<span class="tl-type">${typeHtml}</span>
-            <span class="tl-title">${keyHtml}${esc(task.title)}</span>
-            <span class="tl-status"><span class="status-badge status-${task.status}">${STATUS_RU[task.status] || task.status}</span></span>
-            <span class="tl-priority"><span class="priority-badge priority-${task.priority}">${PRIORITY_RU[task.priority] || task.priority}</span></span>
-            <span class="tl-assignee">${esc(task.assignee_name || 'Не назначен')}</span>
-            <span class="tl-date">${task.due_date || '-'}</span>`;
-        body.appendChild(row);
-    });
-    applyTaskColVisibility();
-}
-
-function setTasksView(mode) {
-    tasksViewMode = mode;
-    document.querySelectorAll('.tasks-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === mode));
-    renderTaskBoard();
-}
-
-function applyTaskFilters() { renderTaskBoard(); }
-
-// ── Create Task ─────────────────────────────────────────────
-function showCreateTaskDialog() {
-    document.getElementById('create-task-dialog').style.display = 'flex';
-    document.getElementById('task-title-input').value = '';
-    document.getElementById('task-desc-input').value = '';
-    document.getElementById('task-priority-input').value = 'medium';
-    document.getElementById('task-assignee-input').value = '';
-    document.getElementById('task-due-input').value = '';
-    const typeSel = document.getElementById('task-issue-type-input');
-    if (typeSel) typeSel.value = taskProjectIssueTypes.length > 0 ? taskProjectIssueTypes[0].id : '';
-    populateTaskDropdowns();
-    renderLabelChips('task-labels-select', []);
-    renderCustomFieldsForCreate();
-    document.getElementById('task-title-input').focus();
-}
-function closeCreateTaskDialog() {
-    document.getElementById('create-task-dialog').style.display = 'none';
-    createTaskFiles = [];
-    renderCreateTaskFiles();
-}
-
-function onCreateTaskIssueTypeChange() {
-    renderCustomFieldsForCreate();
-}
-
-function renderCustomFieldsForCreate() {
-    const container = document.getElementById('task-custom-fields-create');
-    if (!container) return;
-    container.innerHTML = '';
-    const typeId = document.getElementById('task-issue-type-input')?.value;
-    // Show all project custom fields (in future we can filter by issue type binding)
-    taskProjectCustomFields.forEach(f => {
-        container.appendChild(renderCustomFieldInput(f, ''));
-    });
-}
-
-function renderCustomFieldInput(field, value) {
-    const div = document.createElement('div');
-    div.className = 'task-custom-field-row';
-    div.dataset.fieldId = field.id;
-    const label = document.createElement('label');
-    label.textContent = field.name + (field.required ? ' *' : '');
-    label.style.cssText = 'font-size:12px;color:var(--text2);display:block;margin-bottom:2px;';
-    div.appendChild(label);
-
-    let input;
-    switch (field.field_type) {
-        case 'select': {
-            input = document.createElement('select');
-            input.innerHTML = '<option value="">—</option>';
-            (field.options || []).forEach(opt => {
-                input.innerHTML += `<option value="${esc(opt)}" ${opt === value ? 'selected' : ''}>${esc(opt)}</option>`;
-            });
-            break;
-        }
-        case 'checkbox': {
-            input = document.createElement('input');
-            input.type = 'checkbox';
-            input.checked = value === 'true' || value === '1';
-            break;
-        }
-        case 'date': {
-            input = document.createElement('input');
-            input.type = 'date';
-            input.value = value || '';
-            break;
-        }
-        case 'number': {
-            input = document.createElement('input');
-            input.type = 'number';
-            input.value = value || '';
-            break;
-        }
-        case 'url': {
-            input = document.createElement('input');
-            input.type = 'url';
-            input.value = value || '';
-            input.placeholder = 'https://...';
-            break;
-        }
-        default: {
-            input = document.createElement('input');
-            input.type = 'text';
-            input.value = value || '';
-            break;
-        }
-    }
-    input.className = 'custom-field-input';
-    input.dataset.fieldId = field.id;
-    input.dataset.fieldType = field.field_type;
-    div.appendChild(input);
-    return div;
-}
-
-function getCustomFieldValues(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return {};
-    const values = {};
-    container.querySelectorAll('.custom-field-input').forEach(input => {
-        const fid = input.dataset.fieldId;
-        if (input.dataset.fieldType === 'checkbox') {
-            values[fid] = input.checked ? 'true' : 'false';
-        } else if (input.value) {
-            values[fid] = input.value;
-        }
-    });
-    return values;
-}
-
-function renderLabelChips(containerId, selectedIds) {
-    const c = document.getElementById(containerId);
-    c.innerHTML = '';
-    taskProjectLabels.forEach(l => {
-        const chip = document.createElement('span');
-        chip.className = 'task-label-chip' + (selectedIds.includes(l.id) ? ' selected' : '');
-        chip.style.background = l.color;
-        chip.textContent = l.name;
-        chip.onclick = () => { chip.classList.toggle('selected'); };
-        chip.dataset.labelId = l.id;
-        c.appendChild(chip);
-    });
-}
-
-function getSelectedLabelIds(containerId) {
-    return [...document.querySelectorAll(`#${containerId} .task-label-chip.selected`)].map(c => c.dataset.labelId);
-}
-
-function addCreateTaskFiles(fileList) {
-    if (!fileList) return;
-    for (const f of fileList) createTaskFiles.push(f);
-    document.getElementById('task-create-file-input').value = '';
-    renderCreateTaskFiles();
-}
-
-function removeCreateTaskFile(idx) {
-    createTaskFiles.splice(idx, 1);
-    renderCreateTaskFiles();
-}
-
-function renderCreateTaskFiles() {
-    const list = document.getElementById('task-create-file-list');
-    if (!list) return;
-    list.innerHTML = '';
-    createTaskFiles.forEach((f, i) => {
-        const size = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : (f.size / 1024).toFixed(0) + ' KB';
-        const item = document.createElement('div');
-        item.className = 'task-attachment-item';
-        item.innerHTML = `<span class="material-icons-round" style="font-size:16px">attach_file</span>
-            <span style="flex:1;font-size:13px">${esc(f.name)}</span>
-            <span class="task-attachment-size">${size}</span>
-            <button class="btn-icon" onclick="removeCreateTaskFile(${i})"><span class="material-icons-round" style="font-size:16px">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function createTask() {
-    const title = document.getElementById('task-title-input').value.trim();
-    if (!title) return showToast('Введите название задачи', 'error');
-    const body = {
-        title,
-        description: document.getElementById('task-desc-input').value.trim(),
-        priority: document.getElementById('task-priority-input').value,
-        assignee: document.getElementById('task-assignee-input').value || null,
-        due_date: document.getElementById('task-due-input').value || null,
-        issue_type_id: document.getElementById('task-issue-type-input')?.value || null,
-        label_ids: getSelectedLabelIds('task-labels-select'),
-        custom_values: getCustomFieldValues('task-custom-fields-create'),
-    };
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks`, { method: 'POST', body });
-    if (!res || !res.ok) return showToast('Ошибка создания задачи', 'error');
-    const task = await res.json();
-    // Upload attached files
-    for (const f of createTaskFiles) {
-        const fd = new FormData();
-        fd.append('file', f);
-        await fetch(API + `/tasks/projects/${currentTaskProjectSlug}/tasks/${task.id}/attachments`, {
-            method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd,
-        });
-    }
-    createTaskFiles = [];
-    taskProjectTasks.push(task);
-    closeCreateTaskDialog();
-    renderTaskBoard();
-    showToast('Задача создана');
-}
-
-// ── Task Detail ─────────────────────────────────────────────
-async function openTaskDetail(taskId) {
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${taskId}`);
-    if (!res || !res.ok) return;
-    currentTaskDetail = await res.json();
-    const titleEl = document.getElementById('task-detail-title');
-    if (currentTaskDetail.task_key) {
-        titleEl.innerHTML = `<span class="task-key">${esc(currentTaskDetail.task_key)}</span> ${esc(currentTaskDetail.title)}`;
-    } else {
-        titleEl.textContent = currentTaskDetail.title;
-    }
-    document.getElementById('task-detail-desc').textContent = currentTaskDetail.description || 'No description';
-    document.getElementById('task-detail-status').value = currentTaskDetail.status;
-    document.getElementById('task-detail-priority').value = currentTaskDetail.priority;
-    populateTaskDropdowns();
-    document.getElementById('task-detail-assignee').value = currentTaskDetail.assignee || '';
-    document.getElementById('task-detail-due').value = currentTaskDetail.due_date || '';
-    // Issue type
-    const itSel = document.getElementById('task-detail-issue-type');
-    if (itSel) itSel.value = currentTaskDetail.issue_type_id || '';
-    document.getElementById('task-detail-created').textContent = 'Создано: ' + (currentTaskDetail.created_at || '').slice(0, 10);
-    document.getElementById('task-detail-author').textContent = 'Автор: ' + (currentTaskDetail.created_by || '');
-    // Permission: hide delete if not owner/lead
-    const myRole = currentTaskProject ? currentTaskProject.my_role : '';
-    document.getElementById('task-delete-btn').style.display = (myRole === 'owner' || myRole === 'lead') ? '' : 'none';
-    renderTaskSubtasks(currentTaskDetail.subtasks || []);
-    renderTaskComments(currentTaskDetail.comments || []);
-    renderTaskAttachments(currentTaskDetail.attachments || []);
-    renderTaskDetailLabels(currentTaskDetail.labels || []);
-    renderTaskDetailCustomFields();
-    document.getElementById('task-detail-modal').style.display = 'flex';
-}
-
-function renderTaskDetailCustomFields() {
-    const container = document.getElementById('task-detail-custom-fields');
-    if (!container) return;
-    container.innerHTML = '';
-    const existingValues = {};
-    (currentTaskDetail.custom_values || []).forEach(cv => {
-        existingValues[cv.field_id] = cv.value;
-    });
-    taskProjectCustomFields.forEach(f => {
-        const val = existingValues[f.id] || '';
-        const row = renderCustomFieldInput(f, val);
-        // Add save on change
-        const input = row.querySelector('.custom-field-input');
-        if (input) {
-            const saveHandler = async () => {
-                const newVal = input.dataset.fieldType === 'checkbox' ? (input.checked ? 'true' : 'false') : input.value;
-                await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}`, {
-                    method: 'PUT',
-                    body: { custom_values: { [f.id]: newVal } },
-                });
-            };
-            input.addEventListener('change', saveHandler);
-        }
-        container.appendChild(row);
-    });
-}
-function closeTaskDetail() { document.getElementById('task-detail-modal').style.display = 'none'; currentTaskDetail = null; }
-
-async function updateTaskField(field, value) {
-    if (!currentTaskDetail) return;
-    const body = {};
-    body[field] = value;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}`, { method: 'PUT', body });
-    if (!res || !res.ok) return showToast('Ошибка обновления задачи', 'error');
-    const updated = await res.json();
-    // Update in local list
-    const idx = taskProjectTasks.findIndex(t => t.id === updated.id);
-    if (idx >= 0) taskProjectTasks[idx] = updated;
-    currentTaskDetail = { ...currentTaskDetail, ...updated };
-    renderTaskBoard();
-}
-
-async function deleteCurrentTask() {
-    if (!currentTaskDetail) return;
-    if (!confirm('Удалить эту задачу?')) return;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}`, { method: 'DELETE' });
-    if (!res || !res.ok) return showToast('Ошибка удаления задачи', 'error');
-    taskProjectTasks = taskProjectTasks.filter(t => t.id !== currentTaskDetail.id);
-    closeTaskDetail();
-    renderTaskBoard();
-    showToast('Задача удалена');
-}
-
-// ── Subtasks ────────────────────────────────────────────────
-function renderTaskSubtasks(subtasks) {
-    const list = document.getElementById('task-subtask-list');
-    list.innerHTML = '';
-    const done = subtasks.filter(s => s.completed).length;
-    document.getElementById('task-subtask-progress').textContent = subtasks.length ? `(${done}/${subtasks.length})` : '';
-    subtasks.forEach(s => {
-        const item = document.createElement('div');
-        item.className = 'task-subtask-item' + (s.completed ? ' completed' : '');
-        item.innerHTML = `<input type="checkbox" ${s.completed ? 'checked' : ''} onchange="toggleSubtask('${s.id}', this.checked)">
-            <span style="flex:1">${esc(s.title)}</span>
-            <button class="btn-icon" onclick="deleteSubtask('${s.id}')" title="Удалить"><span class="material-icons-round" style="font-size:16px">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function addSubtask() {
-    const input = document.getElementById('task-subtask-input');
-    const title = input.value.trim();
-    if (!title || !currentTaskDetail) return;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/subtasks`, { method: 'POST', body: { title } });
-    if (!res || !res.ok) return;
-    const sub = await res.json();
-    if (!currentTaskDetail.subtasks) currentTaskDetail.subtasks = [];
-    currentTaskDetail.subtasks.push(sub);
-    renderTaskSubtasks(currentTaskDetail.subtasks);
-    input.value = '';
-}
-
-async function toggleSubtask(subId, completed) {
-    if (!currentTaskDetail) return;
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/subtasks/${subId}`, { method: 'PUT', body: { completed } });
-    const s = (currentTaskDetail.subtasks || []).find(x => x.id === subId);
-    if (s) s.completed = completed ? 1 : 0;
-    renderTaskSubtasks(currentTaskDetail.subtasks || []);
-}
-
-async function deleteSubtask(subId) {
-    if (!currentTaskDetail) return;
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/subtasks/${subId}`, { method: 'DELETE' });
-    currentTaskDetail.subtasks = (currentTaskDetail.subtasks || []).filter(s => s.id !== subId);
-    renderTaskSubtasks(currentTaskDetail.subtasks);
-}
-
-// ── Comments ────────────────────────────────────────────────
-function renderTaskComments(comments) {
-    const list = document.getElementById('task-comment-list');
-    list.innerHTML = '';
-    comments.forEach(c => {
-        const item = document.createElement('div');
-        item.className = 'task-comment-item';
-        const initial = (c.display_name || c.username || '?')[0].toUpperCase();
-        const time = (c.created_at || '').slice(0, 16).replace('T', ' ');
-        item.innerHTML = `<div class="task-comment-avatar">${initial}</div>
-            <div class="task-comment-body"><span class="task-comment-name">${esc(c.display_name || c.username)}</span><span class="task-comment-time">${time}</span><div class="task-comment-text">${esc(c.text)}</div></div>`;
-        list.appendChild(item);
-    });
-    list.scrollTop = list.scrollHeight;
-}
-
-async function addTaskComment() {
-    const input = document.getElementById('task-comment-input');
-    const text = input.value.trim();
-    if (!text || !currentTaskDetail) return;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/comments`, { method: 'POST', body: { text } });
-    if (!res || !res.ok) return;
-    const comment = await res.json();
-    if (!currentTaskDetail.comments) currentTaskDetail.comments = [];
-    currentTaskDetail.comments.push(comment);
-    renderTaskComments(currentTaskDetail.comments);
-    input.value = '';
-}
-
-// ── Attachments ─────────────────────────────────────────────
-function renderTaskAttachments(attachments) {
-    const list = document.getElementById('task-attachment-list');
-    list.innerHTML = '';
-    (attachments || []).forEach(a => {
-        const size = a.filesize > 1048576 ? (a.filesize / 1048576).toFixed(1) + ' MB' : (a.filesize / 1024).toFixed(0) + ' KB';
-        const item = document.createElement('div');
-        item.className = 'task-attachment-item';
-        item.innerHTML = `<span class="material-icons-round" style="font-size:16px;color:var(--text3)">attach_file</span>
-            <a href="${a.filepath}" target="_blank">${esc(a.filename)}</a>
-            <span class="task-attachment-size">${size}</span>
-            <button class="btn-icon" onclick="deleteTaskAttachment('${a.id}')" title="Удалить"><span class="material-icons-round" style="font-size:16px">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function uploadTaskAttachment(files) {
-    if (!files || !files.length || !currentTaskDetail) return;
-    const formData = new FormData();
-    formData.append('file', files[0]);
-    const res = await fetch(API + `/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/attachments`, {
-        method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData
-    });
-    if (!res || !res.ok) return showToast('Ошибка загрузки файла', 'error');
-    const att = await res.json();
-    if (!currentTaskDetail.attachments) currentTaskDetail.attachments = [];
-    currentTaskDetail.attachments.push(att);
-    renderTaskAttachments(currentTaskDetail.attachments);
-    document.getElementById('task-attach-input').value = '';
-    showToast('Файл загружен');
-}
-
-async function deleteTaskAttachment(attId) {
-    if (!currentTaskDetail) return;
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}/attachments/${attId}`, { method: 'DELETE' });
-    currentTaskDetail.attachments = (currentTaskDetail.attachments || []).filter(a => a.id !== attId);
-    renderTaskAttachments(currentTaskDetail.attachments);
-}
-
-// ── Labels in task detail ───────────────────────────────────
-function renderTaskDetailLabels(labels) {
-    const c = document.getElementById('task-detail-labels');
-    c.innerHTML = '';
-    taskProjectLabels.forEach(l => {
-        const isSelected = labels.some(x => x.id === l.id);
-        const chip = document.createElement('span');
-        chip.className = 'task-label-chip' + (isSelected ? ' selected' : '');
-        chip.style.background = l.color;
-        chip.textContent = l.name;
-        chip.onclick = async () => {
-            chip.classList.toggle('selected');
-            const ids = getSelectedLabelIds('task-detail-labels');
-            await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/tasks/${currentTaskDetail.id}`, { method: 'PUT', body: { label_ids: ids } });
-        };
-        chip.dataset.labelId = l.id;
-        c.appendChild(chip);
-    });
-}
-
-// ── Project Settings ────────────────────────────────────────
-async function showProjectSettingsDialog() {
-    if (!currentTaskProject) return;
-    // Ensure allUsers is loaded (may be empty if user opened tracker directly)
-    if (!allUsers.length) {
-        const usersRes = await apiFetch('/users');
-        if (usersRes && usersRes.ok) allUsers = await usersRes.json();
-    }
-    document.getElementById('project-settings-name').value = currentTaskProject.name;
-    document.getElementById('project-settings-desc').value = currentTaskProject.description || '';
-    document.getElementById('project-settings-prefix').value = currentTaskProject.prefix || '';
-    // Visibility toggle
-    const visToggle = document.getElementById('project-settings-visibility');
-    if (visToggle) visToggle.checked = currentTaskProject.visibility === 'public';
-    // Show/hide visibility toggle (only owner can change)
-    const visSection = document.getElementById('project-visibility-toggle');
-    if (visSection) visSection.style.display = currentTaskProject.my_role === 'owner' ? '' : 'none';
-    // Default assignee dropdown
-    const daSelect = document.getElementById('project-settings-default-assignee');
-    if (daSelect) {
-        daSelect.innerHTML = '<option value="">Не назначен</option>';
-        taskProjectMembers.forEach(m => {
-            const sel = currentTaskProject.default_assignee === m.username ? 'selected' : '';
-            daSelect.innerHTML += `<option value="${esc(m.username)}" ${sel}>${esc(m.display_name || m.username)}</option>`;
-        });
-    }
-    // Render members
-    const membersList = document.getElementById('project-members-list');
-    membersList.innerHTML = '';
-    const isOwner = currentTaskProject.my_role === 'owner';
-    taskProjectMembers.forEach(m => {
-        const row = document.createElement('div');
-        row.className = 'project-member-row';
-        const canManage = isOwner && m.username !== currentUser;
-        const ROLE_RU = { owner: 'Владелец', lead: 'Руководитель', member: 'Участник', viewer: 'Наблюдатель' };
-        const roleHtml = canManage
-            ? `<select class="project-member-role-select" onchange="updateMemberRole('${esc(m.username)}', this.value)">
-                <option value="lead" ${m.role==='lead'?'selected':''}>Руководитель</option>
-                <option value="member" ${m.role==='member'?'selected':''}>Участник</option>
-                <option value="viewer" ${m.role==='viewer'?'selected':''}>Наблюдатель</option>
-               </select>`
-            : `<span class="project-member-role">${ROLE_RU[m.role] || m.role}</span>`;
-        row.innerHTML = `<span class="project-member-name">${esc(m.display_name || m.username)}</span>
-            ${roleHtml}
-            ${canManage ? `<button class="btn-icon" onclick="removeProjectMember('${m.username}')" title="Удалить"><span class="material-icons-round" style="font-size:16px">close</span></button>` : ''}`;
-        membersList.appendChild(row);
-    });
-    // Populate add-member dropdown with all users not yet in project
-    const addSelect = document.getElementById('project-add-member-select');
-    addSelect.innerHTML = '<option value="">Выберите пользователя...</option>';
-    const memberUsernames = taskProjectMembers.map(m => m.username);
-    allUsers.forEach(u => {
-        if (!memberUsernames.includes(u.username)) {
-            addSelect.innerHTML += `<option value="${esc(u.username)}">${esc(u.display_name || u.username)}</option>`;
-        }
-    });
-    // Render labels
-    renderProjectLabels();
-    // Render issue types
-    renderProjectIssueTypes();
-    // Render custom fields
-    renderProjectCustomFields();
-    // Show/hide field options based on type
-    setupFieldTypeToggle();
-    // Show/hide owner-only controls
-    document.getElementById('project-delete-btn').style.display = isOwner ? '' : 'none';
-    document.getElementById('project-settings-dialog').style.display = 'flex';
-}
-function closeProjectSettings() { document.getElementById('project-settings-dialog').style.display = 'none'; }
-
-function setupFieldTypeToggle() {
-    const typeSelect = document.getElementById('project-field-type');
-    const optionsRow = document.getElementById('project-field-options-row');
-    if (typeSelect && optionsRow) {
-        typeSelect.onchange = () => {
-            optionsRow.style.display = typeSelect.value === 'select' ? 'flex' : 'none';
-        };
-    }
-}
-
-function renderProjectIssueTypes() {
-    const list = document.getElementById('project-issue-types-list');
-    if (!list) return;
-    list.innerHTML = '';
-    taskProjectIssueTypes.forEach(it => {
-        const item = document.createElement('div');
-        item.className = 'project-issue-type-item';
-        item.innerHTML = `<span style="color:${it.color}">${it.icon}</span>
-            <span style="flex:1;font-size:13px">${esc(it.name)}</span>
-            <button class="btn-icon" onclick="deleteIssueType('${it.id}')" title="Удалить"><span class="material-icons-round" style="font-size:16px">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function createIssueType() {
-    const name = document.getElementById('project-issue-type-name').value.trim();
-    if (!name) return showToast('Введите название типа', 'error');
-    const icon = document.getElementById('project-issue-type-icon').value.trim() || '📋';
-    const color = document.getElementById('project-issue-type-color').value;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/issue-types`, {
-        method: 'POST', body: { name, icon, color },
-    });
-    if (!res || !res.ok) return showToast('Ошибка создания типа', 'error');
-    const it = await res.json();
-    taskProjectIssueTypes.push(it);
-    renderProjectIssueTypes();
-    document.getElementById('project-issue-type-name').value = '';
-    showToast('Тип заявки создан');
-}
-
-async function deleteIssueType(typeId) {
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/issue-types/${typeId}`, { method: 'DELETE' });
-    taskProjectIssueTypes = taskProjectIssueTypes.filter(t => t.id !== typeId);
-    renderProjectIssueTypes();
-}
-
-function renderProjectCustomFields() {
-    const list = document.getElementById('project-custom-fields-list');
-    if (!list) return;
-    list.innerHTML = '';
-    taskProjectCustomFields.forEach(f => {
-        const item = document.createElement('div');
-        item.className = 'project-custom-field-item';
-        const reqBadge = f.required ? '<span class="cf-required">*</span>' : '';
-        const typeBadge = `<span class="cf-type-badge">${f.field_type}</span>`;
-        item.innerHTML = `<span style="flex:1;font-size:13px">${esc(f.name)}${reqBadge}</span>
-            ${typeBadge}
-            <button class="btn-icon" onclick="deleteCustomField('${f.id}')" title="Удалить"><span class="material-icons-round" style="font-size:16px">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function createCustomField() {
-    const name = document.getElementById('project-field-name').value.trim();
-    if (!name) return showToast('Введите название поля', 'error');
-    const fieldType = document.getElementById('project-field-type').value;
-    const required = document.getElementById('project-field-required').checked;
-    let options = [];
-    if (fieldType === 'select') {
-        const optStr = document.getElementById('project-field-options').value.trim();
-        options = optStr ? optStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-    }
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/fields`, {
-        method: 'POST', body: { name, field_type: fieldType, required, options },
-    });
-    if (!res || !res.ok) return showToast('Ошибка создания поля', 'error');
-    const field = await res.json();
-    taskProjectCustomFields.push(field);
-    renderProjectCustomFields();
-    document.getElementById('project-field-name').value = '';
-    document.getElementById('project-field-required').checked = false;
-    document.getElementById('project-field-options').value = '';
-    showToast('Поле создано');
-}
-
-async function deleteCustomField(fieldId) {
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/fields/${fieldId}`, { method: 'DELETE' });
-    taskProjectCustomFields = taskProjectCustomFields.filter(f => f.id !== fieldId);
-    renderProjectCustomFields();
-}
-
-function renderProjectLabels() {
-    const list = document.getElementById('project-labels-list');
-    list.innerHTML = '';
-    taskProjectLabels.forEach(l => {
-        const item = document.createElement('span');
-        item.className = 'project-label-item';
-        item.style.background = l.color;
-        item.innerHTML = `${esc(l.name)} <button class="btn-icon" onclick="deleteProjectLabel('${l.id}')"><span class="material-icons-round">close</span></button>`;
-        list.appendChild(item);
-    });
-}
-
-async function saveProjectSettings() {
-    const name = document.getElementById('project-settings-name').value.trim();
-    const desc = document.getElementById('project-settings-desc').value.trim();
-    if (!name) return showToast('Введите название проекта', 'error');
-    const prefix = document.getElementById('project-settings-prefix').value.trim().toUpperCase();
-    const visCheck = document.getElementById('project-settings-visibility');
-    const visibility = visCheck && visCheck.checked ? 'public' : 'private';
-    const daElem = document.getElementById('project-settings-default-assignee');
-    const default_assignee = daElem ? daElem.value : '';
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}`, { method: 'PUT', body: { name, description: desc, visibility, default_assignee, prefix } });
-    if (!res || !res.ok) return showToast('Ошибка сохранения проекта', 'error');
-    currentTaskProject.name = name;
-    currentTaskProject.description = desc;
-    currentTaskProject.visibility = visibility;
-    currentTaskProject.default_assignee = default_assignee;
-    currentTaskProject.prefix = prefix;
-    document.getElementById('tasks-board-title').textContent = name;
-    document.getElementById('tasks-board-desc').textContent = desc;
-    closeProjectSettings();
-    showToast('Проект обновлён');
-}
-
-async function deleteCurrentProject() {
-    if (!currentTaskProject) return;
-    if (!confirm('Удалить проект и все его задачи?')) return;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}`, { method: 'DELETE' });
-    if (!res || !res.ok) return showToast('Ошибка удаления проекта', 'error');
-    closeProjectSettings();
-    tasksShowProjectList();
-    await loadTaskProjects();
-    showToast('Проект удалён');
-}
-
-async function addProjectMember() {
-    const username = document.getElementById('project-add-member-select').value;
-    const role = document.getElementById('project-add-member-role').value;
-    if (!username) return showToast('Выберите пользователя', 'error');
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/members`, { method: 'POST', body: { username, role } });
-    if (!res || !res.ok) return showToast('Ошибка добавления участника', 'error');
-    showToast('Участник добавлен');
-    // Reload project
-    await openTaskProject(currentTaskProjectSlug);
-    await showProjectSettingsDialog();
-}
-
-async function removeProjectMember(username) {
-    if (!confirm(`Удалить ${username} из проекта?`)) return;
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/members/${username}`, { method: 'DELETE' });
-    if (!res || !res.ok) return showToast('Ошибка удаления участника', 'error');
-    showToast('Участник удалён');
-    await openTaskProject(currentTaskProjectSlug);
-    await showProjectSettingsDialog();
-}
-
-async function updateMemberRole(username, role) {
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/members/${username}`, {
-        method: 'PUT', body: { role }
-    });
-    if (!res || !res.ok) return showToast('Ошибка изменения роли', 'error');
-    showToast('Роль обновлена');
-    await openTaskProject(currentTaskProjectSlug);
-    await showProjectSettingsDialog();
-}
-
-// ── Submit Ticket (public page) ────────────────────────────
-
-async function openSubmitTicketPage(slug) {
-    pushRoute('/tracker/' + encodeURIComponent(slug) + '/submit');
-    document.getElementById('tasks-project-list').style.display = 'none';
-    document.getElementById('tasks-board-view').style.display = 'none';
-    document.getElementById('tasks-submit-view').style.display = 'flex';
-
-    const res = await apiFetch(`/tasks/projects/${slug}/submit-info`);
-    if (!res || !res.ok) {
-        showToast('Проект не найден или не является публичным', 'error');
-        document.getElementById('tasks-submit-view').style.display = 'none';
-        document.getElementById('tasks-project-list').style.display = 'flex';
-        return;
-    }
-    submitProjectData = await res.json();
-
-    document.getElementById('submit-project-name').textContent = submitProjectData.name;
-    document.getElementById('submit-project-desc').textContent = submitProjectData.description || '';
-
-    const container = document.getElementById('submit-subprojects');
-    const noSub = document.getElementById('submit-no-subprojects');
-    const children = submitProjectData.children || [];
-
-    if (children.length === 0) {
-        container.style.display = 'none';
-        noSub.style.display = 'flex';
-        document.querySelector('.tasks-submit-hint').style.display = 'none';
-        return;
-    }
-
-    noSub.style.display = 'none';
-    document.querySelector('.tasks-submit-hint').style.display = 'flex';
-    container.style.display = 'flex';
-    container.innerHTML = '';
-
-    children.forEach(c => {
-        const card = document.createElement('div');
-        card.className = 'subproject-card submit-subproject-card';
-        card.onclick = () => openSubmitTicketDialog(c);
-        card.innerHTML = `<span class="material-icons-round" style="font-size:24px;color:var(--accent)">account_tree</span>
-            <div class="submit-subproject-info">
-                <span class="submit-subproject-name">${esc(c.name)}</span>
-                <span class="submit-subproject-desc">${esc(c.description || '')}</span>
-            </div>
-            <span class="submit-subproject-count">${c.task_count || 0} задач</span>`;
-        container.appendChild(card);
-    });
-}
-
-function openSubmitTicketDialog(target) {
-    submitTicketSlug = target.slug;
-    document.getElementById('submit-ticket-target-name').textContent = target.name;
-    document.getElementById('submit-ticket-title').value = '';
-    document.getElementById('submit-ticket-desc').value = '';
-    document.getElementById('submit-ticket-priority').value = 'medium';
-    document.getElementById('submit-ticket-dialog').style.display = 'flex';
-    document.getElementById('submit-ticket-title').focus();
-}
-
-function closeSubmitTicketDialog() {
-    document.getElementById('submit-ticket-dialog').style.display = 'none';
-    submitTicketSlug = null;
-}
-
-async function submitTicket() {
-    const title = document.getElementById('submit-ticket-title').value.trim();
-    if (!title) return showToast('Введите название тикета', 'error');
-
-    const body = {
-        title,
-        description: document.getElementById('submit-ticket-desc').value.trim(),
-        priority: document.getElementById('submit-ticket-priority').value,
-    };
-
-    try {
-        const res = await apiFetch(`/tasks/projects/${submitTicketSlug}/submit-ticket`, {
-            method: 'POST', body,
-        });
-        if (!res || !res.ok) {
-            const err = await res?.json().catch(() => ({}));
-            return showToast(err.detail || 'Ошибка отправки тикета', 'error');
-        }
-        closeSubmitTicketDialog();
-        showToast('Тикет отправлен');
-    } catch (e) {
-        showToast('Ошибка отправки тикета', 'error');
-    }
-}
-
-async function createProjectLabel() {
-    const name = document.getElementById('project-label-name').value.trim();
-    const color = document.getElementById('project-label-color').value;
-    if (!name) return showToast('Введите название метки', 'error');
-    const res = await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/labels`, { method: 'POST', body: { name, color } });
-    if (!res || !res.ok) return showToast('Ошибка создания метки', 'error');
-    const label = await res.json();
-    taskProjectLabels.push(label);
-    renderProjectLabels();
-    document.getElementById('project-label-name').value = '';
-    showToast('Метка создана');
-}
-
-async function deleteProjectLabel(labelId) {
-    await apiFetch(`/tasks/projects/${currentTaskProjectSlug}/labels/${labelId}`, { method: 'DELETE' });
-    taskProjectLabels = taskProjectLabels.filter(l => l.id !== labelId);
-    renderProjectLabels();
-}
-
-// ── WS Event Handler ────────────────────────────────────────
-function handleTaskWsEvent(data) {
-    // Events that affect the project list (main screen)
-    switch (data.event) {
-        case 'project_created':
-        case 'project_member_added':
-        case 'project_member_removed':
-            // Reload project list if on main screen
-            if (!currentTaskProject) loadTaskProjects();
-            return;
-        case 'project_deleted':
-            if (currentTaskProject && currentTaskProject.id === data.project_id) {
-                tasksShowProjectList();
-            }
-            loadTaskProjects();
-            return;
-    }
-
-    // Events that affect the current project board
-    if (!currentTaskProject || currentTaskProject.id !== data.project_id) return;
-    switch (data.event) {
-        case 'task_created':
-            if (!taskProjectTasks.find(t => t.id === data.task.id)) taskProjectTasks.push(data.task);
-            renderTaskBoard();
-            break;
-        case 'task_updated': {
-            const idx = taskProjectTasks.findIndex(t => t.id === data.task.id);
-            if (idx >= 0) taskProjectTasks[idx] = data.task;
-            renderTaskBoard();
-            if (currentTaskDetail && currentTaskDetail.id === data.task.id) openTaskDetail(data.task.id);
-            break;
-        }
-        case 'task_deleted':
-            taskProjectTasks = taskProjectTasks.filter(t => t.id !== data.task_id);
-            renderTaskBoard();
-            if (currentTaskDetail && currentTaskDetail.id === data.task_id) closeTaskDetail();
-            break;
-        case 'task_status_changed': {
-            const t = taskProjectTasks.find(t => t.id === data.task_id);
-            if (t) t.status = data.new_status;
-            renderTaskBoard();
-            break;
-        }
-        case 'subtask_updated':
-        case 'task_comment_added':
-            if (currentTaskDetail && currentTaskDetail.id === data.task_id) openTaskDetail(data.task_id);
-            break;
-        case 'project_updated':
-            if (data.project) {
-                Object.assign(currentTaskProject, data.project);
-                const titleEl = document.getElementById('tasks-board-title');
-                if (titleEl) titleEl.textContent = data.project.name || currentTaskProject.name;
-            }
-            loadTaskProjects(); // Also refresh project list for table stats
-            break;
-    }
 }
 
 // ── Federation: invite links ────────────────────────────────────────────────

@@ -95,6 +95,75 @@ async def create_folder(data: dict, username: str = Depends(get_current_user)):
     return {"id": folder_id, "name": name, "position": pos, "icon": icon, "channel_slugs": slugs}
 
 
+# ── Как показывать папки ────────────────────────────────────────
+# Полоса папок над списком чатов у всех своя: кому-то нужны «непрочитанные»
+# и «личные», кому-то только свои папки, а кому-то — ничего, чтобы не
+# занимало место. Хранится на сервере, поэтому одинаково на телефоне и
+# планшете. «Все» не выключается: это сам список.
+
+BUILTIN_FILTERS = ("unread", "channels", "direct")
+DEFAULT_PREFS = {"show_strip": True, "builtin": {k: True for k in BUILTIN_FILTERS}}
+
+
+def _clean_prefs(data: dict) -> dict:
+    data = data or {}
+    builtin = data.get("builtin") or {}
+    return {
+        "show_strip": bool(data.get("show_strip", True)),
+        "builtin": {k: bool(builtin.get(k, True)) for k in BUILTIN_FILTERS},
+    }
+
+
+async def _ensure_prefs_table(db):
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS chat_folder_prefs (username TEXT PRIMARY KEY, data TEXT NOT NULL DEFAULT '{}')"
+    )
+
+
+@router.get("/chat-folders/settings")
+async def get_folder_settings(username: str = Depends(get_current_user)):
+    import json
+    db = await get_db()
+    await _ensure_prefs_table(db)
+    cur = await db.execute("SELECT data FROM chat_folder_prefs WHERE username = ?", (username,))
+    row = await cur.fetchone()
+    if not row:
+        return DEFAULT_PREFS
+    try:
+        return _clean_prefs(json.loads(row["data"]))
+    except Exception:
+        return DEFAULT_PREFS
+
+
+@router.put("/chat-folders/settings")
+async def put_folder_settings(data: dict, username: str = Depends(get_current_user)):
+    import json
+    db = await get_db()
+    await _ensure_prefs_table(db)
+    prefs = _clean_prefs(data)
+    await db.execute(
+        "INSERT INTO chat_folder_prefs (username, data) VALUES (?, ?) "
+        "ON CONFLICT(username) DO UPDATE SET data = excluded.data",
+        (username, json.dumps(prefs)),
+    )
+    await db.commit()
+    return prefs
+
+
+@router.put("/chat-folders/order")
+async def reorder_folders(data: dict, username: str = Depends(get_current_user)):
+    """Порядок своих папок: id по порядку слева направо. Чужие id пропускаем."""
+    db = await get_db()
+    await _ensure_table(db)
+    ids = [i for i in (data.get("ids") or []) if isinstance(i, str)]
+    for pos, fid in enumerate(ids):
+        await db.execute(
+            "UPDATE chat_folders SET position = ? WHERE id = ? AND username = ?", (pos, fid, username)
+        )
+    await db.commit()
+    return {"ok": True}
+
+
 @router.put("/chat-folders/{folder_id}")
 async def update_folder(folder_id: str, data: dict, username: str = Depends(get_current_user)):
     """Update folder name or channel list."""

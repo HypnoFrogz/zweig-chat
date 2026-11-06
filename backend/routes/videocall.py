@@ -213,16 +213,13 @@ async def _mark_call_expired_if_needed(db, call_row) -> bool:
 
 
 async def record_missed_call(db, call: dict) -> None:
-    """Отметить неотвеченный звонок: строка в переписке и уведомление.
+    """Отметить неотвеченный звонок: событие в «Уведомлениях» и пуш.
 
-    Пропущенный звонок раньше не оставлял следа вовсе: телефон не звонил
-    достаточно долго — и всё, будто никто не звонил. Теперь в чате остаётся
-    запись, а на устройства уходит уведомление.
-
-    Запись — обычное сообщение с человеческим текстом: клиенты, которые не
-    умеют рисовать звонки, покажут его как текст, а не пустой пузырь. Делает
-    это тот сервер, где живёт вызываемый: у каждой стороны своя строка звонка,
-    и каждая отмечает своего человека, не спрашивая соседа.
+    В переписку звонок больше не пишется — ни «начинает видеозвонок», ни
+    «пропущенный звонок»: строки звонков забивали чат и мешали читать
+    разговор. Пропущенный уходит в ленту «Важное → Уведомления» вызываемого:
+    оттуда видно, кто звонил, и одним нажатием открывается чат, чтобы
+    перезвонить. Делает это тот сервер, где живёт вызываемый.
 
     Никогда не бросает исключений: уборка звонков не должна падать из-за
     недоступного пуш-сервиса.
@@ -236,43 +233,14 @@ async def record_missed_call(db, call: dict) -> None:
 
         caller = call["caller_username"]
         caller_name = await get_display_name(caller)
-        now = now_iso()
-        text = f"Пропущенный звонок от {caller_name}"
-        msg_id = str(uuid.uuid4())
-        call_data = json.dumps(
-            {"status": "missed", "call_id": call["id"], "started_by": caller, "started_at": call["created_at"]},
-            ensure_ascii=False,
-        )
-        await db.execute(
-            "INSERT INTO messages (id, channel_id, sender, sender_name, type, text, file_data, call_data, timestamp) "
-            "VALUES (?,?,?,?,'call',?,NULL,?,?)",
-            (msg_id, call["channel_id"], "system", "System", text, call_data, now),
-        )
-        await db.execute(
-            "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, "
-            "last_msg_timestamp = ? WHERE id = ?",
-            (text, "system", "System", now, call["channel_id"]),
-        )
-        await db.commit()
 
-        members = await _get_members(db, call["channel_id"])
-        msg = {
-            "id": msg_id,
-            "channel_id": call["channel_id"],
-            "sender": "system",
-            "sender_name": "System",
-            "type": "call",
-            "text": text,
-            "timestamp": now,
-            "read_by": [],
-            "reactions": [],
-            "reply_count": 0,
-        }
-        await manager.send_to_channel(members, {
-            "event": "new_message",
-            "channel_slug": call["channel_slug"],
-            "message": msg,
-        })
+        import notifications
+        # dedupe: истечение по таймеру и отмена звонящим могут прийти обе.
+        await notifications.notify(
+            db, callee, "missed_call", actor=caller, title=caller_name,
+            body="Пропущенный звонок", channel_slug=call["channel_slug"] or "",
+            dedupe=f"missed:{call['id']}",
+        )
 
         # Уведомление тем же путём, что и у сообщения: приложение покажет его
         # как обычное, ничего не зная про звонки.
@@ -1051,38 +1019,9 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
         (ch["id"], username, now),
     )
 
-    # System message about call
-    call_msg = {
-        "id": str(uuid.uuid4()),
-        "channel_id": ch["id"],
-        "sender": "system",
-        "sender_name": "System",
-        "type": "call",
-        "text": f"{display_name} начинает видеозвонок",
-        "call": {
-            "room_name": room_name,
-            "status": "active",
-            "started_by": username,
-            "started_at": now,
-        },
-        "timestamp": now,
-        "read_by": [username],
-    }
-
-    call_data = json.dumps(call_msg["call"], ensure_ascii=False)
-    await db.execute(
-        "INSERT INTO messages (id, channel_id, sender, sender_name, type, text, file_data, call_data, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (call_msg["id"], ch["id"], "system", "System", "call", call_msg["text"], None, call_data, now),
-    )
-    await db.execute(
-        "INSERT INTO message_reads (message_id, username) VALUES (?, ?)",
-        (call_msg["id"], username),
-    )
-
-    await db.execute(
-        "UPDATE channels SET last_msg_text = ?, last_msg_sender = ?, last_msg_sender_name = ?, last_msg_timestamp = ? WHERE id = ?",
-        (call_msg["text"], "system", "System", now, ch["id"]),
-    )
+    # Строку «начинает видеозвонок» в переписку больше не пишем: о звонке
+    # говорит плашка над чатом (событие call_started), а история звонков —
+    # в журнале call_log.
     await db.commit()
 
     members = await _get_members(db, ch["id"])
@@ -1145,7 +1084,6 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
                 "badge": 0,
             })
 
-    await manager.send_to_channel(members, {"event": "new_message", "message": call_msg})
 
     return {"token": token, "url": LIVEKIT_PUBLIC_URL, "room_name": room_name}
 

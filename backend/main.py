@@ -21,6 +21,9 @@ from routes.preferences import router as preferences_router
 from routes.devices import router as devices_router
 from routes.chat_folders import router as chat_folders_router
 from routes.tasks import router as tasks_router
+from routes.inbox import router as inbox_router
+import notifications as notifications_module
+import features as features_module
 from routes.push import router as push_router
 from routes.federation import router as federation_router
 from routes.moderation import router as moderation_router
@@ -52,8 +55,10 @@ async def lifespan(app: FastAPI):
     # Автовыход с неактивных устройств: раз в час.
     import sessions as _sessions
     inactive_task = asyncio.create_task(_sessions.run_inactive_loop())
+    due_task = asyncio.create_task(notifications_module.run_due_loop())
+    features_task = asyncio.create_task(features_module.run_loop())
     yield
-    for task in (cleanup_task, outbox_task, presence_task, schedule_task, inactive_task):
+    for task in (cleanup_task, outbox_task, presence_task, schedule_task, inactive_task, due_task, features_task):
         task.cancel()
         try:
             await task
@@ -93,6 +98,7 @@ app.include_router(preferences_router)
 app.include_router(devices_router)
 app.include_router(chat_folders_router)
 app.include_router(tasks_router)
+app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(federation_router)
 app.include_router(moderation_router)

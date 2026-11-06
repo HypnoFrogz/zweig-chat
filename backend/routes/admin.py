@@ -66,6 +66,9 @@ async def _revoke_user_sessions(db, target: str, reason: str):
     await sessions.revoke(db, target, reason)
 
 
+# Собеседники с других серверов (федерация) хранятся заглушками в той же
+# таблице. Это не сотрудники компании: блокировать, сбрасывать пароль или
+# удалять их здесь бессмысленно, поэтому в список админки они не попадают.
 @router.get("/users")
 async def list_all_users(username: str = Depends(get_current_user)):
     await require_admin(username)
@@ -75,6 +78,7 @@ async def list_all_users(username: str = Depends(get_current_user)):
                   u.created_at, u.last_seen,
                   CASE WHEN t.enabled_at IS NOT NULL AND t.secret_enc != '' THEN 1 ELSE 0 END AS twofa
            FROM users u LEFT JOIN user_2fa t ON t.username = u.username
+           WHERE COALESCE(u.home_server, '') = ''
            ORDER BY u.created_at"""
     )
     return [dict(r) for r in await cursor.fetchall()]

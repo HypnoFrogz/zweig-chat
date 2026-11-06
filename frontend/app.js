@@ -448,6 +448,22 @@ const I18N = {
         'call.you': 'вы',
         'search.channels': 'Каналы',
         'search.all': 'Все',
+        'search.noResults': 'Ничего не найдено',
+        'rail.files': 'Файлы',
+        'rail.tasks': 'Трекер',
+        'rail.bell': 'Важное',
+        'rail.admin': 'Админ',
+        'rail.all': 'Все чаты',
+        'rail.newFolder': 'Новая папка',
+        'rail.me': 'Профиль и настройки',
+        'rail.folderEmpty': 'В папке пока нет чатов. Перетащите чат на папку слева или нажмите «Изменить папку».',
+        'rail.editFolder': 'Изменить папку',
+        'browse.open': 'Открыть',
+        'browse.join': 'Вступить',
+        'browse.empty': 'Открытых каналов пока нет',
+        'browse.members1': 'участник',
+        'browse.members2': 'участника',
+        'browse.members5': 'участников',
         'search.usersAndChannels': 'Поиск людей и каналов...',
         'call.inCall': 'В звонке',
         'panel.thread': 'Тред',
@@ -801,6 +817,22 @@ const I18N = {
         'call.you': 'you',
         'search.channels': 'Channels',
         'search.all': 'All',
+        'search.noResults': 'No results',
+        'rail.files': 'Files',
+        'rail.tasks': 'Tracker',
+        'rail.bell': 'Inbox',
+        'rail.admin': 'Admin',
+        'rail.all': 'All chats',
+        'rail.newFolder': 'New folder',
+        'rail.me': 'Profile and settings',
+        'rail.folderEmpty': 'No chats in this folder yet. Drag a chat onto the folder on the left or choose “Edit folder”.',
+        'rail.editFolder': 'Edit folder',
+        'browse.open': 'Open',
+        'browse.join': 'Join',
+        'browse.empty': 'No public channels yet',
+        'browse.members1': 'member',
+        'browse.members2': 'members',
+        'browse.members5': 'members',
         'search.usersAndChannels': 'Search people and channels...',
         'call.inCall': 'In call',
         'panel.thread': 'Thread',
@@ -1072,6 +1104,7 @@ async function showApp() {
         if (adminBtn) adminBtn.style.display = '';
     }
     refreshFederationAvailability();
+    if (window.initInbox) window.initInbox();
     // Route based on current URL path
     const initPath = window.location.pathname;
     if (initPath && initPath !== '/') {
@@ -1461,6 +1494,8 @@ function renameCategory(catId) {
     hideContextMenu();
     const cat = categories.find(c => c.id === catId);
     if (!cat) return;
+    // Папки живут на рельсе, заголовков в списке больше нет — имя меняем в окне папки.
+    if (!document.querySelector('.sidebar-category-header')) { openFolderSheet(catId); return; }
     // Find the category header in DOM and replace name with input
     const headers = document.querySelectorAll('.sidebar-category-header');
     for (const h of headers) {
@@ -1495,6 +1530,7 @@ function renameCategory(catId) {
 async function deleteCategory(catId) {
     hideContextMenu();
     categories = categories.filter(c => c.id !== catId);
+    if (activeFolder === catId) activeFolder = 'all';
     saveCategories();
     renderSidebar();
     try { await apiFetch(`/chat-folders/${catId}`, { method: 'DELETE' }); } catch {}
@@ -1538,10 +1574,20 @@ async function onCategoryDrop(e, catId) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────
+// На телефоне выезжает обёртка с рельсом и списком, а «открыт ли сайдбар»
+// по всему коду решает класс .open у #sidebar. Повторяем его на обёртке.
+document.addEventListener('DOMContentLoaded', () => {
+    const sb = document.getElementById('sidebar'), wrap = document.getElementById('side-wrap');
+    if (!sb || !wrap) return;
+    const sync = () => wrap.classList.toggle('open', sb.classList.contains('open'));
+    new MutationObserver(sync).observe(sb, { attributes: true, attributeFilter: ['class'] });
+    sync();
+});
 function toggleSidebar() {
     const sb = document.getElementById('sidebar');
     const overlay = document.querySelector('.sidebar-overlay');
     sb.classList.toggle('open');
+
     if (!overlay) {
         const ov = document.createElement('div');
         ov.className = 'sidebar-overlay' + (sb.classList.contains('open') ? ' active' : '');
@@ -1575,6 +1621,52 @@ async function loadChannels() {
     renderSidebar();
 }
 
+// Папка, открытая на рельсе: 'all' — все чаты, иначе id папки. Помним выбор
+// между перезагрузками — человек возвращается туда, где был.
+let activeFolder = (() => { try { return localStorage.getItem('ch_active_folder') || 'all'; } catch { return 'all'; } })();
+function selectFolder(id) {
+    activeFolder = id || 'all';
+    try { localStorage.setItem('ch_active_folder', activeFolder); } catch {}
+    // Из файлов, трекера или админки — обратно к перепискам.
+    if (typeof currentPage !== 'undefined' && currentPage && currentPage !== 'messaging') {
+        if (currentChannel) openChannel(currentChannel.slug); else showPage('messaging');
+    }
+    renderSidebar();
+}
+
+// Подсветка на рельсе: раздел (файлы, трекер, админка) или папка чатов.
+function updateRailPage() {
+    const page = (typeof currentPage !== 'undefined' && currentPage) || 'messaging';
+    const set = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', on); };
+    set('rail-files', page === 'files');
+    set('rail-tasks', page === 'tasks');
+    set('sidebar-admin-btn', page === 'admin');
+    document.querySelectorAll('#rail-folders .rail-btn').forEach(b => b.classList.toggle('dim', page !== 'messaging'));
+}
+
+function folderUnread(chs) {
+    return chs.reduce((s, ch) => s + (isChannelMuted(ch) ? 0 : (ch.unread_count || 0)), 0);
+}
+
+function renderRail(sorted) {
+    const box = document.getElementById('rail-folders');
+    if (!box) return;
+    const pip = n => n > 0 ? `<span class="rail-pip">${n > 99 ? '99+' : n}</span>` : '';
+    const allN = folderUnread(sorted);
+    let html = `<button class="rail-btn${activeFolder === 'all' ? ' on' : ''}" onclick="selectFolder('all')"
+                    ondragover="onCategoryDragOver(event)" ondragleave="onCategoryDragLeave(event)" ondrop="onCategoryDrop(event, '__uncategorized__')">
+        <span class="material-icons-round">forum</span><span class="rail-lbl">${esc(t('rail.all'))}</span>${pip(allN)}</button>`;
+    categories.forEach(cat => {
+        const chs = sorted.filter(ch => cat.channelIds.includes(ch.id));
+        html += `<button class="rail-btn${activeFolder === cat.id ? ' on' : ''}" onclick="selectFolder('${cat.id}')" title="${esc(cat.name)}"
+                    oncontextmenu="showCategoryContextMenu(event, '${cat.id}')"
+                    ondragover="onCategoryDragOver(event)" ondragleave="onCategoryDragLeave(event)" ondrop="onCategoryDrop(event, '${cat.id}')">
+            <span class="material-icons-round">${esc(cat.icon || 'folder')}</span><span class="rail-lbl">${esc(cat.name)}</span>${pip(folderUnread(chs))}</button>`;
+    });
+    box.innerHTML = html;
+    updateRailPage();
+}
+
 function renderSidebar() {
     const chatList = document.getElementById('chat-list');
     if (!chatList) return;
@@ -1586,50 +1678,25 @@ function renderSidebar() {
         return tb.localeCompare(ta);
     });
 
-    // Build categorized and uncategorized lists
-    const categorizedIds = new Set();
-    categories.forEach(cat => cat.channelIds.forEach(id => categorizedIds.add(id)));
-    const uncategorized = sorted.filter(ch => !categorizedIds.has(ch.id));
+    // Папку могли удалить на другом устройстве — тогда показываем все чаты.
+    let folder = activeFolder !== 'all' ? categories.find(c => c.id === activeFolder) : null;
+    if (activeFolder !== 'all' && !folder) activeFolder = 'all';
+    renderRail(sorted);
 
-    let html = '';
+    const title = document.getElementById('sidebar-folder-title');
+    if (title) title.textContent = folder ? folder.name : t('rail.all');
 
-    // Render each category
-    categories.forEach(cat => {
-        const catChannels = sorted.filter(ch => cat.channelIds.includes(ch.id));
-        const arrow = cat.collapsed ? 'chevron_right' : 'expand_more';
-        html += `<div class="sidebar-category-header"
-                      ondragover="onCategoryDragOver(event)"
-                      ondragleave="onCategoryDragLeave(event)"
-                      ondrop="onCategoryDrop(event, '${cat.id}')"
-                      oncontextmenu="showCategoryContextMenu(event, '${cat.id}')">
-            <span class="material-icons-round collapse-icon" onclick="toggleCategoryCollapse('${cat.id}')">${arrow}</span>
-            ${cat.icon ? `<span class="material-icons-round sidebar-category-icon" onclick="toggleCategoryCollapse('${cat.id}')">${esc(cat.icon)}</span>` : ''}
-            <span class="sidebar-category-name" onclick="toggleCategoryCollapse('${cat.id}')">${esc(cat.name)}</span>
-            <span class="sidebar-category-count">${catChannels.length}</span>
-        </div>`;
-        if (!cat.collapsed) {
-            catChannels.forEach(ch => { html += renderSidebarItem(ch); });
-        }
-    });
-
-    // Uncategorized section (only show header if there are categories)
-    if (categories.length > 0 && uncategorized.length > 0) {
-        html += `<div class="sidebar-category-header sidebar-uncategorized-header"
-                      ondragover="onCategoryDragOver(event)"
-                      ondragleave="onCategoryDragLeave(event)"
-                      ondrop="onCategoryDrop(event, '__uncategorized__')">
-            <span class="material-icons-round collapse-icon">expand_more</span>
-            <span class="sidebar-category-name">${t('cat.uncategorized')}</span>
-            <span class="sidebar-category-count">${uncategorized.length}</span>
-        </div>`;
+    const list = folder ? sorted.filter(ch => folder.channelIds.includes(ch.id)) : sorted;
+    let html = list.map(renderSidebarItem).join('');
+    if (folder && !list.length) {
+        html = `<div class="sidebar-empty">${esc(t('rail.folderEmpty'))}
+            <button class="btn-action" onclick="openFolderSheet('${folder.id}')">${esc(t('rail.editFolder'))}</button></div>`;
     }
-    uncategorized.forEach(ch => { html += renderSidebarItem(ch); });
-
     chatList.innerHTML = html;
 
     // Update app icon badge (PWA home screen)
     const totalUnread = channels.reduce((s, ch) => s + (ch.unread_count || 0), 0);
-    updateAppBadge(totalUnread);
+    updateAppBadge(totalUnread + (window.notifUnread || 0));
 }
 
 // Resolve the other party of a direct chat. allUsers is the local directory and
@@ -2221,7 +2288,8 @@ function formatMsgText(text) {
     html = html.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
     // Ссылки и номера задач разбираем по кускам: номер вида ЛЕС-24 ищем только
     // вне адресов, иначе он сломал бы ссылку, внутри которой стоит.
-    const refs = window.TaskRefs;
+    // Трекер выключен на сервере — номер задачи остаётся простым текстом.
+    const refs = (window.trackerEnabled && !window.trackerEnabled()) ? null : window.TaskRefs;
     html = html.split(/(https?:\/\/[^\s<]+)/g).map((part, i) => {
         if (i % 2 === 0) return refs ? refs.markText(part) : part;
         const match = part;
@@ -3539,6 +3607,8 @@ function handleWsEvent(data) {
         case 'project_member_added': case 'project_member_removed':
         case 'project_statuses_changed':
             handleTaskWsEvent(data); break;
+        case 'notification': case 'notifications_read': case 'features_changed':
+            if (window.handleInboxWsEvent) window.handleInboxWsEvent(data); break;
         case 'pong': break;
         case 'session_revoked':
             if (data.reason !== 'logout') logout(t('sessions.revoked'));
@@ -3834,6 +3904,13 @@ async function createChannel() {
     openChannel(ch.slug);
     showToast(t('toast.channelCreated'), 'success');
 }
+function membersWord(n) {
+    const a = Math.abs(n) % 100, b = a % 10;
+    if (a > 10 && a < 20) return t('browse.members5');
+    if (b === 1) return t('browse.members1');
+    if (b >= 2 && b <= 4) return t('browse.members2');
+    return t('browse.members5');
+}
 function showBrowseChannelsDialog() {
     document.getElementById('browse-channels-dialog').style.display = 'flex';
     loadBrowseChannels();
@@ -3845,15 +3922,15 @@ async function loadBrowseChannels() {
     const pubChannels = await res.json();
     document.getElementById('browse-channels-body').innerHTML = pubChannels.map(ch => {
         const btn = ch.is_member
-            ? `<button class="btn-action" onclick="openChannel('${ch.slug}'); closeBrowseChannelsDialog();">Open</button>`
-            : `<button class="btn-action btn-accent" onclick="joinChannel('${ch.slug}')">Join</button>`;
+            ? `<button class="btn-action" onclick="openChannel('${ch.slug}'); closeBrowseChannelsDialog();">${t('browse.open')}</button>`
+            : `<button class="btn-action btn-accent" onclick="joinChannel('${ch.slug}')">${t('browse.join')}</button>`;
         return `<div class="browse-channel-item">
             <div class="browse-channel-info">
                 <div class="browse-channel-name"># ${esc(ch.name)}</div>
-                <div class="browse-channel-meta">${ch.member_count} members${ch.description ? ' · ' + esc(ch.description) : ''}</div>
+                <div class="browse-channel-meta">${ch.member_count} ${membersWord(ch.member_count)}${ch.description ? ' · ' + esc(ch.description) : ''}</div>
             </div>${btn}
         </div>`;
-    }).join('') || '<p style="color:var(--text2)">No public channels</p>';
+    }).join('') || `<p style="color:var(--text2)">${t('browse.empty')}</p>`;
 }
 async function joinChannel(slug) {
     const res = await apiFetch(`/channels/${slug}/join`, { method: 'POST' });
@@ -5687,7 +5764,7 @@ async function doSearch() {
             <span class="search-result-time">${formatTime(r.timestamp)}</span>
             <div class="search-result-text">${esc(r.text).substring(0, 200)}</div>
         </div>`;
-    }).join('') || '<p style="padding:12px; color:var(--text2);">No results</p>';
+    }).join('') || `<p style="padding:12px; color:var(--text2);">${t('search.noResults')}</p>`;
 }
 
 // ── Files Page ─────────────────────────────────────────────────
@@ -5706,6 +5783,7 @@ function showPage(page) {
     document.getElementById(`page-${page}`).classList.add('active');
     document.getElementById(`page-${page}`).style.display = 'flex';
     document.querySelectorAll('.page:not(.active)').forEach(p => p.style.display = 'none');
+    updateRailPage();
     if (page === 'files') {
         document.getElementById('topbar-channel-icon').textContent = '📁';
         document.getElementById('topbar-channel-name').textContent = t('files.title');
@@ -6445,7 +6523,7 @@ function filterGlobalSearch() {
             </div>`;
         });
     }
-    results.innerHTML = html || '<p style="padding:16px;color:var(--text2);text-align:center">No results</p>';
+    results.innerHTML = html || `<p style="padding:16px;color:var(--text2);text-align:center">${t('search.noResults')}</p>`;
 }
 
 // ── Federation: invite links ────────────────────────────────────────────────

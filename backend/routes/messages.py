@@ -166,6 +166,8 @@ async def get_messages(
     from routes.channels import visible_from
     since = await visible_from(db, ch["id"], username)
 
+    # Строки звонков (старые «начинает видеозвонок», «пропущенный звонок») в
+    # переписке не показываем: звонки живут в «Уведомлениях» и журнале.
     if before:
         bc = await db.execute("SELECT timestamp FROM messages WHERE id = ?", (before,))
         before_row = await bc.fetchone()
@@ -174,6 +176,7 @@ async def get_messages(
                 """SELECT * FROM messages
                    WHERE channel_id = ? AND timestamp < ? AND timestamp > ?
                      AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
+                     AND type != 'call'
                    ORDER BY timestamp DESC LIMIT ?""",
                 (ch["id"], before_row["timestamp"], since, username, limit),
             )
@@ -181,6 +184,7 @@ async def get_messages(
             cursor = await db.execute(
                 """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
                      AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
+                     AND type != 'call'
                    ORDER BY timestamp DESC LIMIT ?""",
                 (ch["id"], since, username, limit),
             )
@@ -188,6 +192,7 @@ async def get_messages(
         cursor = await db.execute(
             """SELECT * FROM messages WHERE channel_id = ? AND timestamp > ?
                  AND id NOT IN (SELECT message_id FROM message_hidden WHERE username = ?)
+                     AND type != 'call'
                ORDER BY timestamp DESC LIMIT ?""",
             (ch["id"], since, username, limit),
         )
@@ -289,6 +294,13 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
     # Queue for any member living on another server. Never raises.
     from routes.federation import queue_message_for_peers
     await queue_message_for_peers(db, ch["id"], msg, username)
+    # @упоминания — в «Важное» тому, кого позвали. Ошибка ленты не должна
+    # мешать доставке самого сообщения.
+    try:
+        import notifications
+        await notifications.notify_mentions(db, ch, username, text, msg["id"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[notifications] mention failed: {e}")
 
     members = await _get_members(db, ch["id"])
     # Anyone who blocked the sender should neither see the message arrive live
@@ -1012,6 +1024,14 @@ async def _ws_send_message(data: dict, username: str, display_name: str):
     # Same as the REST path: hand the message to federation before broadcasting.
     from routes.federation import queue_message_for_peers
     await queue_message_for_peers(db, channel_id, msg, username)
+    try:
+        import notifications
+        c_ch = await db.execute("SELECT id, slug, name, type FROM channels WHERE id = ?", (channel_id,))
+        ch_row = await c_ch.fetchone()
+        if ch_row:
+            await notifications.notify_mentions(db, dict(ch_row), username, text, msg["id"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[notifications] mention failed: {e}")
 
     members = await _get_members(db, channel_id)
     # Same as the REST path: recipients who blocked the sender drop out before

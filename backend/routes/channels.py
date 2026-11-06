@@ -110,7 +110,7 @@ async def _count_unread(db, channel_id: str, username: str) -> int:
     cursor = await db.execute(
         """SELECT COUNT(*) FROM messages m
            WHERE m.channel_id = ? AND m.sender != ?
-           AND m.timestamp > ?
+           AND m.timestamp > ? AND m.type != 'call'
            AND NOT EXISTS (
                SELECT 1 FROM message_reads mr
                WHERE mr.message_id = m.id AND mr.username = ?

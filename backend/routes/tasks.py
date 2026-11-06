@@ -10,7 +10,10 @@ from helpers import get_current_user, get_display_name, slugify, now_iso, UPLOAD
 from database import get_db
 from ws_manager import manager
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+# Трекер — модуль: выключен в adm.zweig.services — все его ручки отвечают
+# 403 module_disabled. Данные при этом не трогаются.
+from routes.inbox import require_tracker
+router = APIRouter(prefix="/api/tasks", tags=["tasks"], dependencies=[Depends(require_tracker)])
 
 TASK_UPLOAD_DIR = UPLOAD_DIR / "task_attachments"
 TASK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -61,7 +64,7 @@ STATUS_TEMPLATES = {
     "object": [
         ("todo", "Нужно сделать", "#E0A458", "new"),
         ("in_progress", "В работе", "#8FB8E8", "work"),
-        ("review", "На проверке", "#C8A2E0", "work"),
+        ("review", "На проверке", "#C8A2E0", "review"),
         ("done", "Готово", "#7FE0B0", "done"),
     ],
     "requests": [
@@ -71,7 +74,10 @@ STATUS_TEMPLATES = {
         ("done", "Решена", "#7FE0B0", "done"),
     ],
 }
-STATUS_KINDS = ("new", "work", "done")
+# review — «на согласовании»: задача сдана и ждёт решения руководителя или
+# автора. Из этого статуса её принимают (→ первый «Завершена») или
+# возвращают с комментарием (→ первый «В работе»), в том числе с телефона.
+STATUS_KINDS = ("new", "work", "review", "done")
 COLOR_RE = __import__("re").compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -388,7 +394,12 @@ async def get_project(slug: str, username: str = Depends(get_current_user)):
     project = await _get_project_by_slug(db, slug, username)
     # Members
     cursor = await db.execute(
-        """SELECT pm.username, pm.role, pm.joined_at, u.display_name, u.avatar_path
+        """SELECT pm.username, pm.role, pm.joined_at, u.display_name, u.avatar_path,
+                  -- Нагрузка: сколько открытых задач на человеке во всех проектах.
+                  -- Видна в «Передать», чтобы не отдать задачу самому занятому.
+                  (SELECT COUNT(*) FROM tasks t2
+                     LEFT JOIN task_statuses s2 ON s2.project_id = t2.project_id AND s2.key = t2.status
+                    WHERE t2.assignee = pm.username AND COALESCE(s2.kind, 'work') != 'done') AS open_tasks
            FROM task_project_members pm
            JOIN users u ON u.username = pm.username
            WHERE pm.project_id = ?""",
@@ -487,7 +498,12 @@ async def list_members(slug: str, username: str = Depends(get_current_user)):
     db = await get_db()
     project = await _get_project_by_slug(db, slug, username)
     cursor = await db.execute(
-        """SELECT pm.username, pm.role, pm.joined_at, u.display_name, u.avatar_path
+        """SELECT pm.username, pm.role, pm.joined_at, u.display_name, u.avatar_path,
+                  -- Нагрузка: сколько открытых задач на человеке во всех проектах.
+                  -- Видна в «Передать», чтобы не отдать задачу самому занятому.
+                  (SELECT COUNT(*) FROM tasks t2
+                     LEFT JOIN task_statuses s2 ON s2.project_id = t2.project_id AND s2.key = t2.status
+                    WHERE t2.assignee = pm.username AND COALESCE(s2.kind, 'work') != 'done') AS open_tasks
            FROM task_project_members pm
            JOIN users u ON u.username = pm.username
            WHERE pm.project_id = ?""",
@@ -698,7 +714,59 @@ async def create_task(slug: str, data: dict, username: str = Depends(get_current
     await manager.send_to_channel(members, {
         "event": "task_created", "project_id": project["id"], "task": task,
     })
+    await _notify_task(db, project, task, "task_assigned", [task.get("assignee")], username)
     return task
+
+
+async def _notify_task(db, project: dict, task: dict, kind: str, users, actor: str, body: str = ""):
+    """Событие в «Важное» людям задачи. Себе не пишем — это делает notify()."""
+    import notifications
+    for u in {u for u in users if u}:
+        await notifications.notify(db, u, kind, actor=actor, title=task.get("title") or "",
+                                   body=body or project.get("name", ""), project_slug=project.get("slug", ""),
+                                   task_id=task.get("id", ""), task_key=task.get("task_key") or "")
+
+
+async def _is_done(db, project_id: str, status: str) -> bool:
+    return status in await _done_keys(db, project_id)
+
+
+async def _kind_of(db, project_id: str, status: str) -> str:
+    for st in await _get_statuses(db, project_id):
+        if st["key"] == status:
+            return st["kind"]
+    return "work"
+
+
+async def _first_of_kind(db, project_id: str, kind: str) -> str | None:
+    for st in await _get_statuses(db, project_id):
+        if st["kind"] == kind:
+            return st["key"]
+    return None
+
+
+async def _approvers(db, project_id: str, task: dict) -> list[str]:
+    """Кто решает по задаче на согласовании: автор задачи, владелец и руководители проекта."""
+    cur = await db.execute(
+        "SELECT username FROM task_project_members WHERE project_id = ? AND role IN ('owner', 'lead')", (project_id,)
+    )
+    out = {r["username"] for r in await cur.fetchall()}
+    if task.get("created_by"):
+        out.add(task["created_by"])
+    return sorted(out)
+
+
+async def _on_status_change(db, project: dict, task: dict, old_status: str, new_status: str, actor: str):
+    """События в «Важное» при смене статуса: сдали на согласование, закрыли."""
+    if new_status == old_status:
+        return
+    new_kind = await _kind_of(db, project["id"], new_status)
+    old_kind = await _kind_of(db, project["id"], old_status)
+    if new_kind == "review" and old_kind != "review":
+        await _notify_task(db, project, task, "task_review", await _approvers(db, project["id"], task), actor,
+                           body=project.get("name", ""))
+    elif new_kind == "done" and old_kind != "done":
+        await _notify_task(db, project, task, "task_done", [task.get("created_by")], actor)
 
 
 # ── Public Ticket Submission ────────────────────────────────────
@@ -789,6 +857,7 @@ async def submit_ticket(slug: str, data: dict, username: str = Depends(get_curre
     await manager.send_to_channel(members, {
         "event": "task_created", "project_id": project["id"], "task": task,
     })
+    await _notify_task(db, project, task, "task_assigned", [task.get("assignee")], username)
     return task
 
 
@@ -826,6 +895,22 @@ async def get_task(slug: str, task_id: str, username: str = Depends(get_current_
     )
     task["attachments"] = [dict(r) for r in await att_cursor.fetchall()]
 
+    # Что этот человек может сделать с задачей — кнопки на телефоне и в вебе
+    # не гадают по ролям сами.
+    st = {x["key"]: x for x in await _get_statuses(db, project["id"])}.get(task["status"]) or {}
+    task["status_name"] = st.get("name", task["status"])
+    task["status_color"] = st.get("color", "")
+    task["status_kind"] = st.get("kind", "work")
+    task["project_slug"] = project["slug"]
+    task["project_name"] = project.get("name", "")
+    task["project_color"] = project.get("color", "")
+    role = await _get_project_role(db, project["id"], username)
+    approvers = await _approvers(db, project["id"], task)
+    task["can_decide"] = task["status_kind"] == "review" and username in approvers
+    task["can_delegate"] = role in ("owner", "lead") or username in (task.get("created_by"), task.get("assignee"))
+    task["can_submit"] = task.get("assignee") == username and task["status_kind"] in ("new", "work")
+    task["has_review"] = bool(await _first_of_kind(db, project["id"], "review"))
+    task["created_by_name"] = await get_display_name(task["created_by"]) if task.get("created_by") else ""
     return task
 
 
@@ -846,6 +931,8 @@ async def update_task(slug: str, task_id: str, data: dict, username: str = Depen
     if role not in ("owner", "lead") and username not in (task_row["created_by"], task_row["assignee"]):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
+    old_assignee = task_row["assignee"]
+    old_status = task_row["status"]
     now = now_iso()
     fields = {}
     for f in ("title", "description", "status", "priority", "assignee", "due_date", "issue_type_id"):
@@ -896,6 +983,10 @@ async def update_task(slug: str, task_id: str, data: dict, username: str = Depen
     await manager.send_to_channel(members, {
         "event": "task_updated", "project_id": project["id"], "task": task,
     })
+    if "assignee" in fields and fields["assignee"] and fields["assignee"] != old_assignee:
+        await _notify_task(db, project, task, "task_assigned", [fields["assignee"]], username)
+    if "status" in fields:
+        await _on_status_change(db, project, task, old_status, fields["status"], username)
     return task
 
 
@@ -954,6 +1045,10 @@ async def change_task_status(slug: str, task_id: str, data: dict, username: str 
         "task_id": task_id, "old_status": old_status, "new_status": new_status,
         "username": username,
     })
+    c = await db.execute("SELECT id, title, task_key, created_by, assignee FROM tasks WHERE id = ?", (task_id,))
+    t = await c.fetchone()
+    if t:
+        await _on_status_change(db, project, dict(t), old_status, new_status, username)
     return {"ok": True}
 
 
@@ -1121,6 +1216,11 @@ async def add_comment(slug: str, task_id: str, data: dict, username: str = Depen
         "event": "task_comment_added", "project_id": project["id"],
         "task_id": task_id, "comment": comment,
     })
+    c = await db.execute("SELECT id, title, task_key, assignee, created_by FROM tasks WHERE id = ?", (task_id,))
+    t = await c.fetchone()
+    if t:
+        await _notify_task(db, project, dict(t), "task_comment", [t["assignee"], t["created_by"]], username,
+                           body=f"{display_name}: {text[:200]}")
     return comment
 
 
@@ -1553,3 +1653,183 @@ async def resolve_task_keys(keys: str = Query(""), username: str = Depends(get_c
             "attachment_count": task.get("attachment_count", 0),
         })
     return out
+
+
+# ── Решения по задаче: принять, вернуть, передать ──────────────────
+# Отдельные ручки, а не общий PUT: у каждой своё правило «кто может» и своё
+# событие получателю. Ими пользуются кнопки в «Важном», в карточке задачи и
+# прямо в пуше на телефоне.
+
+async def _load_task(db, project: dict, task_id: str) -> dict:
+    cur = await db.execute("SELECT * FROM tasks WHERE id = ? AND project_id = ?", (task_id, project["id"]))
+    row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    return dict(row)
+
+
+async def _add_system_comment(db, task_id: str, username: str, text: str):
+    display_name = await get_display_name(username)
+    await db.execute(
+        "INSERT INTO task_comments (id, task_id, username, display_name, text, created_at) VALUES (?,?,?,?,?,?)",
+        (str(uuid.uuid4()), task_id, username, display_name, text, now_iso()),
+    )
+
+
+async def _broadcast_task(db, project: dict, task_id: str, extra_event: dict | None = None) -> dict:
+    cur = await db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+    task = await _build_task(db, await cur.fetchone())
+    members = await _get_project_members(db, project["id"])
+    await manager.send_to_channel(members, {"event": "task_updated", "project_id": project["id"], "task": task})
+    if extra_event:
+        await manager.send_to_channel(members, {**extra_event, "project_id": project["id"]})
+    return task
+
+
+@router.post("/projects/{slug}/tasks/{task_id}/approve")
+async def approve_task(slug: str, task_id: str, data: dict | None = None, username: str = Depends(get_current_user)):
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    t = await _load_task(db, project, task_id)
+    if username not in await _approvers(db, project["id"], t):
+        raise HTTPException(status_code=403, detail="Принять задачу может автор или руководитель проекта")
+    if await _kind_of(db, project["id"], t["status"]) == "done":
+        raise HTTPException(status_code=409, detail="Задача уже закрыта")
+    target = await _first_of_kind(db, project["id"], "done")
+    if not target:
+        raise HTTPException(status_code=409, detail="В проекте нет статуса «Завершена»")
+    await db.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", (target, now_iso(), task_id))
+    note = ((data or {}).get("comment") or "").strip()
+    if note:
+        await _add_system_comment(db, task_id, username, note)
+    await db.commit()
+    task = await _broadcast_task(db, project, task_id)
+    await _notify_task(db, project, task, "task_approved", [t.get("assignee")], username, body=note or project.get("name", ""))
+    import notifications
+    await notifications.mark_read(db, username, task_id=task_id)
+    return task
+
+
+@router.post("/projects/{slug}/tasks/{task_id}/submit")
+async def submit_task(slug: str, task_id: str, data: dict | None = None, username: str = Depends(get_current_user)):
+    """Исполнитель сдаёт работу: на согласование, а если такого статуса в проекте нет — сразу в «Завершена»."""
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    t = await _load_task(db, project, task_id)
+    role = await _get_project_role(db, project["id"], username)
+    if t.get("assignee") != username and role not in ("owner", "lead"):
+        raise HTTPException(status_code=403, detail="Сдать задачу может её исполнитель")
+    if await _kind_of(db, project["id"], t["status"]) in ("review", "done"):
+        raise HTTPException(status_code=409, detail="Задача уже сдана")
+    target = await _first_of_kind(db, project["id"], "review") or await _first_of_kind(db, project["id"], "done")
+    if not target:
+        raise HTTPException(status_code=409, detail="В проекте нет подходящего статуса")
+    await db.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", (target, now_iso(), task_id))
+    note = ((data or {}).get("comment") or "").strip()
+    if note:
+        await _add_system_comment(db, task_id, username, note)
+    await db.commit()
+    task = await _broadcast_task(db, project, task_id)
+    await _on_status_change(db, project, task, t["status"], target, username)
+    return task
+
+
+@router.post("/projects/{slug}/tasks/{task_id}/reject")
+async def reject_task(slug: str, task_id: str, data: dict, username: str = Depends(get_current_user)):
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    t = await _load_task(db, project, task_id)
+    if username not in await _approvers(db, project["id"], t):
+        raise HTTPException(status_code=403, detail="Вернуть задачу может автор или руководитель проекта")
+    comment = (data.get("comment") or "").strip()
+    if not comment:
+        raise HTTPException(status_code=400, detail="Напишите, что поправить")
+    target = await _first_of_kind(db, project["id"], "work") or await _first_of_kind(db, project["id"], "new")
+    fields, values = ["status = ?", "updated_at = ?"], [target or t["status"], now_iso()]
+    due = (data.get("due_date") or "").strip()
+    if due:
+        fields.append("due_date = ?"); values.append(due[:10])
+    await db.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?", [*values, task_id])
+    await _add_system_comment(db, task_id, username, f"Вернул(а) на доработку: {comment}")
+    await db.commit()
+    task = await _broadcast_task(db, project, task_id)
+    await _notify_task(db, project, task, "task_returned", [t.get("assignee")], username, body=comment[:300])
+    import notifications
+    await notifications.mark_read(db, username, task_id=task_id)
+    return task
+
+
+@router.post("/projects/{slug}/tasks/{task_id}/delegate")
+async def delegate_task(slug: str, task_id: str, data: dict, username: str = Depends(get_current_user)):
+    db = await get_db()
+    project = await _get_project_by_slug(db, slug, username)
+    t = await _load_task(db, project, task_id)
+    role = await _get_project_role(db, project["id"], username)
+    if role not in ("owner", "lead") and username not in (t["created_by"], t["assignee"]):
+        raise HTTPException(status_code=403, detail="Передать задачу может автор, исполнитель или руководитель")
+    to = (data.get("assignee") or "").strip()
+    if not to or not await _get_project_role(db, project["id"], to):
+        raise HTTPException(status_code=400, detail="Выберите участника проекта")
+    fields, values = ["assignee = ?", "updated_at = ?"], [to, now_iso()]
+    due = (data.get("due_date") or "").strip()
+    if due:
+        fields.append("due_date = ?"); values.append(due[:10])
+    await db.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?", [*values, task_id])
+    note = (data.get("comment") or "").strip()
+    to_name = await get_display_name(to)
+    await _add_system_comment(db, task_id, username, f"Передал(а) задачу: {to_name}" + (f". {note}" if note else ""))
+    await db.commit()
+    task = await _broadcast_task(db, project, task_id)
+    await _notify_task(db, project, task, "task_assigned", [to], username, body=note or project.get("name", ""))
+    import notifications
+    await notifications.mark_read(db, username, task_id=task_id)
+    return task
+
+
+def _mine_sql(scope: str, username: str, select: str) -> tuple[str, list]:
+    q = f"""SELECT {select}
+              FROM tasks t
+              JOIN task_projects p ON p.id = t.project_id
+              JOIN task_project_members me ON me.project_id = t.project_id AND me.username = ?
+              LEFT JOIN task_statuses s ON s.project_id = t.project_id AND s.key = t.status
+              WHERE COALESCE(s.kind, 'work') != 'done'"""
+    params: list = [username]
+    if scope == "decide":
+        q += " AND s.kind = 'review' AND (t.created_by = ? OR me.role IN ('owner', 'lead'))"
+        params.append(username)
+    elif scope == "created":
+        q += " AND t.created_by = ? AND COALESCE(t.assignee, '') != ?"
+        params += [username, username]
+    else:
+        q += " AND t.assignee = ?"
+        params.append(username)
+    return q, params
+
+
+@router.get("/mine")
+async def my_tasks(scope: str = Query("mine"), username: str = Depends(get_current_user)):
+    """Задачи для телефона: decide — ждут моего решения, mine — на мне, created — поставил я.
+
+    Открытые задачи из всех проектов, где я участник, сразу с проектом и
+    статусом, плюс счётчики всех трёх вкладок — экран не ходит по проектам.
+    """
+    if scope not in ("decide", "mine", "created"):
+        scope = "mine"
+    db = await get_db()
+    q, params = _mine_sql(scope, username, """t.*, p.slug AS project_slug, p.name AS project_name,
+        p.color AS project_color, s.name AS status_name, s.color AS status_color,
+        COALESCE(s.kind, 'work') AS status_kind, me.role AS my_role""")
+    q += " ORDER BY CASE WHEN t.due_date IS NULL OR t.due_date = '' THEN 1 ELSE 0 END, t.due_date, t.updated_at DESC LIMIT 200"
+    cur = await db.execute(q, params)
+    items = []
+    for r in await cur.fetchall():
+        d = await _build_task(db, r)
+        for k in ("project_slug", "project_name", "project_color", "status_name", "status_color", "status_kind"):
+            d[k] = r[k]
+        d["can_decide"] = r["status_kind"] == "review" and (r["created_by"] == username or r["my_role"] in ("owner", "lead"))
+        items.append(d)
+    counts = {}
+    for sc in ("decide", "mine", "created"):
+        cq, cp = _mine_sql(sc, username, "COUNT(*)")
+        counts[sc] = (await (await db.execute(cq, cp)).fetchone())[0]
+    return {"scope": scope, "items": items, "counts": counts}

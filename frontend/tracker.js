@@ -31,11 +31,11 @@ const ROLE_HINT = {
     member: 'Создаёт задачи, ведёт свои, комментирует',
     viewer: 'Видит доску и обсуждения, ничего не меняет',
 };
-const KIND_RU = { new: 'Не начата', work: 'В работе', done: 'Завершена' };
+const KIND_RU = { new: 'Не начата', work: 'В работе', review: 'На согласовании', done: 'Завершена' };
 const PALETTE = ['#7FE0B0', '#E0A458', '#D97B4F', '#5FA3C4', '#9C86C9', '#D07A90', '#8FB8E8', '#C8A2E0', '#D9C79A', '#F07A6A', '#8A958F'];
 const TEMPLATES = [
     { id: 'simple', name: 'Простой', cols: [['Нужно сделать', '#E0A458'], ['В работе', '#8FB8E8'], ['Готово', '#7FE0B0']] },
-    { id: 'object', name: 'Объект / стройка', cols: [['Нужно сделать', '#E0A458'], ['В работе', '#8FB8E8'], ['На проверке', '#C8A2E0'], ['Готово', '#7FE0B0']] },
+    { id: 'object', name: 'С проверкой', cols: [['Нужно сделать', '#E0A458'], ['В работе', '#8FB8E8'], ['На проверке', '#C8A2E0'], ['Готово', '#7FE0B0']] },
     { id: 'requests', name: 'Заявки', cols: [['Новая', '#F07A6A'], ['В работе', '#8FB8E8'], ['Ждёт ответа', '#E0A458'], ['Решена', '#7FE0B0']] },
 ];
 const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
@@ -741,9 +741,9 @@ function npBody() {
         <div class="trk-np-col">
             <div class="trk-np-row">
                 <label class="trk-field trk-grow">Название проекта
-                    <input type="text" id="np-name" value="${ha(NP.name)}" data-act="np" data-k="name" placeholder="Например, Объект на Лесной" maxlength="80"></label>
+                    <input type="text" id="np-name" value="${ha(NP.name)}" data-act="np" data-k="name" placeholder="Например, Запуск сайта" maxlength="80"></label>
                 <label class="trk-field trk-np-prefix">Префикс задач
-                    <input type="text" id="np-prefix" value="${ha(NP.prefix)}" data-act="np" data-k="prefix" maxlength="6" placeholder="ЛЕС"></label>
+                    <input type="text" id="np-prefix" value="${ha(NP.prefix)}" data-act="np" data-k="prefix" maxlength="6" placeholder="САЙ"></label>
             </div>
             <div class="trk-muted" id="np-prefix-hint">${NP.prefix ? `Задачи будут нумероваться <span class="trk-mono">${h(NP.prefix)}-1, ${h(NP.prefix)}-2…</span> — так их номер будет выглядеть и в чате` : 'Префикс подставится из названия'}</div>
             <div class="trk-field">Цвет
@@ -761,7 +761,7 @@ function npBody() {
             <div class="trk-field">Кто видит проект
                 <div class="trk-seg">${[['private', 'Только участники'], ['public', 'Вся компания']].map(([v, n]) => `<button type="button" class="${NP.vis === v ? 'on' : ''}" data-act="np-vis" data-v="${v}" aria-pressed="${NP.vis === v}">${n}</button>`).join('')}</div>
                 <span class="trk-muted">${NP.vis === 'public' ? 'Видят все сотрудники, менять могут только участники. Подходит для заявок в ИТ или АХО.' : 'Проект видят только добавленные люди.'}</span></div>
-            <label class="trk-check-row"><span>Обсуждение внутри новых задач<span class="trk-muted">выключено — задачи без чата; включается в карточке</span></span>
+            <label class="trk-check-row"><span>Обсуждение внутри новых задач<span class="trk-muted">${NP.disc ? 'включено — у каждой задачи свой чат' : 'выключено — задачи без чата; включить можно в карточке'}</span></span>
                 <input type="checkbox" data-act="np-disc"${NP.disc ? ' checked' : ''}></label>
             <div class="trk-field">Участники · ${NP.people.length + 1}
                 <div class="trk-np-person">${avatar(currentUser, 30)}<span class="trk-grow"><b>${h(personName(currentUser))}</b> <span class="trk-muted">вы</span></span><span class="trk-role trk-role-owner">Владелец</span></div>
@@ -1016,7 +1016,7 @@ async function onChange(e) {
             try { await api('PUT', `/projects/${slugP()}/members/${encodeURIComponent(ds.user)}`, { role: el.value }); await reloadProject(); showToast('Роль изменена'); } catch (_) { await reloadProject(); }
             break;
         case 'np': if (ds.k === 'parent') NP.parent = el.value; break;
-        case 'np-disc': NP.disc = el.checked; break;
+        case 'np-disc': NP.disc = el.checked; npRerender(); break;
         case 'np-add': if (el.value) { NP.people.push({ username: el.value, role: 'member' }); npRerender(); } break;
         case 'np-role': NP.people[+ds.i].role = el.value; break;
         case 'st-kind': ST.list[+ds.i].kind = el.value; break;

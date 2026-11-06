@@ -16,7 +16,7 @@
       account: 'аккаунт', app: 'приложение', security: 'безопасность', server: 'сервер', help: 'помощь',
       profile: 'Профиль', appearance: 'Оформление', notifications: 'Уведомления', devices: 'Устройства',
       secTitle: 'Безопасность', integrations: 'Интеграции', federation: 'Связи с серверами', admin: 'Администрирование',
-      about: 'О приложении', logout: 'Выйти', save: 'Сохранить', password: 'Пароль', changePw: 'Сменить пароль', newPw: 'Новый пароль',
+      about: 'О приложении', feedback: 'Обратная связь', logout: 'Выйти', save: 'Сохранить', password: 'Пароль', changePw: 'Сменить пароль', newPw: 'Новый пароль',
       pwHint: 'Новый пароль для входа в Zweig. Остальные устройства останутся в аккаунте.',
       twofa: 'Двухфакторная защита', delAcc: 'Удаление аккаунта',
       delHint: 'Аккаунт и личные данные удаляются навсегда. Ваши сообщения в общих каналах станут анонимными.',
@@ -44,7 +44,7 @@
       account: 'account', app: 'app', security: 'security', server: 'server', help: 'help',
       profile: 'Profile', appearance: 'Appearance', notifications: 'Notifications', devices: 'Devices',
       secTitle: 'Security', integrations: 'Integrations', federation: 'Linked servers', admin: 'Administration',
-      about: 'About', logout: 'Sign out', save: 'Save', password: 'Password', changePw: 'Change password', newPw: 'New password',
+      about: 'About', feedback: 'Feedback', logout: 'Sign out', save: 'Save', password: 'Password', changePw: 'Change password', newPw: 'New password',
       pwHint: 'A new password for signing in to Zweig. Your other devices stay signed in.',
       twofa: 'Two-factor authentication', delAcc: 'Delete account',
       delHint: 'Your account and personal data are deleted permanently. Your messages in shared channels become anonymous.',
@@ -149,6 +149,7 @@
     { id: 'federation', group: 'server', icon: 'hub', title: 'federation', cond: () => { const r = $('settings-federation-row'); return r && r.style.display !== 'none'; } },
     { id: 'admin', group: 'server', icon: 'admin_panel_settings', title: 'admin', cond: () => userRole === 'admin' },
     { id: 'about', group: 'help', icon: 'help_outline', title: 'about' },
+    { id: 'feedback', group: 'help', icon: 'feedback', title: 'feedback' },
   ];
 
   function closeAccount() { if (acct) acct.style.display = 'none'; }
@@ -253,6 +254,7 @@
 
   function pickAccount(id) {
     if (id === 'admin') { closeAccount(); window.navigateToAdmin(); return; }
+    if (id === 'feedback') { closeAccount(); window.showFeedbackModal(); return; }
     acctSec = id;
     renderNav(acct, ACCT, id, pickAccount);
     if (id === 'profile') loadProfile();

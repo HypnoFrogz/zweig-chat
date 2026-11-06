@@ -14,7 +14,7 @@
     <script>try{var t=localStorage.getItem('ch_theme');if(t&&t!=='dark'){document.documentElement.setAttribute('data-theme',t);document.querySelector('meta[name=theme-color]').content='#EEEBE4';}}catch(e){}</script>
     <link rel="stylesheet" href="/fonts.css?v=1">
     <link rel="stylesheet" href="/style.css?v=61">
-    <link rel="stylesheet" href="/theme-c.css?v=8">
+    <link rel="stylesheet" href="/theme-c.css?v=10">
     <link rel="stylesheet" href="/tracker.css?v=1">
 </head>
 <body>
@@ -88,27 +88,43 @@
 <div id="app-screen" class="screen">
     <div class="app-layout">
 
+        <!-- ── LEFT: rail + chat list ── -->
+        <div class="side-wrap" id="side-wrap">
+        <!-- Рельс: папки чатов и разделы приложения. Подписи под иконками —
+             чтобы не гадать, что значит каждая кнопка. -->
+        <nav class="rail" id="rail" aria-label="Разделы">
+            <div class="rail-logo" title="Zweig"><svg class="zw-mark rail-logo-svg" viewBox="0 0 100 100" aria-hidden="true"><path class="s" d="M46 86V32" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 62C46 52 56 48 66 48" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 74C46 68 38 64 30 64" fill="none" stroke-width="6" stroke-linecap="round"/><rect class="t" x="34" y="12" width="24" height="24" rx="7"/><rect class="a" x="64" y="37" width="22" height="22" rx="7"/><rect class="b" x="14" y="56" width="17" height="17" rx="5"/></svg></div>
+            <div class="rail-folders" id="rail-folders"></div>
+            <button class="rail-btn rail-add" onclick="showCategoryPrompt()" title="Новая папка" data-i18n-title="rail.newFolder" aria-label="Новая папка">
+                <span class="rail-add-box"><span class="material-icons-round">add</span></span>
+            </button>
+            <div class="rail-sep"></div>
+            <button class="rail-btn sidebar-files-btn" id="rail-files" onclick="navigateToFiles()">
+                <span class="material-icons-round">description</span><span class="rail-lbl" data-i18n="rail.files">Файлы</span>
+            </button>
+            <button class="rail-btn sidebar-tasks-btn" id="rail-tasks" onclick="navigateToTasks()">
+                <span class="material-icons-round">view_kanban</span><span class="rail-lbl" data-i18n="rail.tasks">Трекер</span>
+            </button>
+            <div class="rail-grow"></div>
+            <button class="rail-btn" id="rail-bell" onclick="toggleNotifPanel()">
+                <span class="material-icons-round">notifications</span><span class="rail-lbl" data-i18n="rail.bell">Важное</span>
+                <span class="rail-pip rail-pip-amber" id="rail-bell-pip" style="display:none"></span>
+            </button>
+            <button class="rail-btn sidebar-admin-btn" id="sidebar-admin-btn" onclick="navigateToAdmin()" style="display:none">
+                <span class="material-icons-round">admin_panel_settings</span><span class="rail-lbl" data-i18n="rail.admin">Админ</span>
+            </button>
+            <button class="rail-btn rail-me" onclick="showSettingsMenu()" title="Профиль и настройки" data-i18n-title="rail.me" aria-label="Профиль и настройки">
+                <span class="sidebar-user-avatar rail-avatar" id="sidebar-user-avatar"></span>
+            </button>
+        </nav>
+
         <!-- ── SIDEBAR ── -->
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-header-top">
-                    <svg class="zw-mark sidebar-logo-svg" viewBox="0 0 100 100" aria-hidden="true"><path class="s" d="M46 86V32" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 62C46 52 56 48 66 48" fill="none" stroke-width="7" stroke-linecap="round"/><path class="s" d="M46 74C46 68 38 64 30 64" fill="none" stroke-width="6" stroke-linecap="round"/><rect class="t" x="34" y="12" width="24" height="24" rx="7"/><rect class="a" x="64" y="37" width="22" height="22" rx="7"/><rect class="b" x="14" y="56" width="17" height="17" rx="5"/></svg>
-                    <span class="sidebar-title">Zweig</span>
-                </div>
-                <div class="sidebar-header-btns">
-                    <button class="btn-icon sidebar-files-btn" onclick="navigateToFiles()" title="Файлы" data-i18n-title="tip.files">
-                        <span class="material-icons-round">folder</span>
-                    </button>
-                    <button class="btn-icon sidebar-tasks-btn" onclick="navigateToTasks()" title="Трекер задач">
-                        <span class="material-icons-round">view_kanban</span>
-                    </button>
-                    <button class="btn-icon" onclick="showFeedbackModal()" title="Обратная связь" data-i18n-title="tip.feedback">
-                        <span class="material-icons-round">feedback</span>
-                    </button>
-                    <button class="btn-icon sidebar-admin-btn" id="sidebar-admin-btn" onclick="navigateToAdmin()" title="Администрирование" data-i18n-title="tip.admin" style="display:none">
-                        <span class="material-icons-round">admin_panel_settings</span>
-                    </button>
-                </div>
+            <div class="sidebar-head">
+                <span class="sidebar-head-title" id="sidebar-folder-title">Все чаты</span>
+                <button class="btn-icon-xs sidebar-head-btn" onclick="showNewChatDialog()" title="Новый чат" data-i18n-title="tip.new_chat" aria-label="Новый чат">
+                    <span class="material-icons-round">edit</span>
+                </button>
             </div>
 
             <div class="sidebar-search">
@@ -119,35 +135,13 @@
                 <div id="sidebar-search-dropdown" class="sidebar-search-dropdown" style="display:none"></div>
             </div>
 
-            <!-- Unified chat list -->
             <div class="sidebar-section" id="sidebar-chats-section">
-                <div class="sidebar-section-header">
-                    <span data-i18n="sidebar.chats">Chats</span>
-                    <div class="sidebar-header-actions">
-                        <button class="btn-icon-xs" onclick="showCategoryPrompt()" title="Новая папка" data-i18n-title="tip.new_category">
-                            <span class="material-icons-round">folder_open</span>
-                        </button>
-                        <button class="btn-icon-xs" onclick="showNewChatDialog()" title="Новый чат" data-i18n-title="tip.new_chat">
-                            <span class="material-icons-round">add</span>
-                        </button>
-                    </div>
-                </div>
                 <div id="chat-list" class="sidebar-list"></div>
                 <button class="sidebar-browse-btn" onclick="showBrowseChannelsDialog()" data-i18n="sidebar.browse">Browse channels</button>
             </div>
-
-            <!-- User profile at bottom -->
-            <div class="sidebar-user" id="sidebar-user" onclick="showProfileDialog()">
-                <div class="sidebar-user-avatar" id="sidebar-user-avatar"></div>
-                <div class="sidebar-user-info">
-                    <div class="sidebar-user-name" id="sidebar-user-name"></div>
-                    <div class="sidebar-user-status" id="sidebar-user-status"></div>
-                </div>
-                <button class="btn-icon-xs" onclick="event.stopPropagation(); showSettingsMenu()">
-                    <span class="material-icons-round">settings</span>
-                </button>
-            </div>
+            <span id="sidebar-user-name" hidden></span>
         </aside>
+        </div>
 
         <!-- ── MAIN AREA ── -->
         <main class="main-area" id="main-area">
@@ -1116,9 +1110,9 @@
             </button>
         </div>
         <div class="global-search-tabs">
-            <button class="global-search-tab active" data-tab="all" onclick="switchGlobalSearchTab('all')">All</button>
-            <button class="global-search-tab" data-tab="people" onclick="switchGlobalSearchTab('people')">People</button>
-            <button class="global-search-tab" data-tab="channels" onclick="switchGlobalSearchTab('channels')">Channels</button>
+            <button class="global-search-tab active" data-tab="all" onclick="switchGlobalSearchTab('all')" data-i18n="search.all">All</button>
+            <button class="global-search-tab" data-tab="people" onclick="switchGlobalSearchTab('people')" data-i18n="search.people">People</button>
+            <button class="global-search-tab" data-tab="channels" onclick="switchGlobalSearchTab('channels')" data-i18n="search.channels">Channels</button>
         </div>
         <div class="global-search-results-wrap">
             <div id="global-search-results" class="global-search-results"></div>
@@ -1148,11 +1142,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=73"></script>
-<script src="/sections.js?v=2"></script>
+<script src="/app.js?v=74"></script>
+<script src="/sections.js?v=3"></script>
 <script src="/folders.js?v=1"></script>
 <script src="/newchat.js?v=1"></script>
 <script src="/announce.js?v=1"></script>
-<script src="/tracker.js?v=1"></script>
+<script src="/tracker.js?v=3"></script>
+<script src="/notify.js?v=3"></script>
 </body>
 </html>

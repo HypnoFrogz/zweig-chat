@@ -390,6 +390,29 @@ TABLES = [
         UNIQUE(project_id, key)
     )""",
 
+    # Лента «Важное»: события лично для человека — назначили задачу, срок,
+    # комментарий, упоминание. Одна запись на получателя, общая для веба и
+    # мобилки: прочитали на телефоне — гаснет и в браузере. dedupe — ключ,
+    # по которому одно и то же напоминание (срок задачи на дату) не задваивается.
+    """CREATE TABLE IF NOT EXISTS notifications (
+        id          TEXT PRIMARY KEY,
+        username    TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        actor       TEXT NOT NULL DEFAULT '',
+        title       TEXT NOT NULL DEFAULT '',
+        body        TEXT NOT NULL DEFAULT '',
+        project_slug TEXT NOT NULL DEFAULT '',
+        task_id     TEXT NOT NULL DEFAULT '',
+        task_key    TEXT NOT NULL DEFAULT '',
+        channel_slug TEXT NOT NULL DEFAULT '',
+        message_id  TEXT NOT NULL DEFAULT '',
+        dedupe      TEXT NOT NULL DEFAULT '',
+        created_at  TEXT NOT NULL,
+        read_at     TEXT NOT NULL DEFAULT ''
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(username, created_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedupe ON notifications(username, dedupe) WHERE dedupe != ''",
+
     # ── Federation ────────────────────────────────────────────────
     # One row per peer server we are linked (or trying to link) with.
     #
@@ -741,6 +764,33 @@ async def init_db():
     if "discussion" not in [r[1] for r in await pragma_t_z.fetchall()]:
         await db.execute("ALTER TABLE tasks ADD COLUMN discussion INTEGER NOT NULL DEFAULT 1")
         await db.commit()
+
+    # Звонки ушли из переписки. Беседы, где последней строкой был звонок,
+    # показывают в списке последнее настоящее сообщение (или ничего).
+    await db.execute(
+        """UPDATE channels SET
+               last_msg_text = (SELECT m.text FROM messages m WHERE m.channel_id = channels.id AND m.type != 'call'
+                                ORDER BY m.timestamp DESC LIMIT 1),
+               last_msg_sender = (SELECT m.sender FROM messages m WHERE m.channel_id = channels.id AND m.type != 'call'
+                                  ORDER BY m.timestamp DESC LIMIT 1),
+               last_msg_sender_name = (SELECT m.sender_name FROM messages m WHERE m.channel_id = channels.id
+                                       AND m.type != 'call' ORDER BY m.timestamp DESC LIMIT 1),
+               last_msg_timestamp = COALESCE((SELECT m.timestamp FROM messages m WHERE m.channel_id = channels.id
+                                       AND m.type != 'call' ORDER BY m.timestamp DESC LIMIT 1), last_msg_timestamp)
+           WHERE last_msg_sender = 'system' AND EXISTS (
+               SELECT 1 FROM messages c WHERE c.channel_id = channels.id AND c.type = 'call'
+                 AND c.timestamp = channels.last_msg_timestamp)"""
+    )
+    await db.commit()
+
+    # Статус «На проверке» из шаблона «С проверкой» был обычным «в работе».
+    # Теперь у согласования свой тип: по нему приходит «ждёт вашего решения»
+    # и появляются кнопки «Принять» / «Вернуть». Переводим только нетронутые
+    # статусы шаблона — свои статусы человек мог настроить как угодно.
+    await db.execute(
+        "UPDATE task_statuses SET kind = 'review' WHERE key = 'review' AND kind = 'work'"
+    )
+    await db.commit()
 
     # Create indexes AFTER migrations (columns must exist first)
     for ddl in INDEXES:

@@ -149,6 +149,81 @@ async def send_message_notification(
     return delivered
 
 
+# ── «Важное»: события по задачам ─────────────────────────────────
+# Отдельный тип пуша, а не «message»: у него свои кнопки. На согласовании —
+# «Принять» и «Вернуть», на назначенной задаче — «Открыть». Android рисует
+# уведомление сам (data-only, как сообщения), iOS показывает alert с
+# категорией, кнопки которой приложение регистрирует при старте.
+
+INBOX_TITLES = {
+    "task_assigned": "Вам задача",
+    "task_review": "Ждёт вашего решения",
+    "task_returned": "Задачу вернули",
+    "task_approved": "Задачу приняли",
+    "task_done": "Задача закрыта",
+    "task_comment": "Комментарий к задаче",
+    "task_due": "Срок сегодня",
+    "task_overdue": "Срок прошёл",
+    "module_expiring": "Zweig Tracker",
+}
+
+
+def inbox_category(kind: str) -> str:
+    return {"task_review": "TASK_REVIEW", "task_assigned": "TASK_ASSIGNED",
+            "task_returned": "TASK_ASSIGNED"}.get(kind, "INBOX")
+
+
+async def send_inbox_notification(username: str, item: dict, unread: int = 0) -> bool:
+    if not _firebase_app:
+        return False
+    devices = await get_user_tokens(username)
+    if not devices:
+        return False
+    kind = item.get("kind", "")
+    head = INBOX_TITLES.get(kind, "Важное")
+    key = item.get("task_key") or ""
+    title = f"{head} · {key}" if key else head
+    who = item.get("actor_name") or ""
+    body = item.get("title") or ""
+    if item.get("body") and kind in ("task_returned", "task_comment", "module_expiring"):
+        body = f"{body}\n{item['body']}" if body else item["body"]
+    if who and kind not in ("task_due", "task_overdue", "module_expiring"):
+        body = f"{who}: {body}"
+    data = {
+        "type": "inbox",
+        "kind": kind,
+        "id": item.get("id", ""),
+        "title": title,
+        "text": body[:240],
+        "project_slug": item.get("project_slug", ""),
+        "task_id": item.get("task_id", ""),
+        "task_key": key,
+        "channel_slug": item.get("channel_slug", ""),
+        "message_id": item.get("message_id", ""),
+        "category": inbox_category(kind),
+    }
+    delivered = False
+    for device in devices:
+        try:
+            messaging.send(messaging.Message(
+                token=device["token"],
+                data=data,
+                android=messaging.AndroidConfig(priority="high"),
+                apns=messaging.APNSConfig(payload=messaging.APNSPayload(aps=messaging.Aps(
+                    alert=messaging.ApsAlert(title=title, body=body[:240]),
+                    sound="default", badge=unread, category=data["category"],
+                    thread_id=f"task-{item.get('task_id')}" if item.get("task_id") else "inbox",
+                    mutable_content=True,
+                ))),  # data FCM сам кладёт в payload APNs рядом с aps
+            ))
+            delivered = True
+        except messaging.UnregisteredError:
+            await _remove_token(device["token"])
+        except Exception as e:  # noqa: BLE001
+            print(f"[fcm] inbox push to {username} failed: {e}")
+    return delivered
+
+
 async def _ring_ios_devices(
     tokens: list[str],
     *,

@@ -20,7 +20,7 @@ from ws_manager import manager
 import features
 
 # Вкладка «Уведомления»: то, что касается человека вне трекера.
-KINDS_NOTICE = ("mention", "missed_call")
+KINDS_NOTICE = ("mention", "missed_call", "announce")
 
 KINDS_TASK = ("task_assigned", "task_comment", "task_done", "task_due", "task_overdue",
               "task_review", "task_returned", "task_approved")

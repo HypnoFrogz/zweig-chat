@@ -164,6 +164,13 @@ async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
             await db.executemany("DELETE FROM user_devices WHERE fcm_token = ?", [(t,) for t in sent["dead"]])
             await db.commit()
 
+    # Своё объявление ложится ещё и в «Важное → Уведомления» каждому
+    # сотруднику: пуш смахнули или он не дошёл — текст всё равно под рукой,
+    # на всех устройствах. Пуш о новой версии туда не кладём: он нужен один
+    # раз, в момент выхода сборки.
+    if kind == "announce":
+        result["inbox"] = await _announce_to_inbox(title, body)
+
     if "web" in platforms:
         users = list((getattr(manager, "active_connections", {}) or {}).keys())
         await manager.broadcast_all({"event": "app_update", "kind": kind, "title": title, "text": body, "version": version})
@@ -171,3 +178,25 @@ async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
 
     print(f"[app-update] {kind} by {admin}: {result}")
     return result
+
+
+async def _announce_to_inbox(title: str, body: str) -> int:
+    """Объявление в ленту «Важное» всем живым сотрудникам этого сервера."""
+    import notifications
+    db = await get_db()
+    cur = await db.execute("PRAGMA table_info(users)")
+    cols = {r[1] for r in await cur.fetchall()}
+    where = "1=1"
+    if "blocked" in cols:
+        where += " AND COALESCE(blocked, 0) = 0"
+    if "home_server" in cols:
+        where += " AND COALESCE(home_server, '') = ''"
+    cur = await db.execute(f"SELECT username FROM users WHERE {where}")
+    stamp = str(int(time.time()))
+    n = 0
+    for r in await cur.fetchall():
+        item = await notifications.notify(db, r["username"], "announce", title=title, body=body,
+                                          dedupe=f"announce:{stamp}")
+        if item:
+            n += 1
+    return n

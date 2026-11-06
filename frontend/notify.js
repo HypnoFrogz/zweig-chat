@@ -15,7 +15,7 @@
     ru: {
       title: 'Важное', readAll: 'Прочитать все', all: 'Все', tasks: 'Задачи', notices: 'Уведомления',
       empty: 'Здесь будут задачи, сроки и упоминания — всё, что касается лично вас.',
-      emptyTasks: 'Событий по задачам пока нет.', emptyNotices: 'Здесь будут упоминания и пропущенные звонки.', missed: 'Пропущенный звонок', callBack: 'Перезвонить',
+      emptyTasks: 'Событий по задачам пока нет.', emptyNotices: 'Здесь будут упоминания, пропущенные звонки и объявления.', missed: 'Пропущенный звонок', callBack: 'Перезвонить',
       assigned: 'назначил(а) вам задачу', comment: 'Новый комментарий в задаче', done: 'Задача закрыта',
       due: 'Срок сегодня', overdue: 'Срок прошёл', mention: 'упомянул(а) вас', inDm: 'в личных сообщениях',
       review: 'ждёт вашего решения:', returned: 'вернул(а) на доработку', approved: 'принял(а) задачу',
@@ -27,7 +27,7 @@
     en: {
       title: 'Inbox', readAll: 'Mark all read', all: 'All', tasks: 'Tasks', notices: 'Notifications',
       empty: 'Tasks, deadlines and mentions that concern you will show up here.',
-      emptyTasks: 'No task events yet.', emptyNotices: 'Mentions and missed calls will show up here.', missed: 'Missed call', callBack: 'Call back',
+      emptyTasks: 'No task events yet.', emptyNotices: 'Mentions, missed calls and announcements will show up here.', missed: 'Missed call', callBack: 'Call back',
       assigned: 'assigned you a task', comment: 'New comment on', done: 'Task closed',
       due: 'Due today', overdue: 'Overdue', mention: 'mentioned you', inDm: 'in a direct message',
       review: 'is waiting for your decision:', returned: 'sent back', approved: 'approved',
@@ -168,6 +168,7 @@
     task_approved: { ic: 'verified', cls: 'mint' },
     mention: { ic: 'alternate_email', cls: 'blue' },
     missed_call: { ic: 'phone_missed', cls: 'coral' },
+    announce: { ic: 'campaign', cls: 'mint' },
     module_expiring: { ic: 'hourglass_bottom', cls: 'amber' },
   };
 
@@ -333,7 +334,7 @@
       setUnread(data.unread);
       if (panel && panel.style.display !== 'none') {
         const k = data.item && data.item.kind;
-        const fits = filter === 'all' || (filter === 'notices' && (k === 'mention' || k === 'missed_call')) || (filter === 'tasks' && k && k.startsWith('task_'));
+        const fits = filter === 'all' || (filter === 'notices' && (k === 'mention' || k === 'missed_call' || k === 'announce')) || (filter === 'tasks' && k && k.startsWith('task_'));
         if (fits) { items.unshift(data.item); renderPanel(); }
       }
     } else if (data.event === 'notifications_read') {

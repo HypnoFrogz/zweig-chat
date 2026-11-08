@@ -222,6 +222,22 @@ async def send_message(slug: str, data: dict, username: str = Depends(get_curren
     return await deliver_message(db, ch, username, data)
 
 
+_CLIENT_IDS_READY = False
+
+
+async def _ensure_client_ids(db):
+    global _CLIENT_IDS_READY
+    if _CLIENT_IDS_READY:
+        return
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS message_client_ids (
+               sender TEXT NOT NULL, client_id TEXT NOT NULL, message_id TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT '', PRIMARY KEY (sender, client_id))"""
+    )
+    await db.commit()
+    _CLIENT_IDS_READY = True
+
+
 async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
     """Положить сообщение в канал и разослать его всем, кому положено.
 
@@ -229,6 +245,23 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
     отложенное сообщение уходит тем же путём, и повторять здесь федерацию,
     уведомления и счётчики значило бы однажды забыть про одно из них.
     """
+    # Повторная отправка того же сообщения. Телефон без связи держит
+    # сообщение у себя и шлёт, когда связь вернулась; бывает, что запрос
+    # дошёл, а ответ потерялся, и телефон пошлёт ещё раз. По client_id
+    # узнаём своё и отдаём уже сохранённое — второй копии в чате не будет.
+    client_id = str(data.get("client_id") or "")[:64]
+    if client_id:
+        await _ensure_client_ids(db)
+        cur = await db.execute(
+            "SELECT m.* FROM message_client_ids c JOIN messages m ON m.id = c.message_id "
+            "WHERE c.sender = ? AND c.client_id = ?", (username, client_id))
+        row = await cur.fetchone()
+        if row:
+            dup = await _build_message(db, row)
+            dup["client_id"] = client_id
+            dup["duplicate"] = True
+            return dup
+
     display_name = await get_display_name(username)
 
     text = data.get("text", "").strip()
@@ -283,6 +316,13 @@ async def deliver_message(db, ch: dict, username: str, data: dict) -> dict:
         "INSERT INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
         (msg["id"], username, now),
     )
+    if client_id:
+        await db.execute(
+            "INSERT OR IGNORE INTO message_client_ids (sender, client_id, message_id, created_at) VALUES (?, ?, ?, ?)",
+            (username, client_id, msg["id"], now),
+        )
+        # Отправитель по нему сопоставит «часики» со своим сообщением.
+        msg["client_id"] = client_id
 
     lm_text = text or attachment_preview(msg)
     await db.execute(

@@ -505,6 +505,8 @@ const I18N = {
         'msg.schedulePending': 'Уже назначены',
         'msg.scheduleLoading': 'Загрузка…',
         'msg.scheduled': 'Отправка назначена',
+        'msg.pending': 'Ждёт связи — отправится само',
+        'msg.sendFailed': 'Не удалось отправить',
         'msg.deleteTitle': 'Удалить сообщение',
         'msg.select': 'Выбрать',
         'msg.selected': 'Выбрано',
@@ -874,6 +876,8 @@ const I18N = {
         'msg.schedulePending': 'Already scheduled',
         'msg.scheduleLoading': 'Loading…',
         'msg.scheduled': 'Sending scheduled',
+        'msg.pending': 'Waiting for connection — will send automatically',
+        'msg.sendFailed': 'Could not send',
         'msg.deleteTitle': 'Delete message',
         'msg.select': 'Select',
         'msg.selected': 'Selected',
@@ -1235,6 +1239,9 @@ function finishLogin(res, data) {
 }
 
 function logout(notice) {
+    // Вышли сами — не ушедшие сообщения принадлежат вышедшему, следующий
+    // вошедший не должен отправить их от своего имени.
+    if (typeof notice !== 'string') { try { localStorage.removeItem('zw_outbox_v1'); } catch (_) {} }
     // Завершить сеанс и на сервере, если выходим сами (а не нас выкинули).
     if (typeof notice !== 'string' && refreshToken && token) {
         try {
@@ -2041,6 +2048,7 @@ async function loadMessages(before = null) {
     }
 
     renderMessages(data.messages, !before);
+    if (!before) renderPendingFor(currentChannel);
     if (!before) { container.scrollTop = container.scrollHeight; setupScrollBtn(container); }
 
     if (!before) {
@@ -2146,7 +2154,9 @@ function renderMessages(messages, scroll = true, prepend = false) {
 
         // Checkmarks for own messages
         let checkmarks = '';
-        if (isOwn) {
+        if (isOwn && msg.pending) {
+            checkmarks = `<span class="msg-checkmark pending" title="${escAttr(t('msg.pending'))}"><span class="material-icons-round">schedule</span></span>`;
+        } else if (isOwn) {
             const readBy = (msg.read_by || []).filter(u => u !== currentUser);
             const isDm = currentChannel && currentChannel.type === 'direct';
             if (readBy.length > 0) {
@@ -2374,20 +2384,100 @@ async function sendMsg() {
     const input = document.getElementById('msg-input');
     const text = input.value.trim();
     if (!text || !currentChannel) return;
-    const payload = { event: 'send_message', channel_id: currentChannel.id, text, type: 'text' };
-    if (replyToMsg) payload.reply_to = replyToMsg.id;
-    if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify(payload));
-    } else {
-        const body = { text, type: 'text' };
-        if (replyToMsg) body.reply_to = replyToMsg.id;
-        await apiFetch(`/channels/${currentChannel.slug}/messages`, { method: 'POST', body });
-    }
+    // Сообщение сразу встаёт в ленту с часиками. Нет связи — ждёт в очереди
+    // и уходит само, как только сеть вернётся (см. «Исходящие без связи»).
+    const it = {
+        client_id: newClientId(), slug: currentChannel.slug, channel_id: currentChannel.id,
+        text, type: 'text', reply_to: replyToMsg ? replyToMsg.id : null,
+        reply_to_preview: replyToMsg ? { id: replyToMsg.id, sender_name: replyToMsg.sender_name, text: (replyToMsg.text || '').slice(0, 120) } : null,
+        created_at: new Date().toISOString(),
+    };
     input.value = '';
     autoResizeTextarea(input);
     sendTyping(false);
     cancelReply();
+    renderMessages([pendingMsg(it)], true);
+    const box = document.getElementById('msg-messages');
+    if (box) box.scrollTop = box.scrollHeight;
+    try {
+        settlePending(it.client_id, await postOutboxItem(it));
+    } catch (e) {
+        if (e && e.rejected) { removePending(it.client_id); showToast(t('msg.sendFailed'), 'error'); return; }
+        const list = outboxLoad(); list.push(it); outboxSave(list); armOutbox();
+    }
 }
+
+// ── Исходящие без связи ────────────────────────────────────────
+// Нет интернета — сообщение не пропадает: висит в ленте с часиками и хранится
+// в браузере, пока связь не вернётся (событие online, переподключение сокета,
+// таймер). Свой client_id у каждого: если запрос дошёл, а ответ потерялся,
+// сервер повтор узнает и второй копии не сделает.
+const OUTBOX_KEY = 'zw_outbox_v1';
+let outboxTimer = null, outboxFlushing = false;
+function outboxLoad() { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); } catch (_) { return []; } }
+function outboxSave(list) { try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); } catch (_) {} }
+function newClientId() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (_) {}
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+function pendingMsg(it) {
+    const me = allUsers.find(u => u.username === currentUser);
+    return {
+        id: 'local:' + it.client_id, client_id: it.client_id, channel_id: it.channel_id,
+        sender: currentUser, sender_name: (me && me.display_name) || currentUser,
+        type: it.type || 'text', text: it.text, file: it.file || undefined, timestamp: it.created_at,
+        read_by: [currentUser], reactions: [], reply_to: it.reply_to, reply_to_preview: it.reply_to_preview, pending: true,
+    };
+}
+async function postOutboxItem(it) {
+    const body = { text: it.text, type: it.type || 'text', client_id: it.client_id };
+    if (it.reply_to) body.reply_to = it.reply_to;
+    if (it.file) body.file = it.file;
+    const res = await apiFetch(`/channels/${it.slug}/messages`, { method: 'POST', body });
+    if (!res) throw new TypeError('no response');
+    // 5xx, 502 на время перезапуска сервера, 429 — переждём, как отсутствие сети.
+    if (res.status >= 500 || res.status === 429 || res.status === 408) throw new TypeError('server busy');
+    if (!res.ok) { const e = new Error('rejected'); e.rejected = true; throw e; }
+    return res.json();
+}
+function removePending(clientId) {
+    const row = document.querySelector(`.msg-row[data-id="local:${CSS.escape(clientId)}"]`);
+    if (row) row.remove();
+}
+function settlePending(clientId, msg) {
+    removePending(clientId);
+    if (msg && currentChannel && msg.channel_id === currentChannel.id) renderMessages([msg], true);
+}
+function armOutbox() {
+    if (outboxLoad().length === 0) { clearInterval(outboxTimer); outboxTimer = null; return; }
+    if (!outboxTimer) outboxTimer = setInterval(flushOutbox, 15000);
+}
+async function flushOutbox() {
+    if (outboxFlushing || !token) return;
+    outboxFlushing = true;
+    try {
+        let list = outboxLoad();
+        while (list.length) {
+            const it = list[0];
+            try {
+                const msg = await postOutboxItem(it);
+                list = outboxLoad().filter(x => x.client_id !== it.client_id); outboxSave(list);
+                settlePending(it.client_id, msg);
+            } catch (e) {
+                if (!(e && e.rejected)) break; // связи всё ещё нет
+                list = outboxLoad().filter(x => x.client_id !== it.client_id); outboxSave(list);
+                removePending(it.client_id);
+            }
+        }
+    } finally { outboxFlushing = false; armOutbox(); }
+}
+/** Ждущие сообщения открытого чата — после загрузки ленты, в её конец. */
+function renderPendingFor(channel) {
+    if (!channel) return;
+    const mine = outboxLoad().filter(x => x.channel_id === channel.id);
+    if (mine.length) renderMessages(mine.map(pendingMsg), true);
+}
+window.addEventListener('online', () => flushOutbox());
 
 // ── Message Edit / Delete ──────────────────────────────────────
 function startEditMessage(msgId) {
@@ -3537,6 +3627,7 @@ async function connectWebSocket() {
     ws = new WebSocket(`${wsProto}//${wsHost}/api/ws/messaging?token=${token}&client=web`);
     ws.onopen = () => {
         clearTimeout(wsReconnectTimer);
+        flushOutbox();
         wsPingInterval = setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ event: 'ping' })); }, 25000);
     };
     ws.onmessage = e => { handleWsEvent(JSON.parse(e.data)); };
@@ -3617,6 +3708,8 @@ function handleWsEvent(data) {
 }
 
 function onNewMessage(msg) {
+    // Своё сообщение с часиками вернулось с сервера — часики убираем.
+    if (msg.client_id) removePending(msg.client_id);
     const ch = channels.find(c => c.id === msg.channel_id);
     if (ch) {
         ch.last_msg_timestamp = msg.timestamp;

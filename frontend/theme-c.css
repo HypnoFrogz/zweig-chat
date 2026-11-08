@@ -732,3 +732,7 @@ a.task-ref.task-ref-off { pointer-events: none; color: inherit; background: none
 .inb-note { width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
 .inb-done { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--accent); }
 .inb-done.err { color: var(--danger); }
+
+/* Сообщение ждёт связи: часики вместо галочки */
+.msg-checkmark.pending .material-icons-round { font-size: 13px !important; opacity: .85; }
+.msg-row[data-id^="local:"] .msg-actions { display: none; }

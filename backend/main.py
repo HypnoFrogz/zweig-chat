@@ -29,6 +29,7 @@ from routes.federation import router as federation_router
 from routes.moderation import router as moderation_router
 from routes.bots import router as bots_router, init_schema as init_bots_schema
 from routes.app_update import router as app_update_router
+from routes.app_config import router as app_config_router
 
 
 @asynccontextmanager
@@ -104,3 +105,4 @@ app.include_router(federation_router)
 app.include_router(moderation_router)
 app.include_router(bots_router)
 app.include_router(app_update_router)
+app.include_router(app_config_router)

@@ -4,6 +4,9 @@
 
 * **Минимальная версия** для Android и iOS. Приложение старее — показывает
   экран «Обновите приложение» и дальше не пускает. Пусто — не блокируем.
+* **Рекомендуемая версия** — вышла в магазинах. Кто старее, видит плашку
+  «Доступна новая версия» над чатами, а через `nag_after_days` дней —
+  карточку при каждом запуске. Не блокирует.
 * **«Что нового»** для конкретной версии: карточка после обновления (до трёх
   пунктов), одна подсказка у новой кнопки и метки «новое» на кнопках.
 * **Отметки «уже видел»** у каждого человека — чтобы карточка и метки не
@@ -108,9 +111,14 @@ def _clean_whats_new(wn) -> dict | None:
 def snapshot() -> dict:
     c = _load()
     mv = c.get("min_version") or {}
+    lv = c.get("latest_version") or {}
+    lp = c.get("latest_published_at") or {}
     wn = c.get("whats_new")
     return {
         "min_version": {p: mv.get(p, "") for p in PLATFORMS},
+        "latest_version": {p: lv.get(p, "") for p in PLATFORMS},
+        "latest_published_at": {p: lp.get(p, "") for p in PLATFORMS},
+        "nag_after_days": int(c.get("nag_after_days", 7)),
         "store": {p: (c.get("store") or {}).get(p) or STORE[p] for p in PLATFORMS},
         "whats_new": wn,
         "updated_at": c.get("updated_at", ""),
@@ -125,6 +133,27 @@ def save(data: dict) -> dict:
         if not isinstance(mv, dict):
             raise HTTPException(status_code=400, detail="min_version: {android, ios}")
         c["min_version"] = {p: _ver(mv.get(p), f"min_version.{p}") for p in PLATFORMS}
+    if "latest_version" in data:
+        lv = data.get("latest_version") or {}
+        if not isinstance(lv, dict):
+            raise HTTPException(status_code=400, detail="latest_version: {android, ios}")
+        old = c.get("latest_version") or {}
+        pub = dict(c.get("latest_published_at") or {})
+        new = {p: _ver(lv.get(p), f"latest_version.{p}") for p in PLATFORMS}
+        for p in PLATFORMS:
+            # Отсчёт «через сколько дней настаивать» — с момента, когда
+            # версию вписали, а не с каждого повторного «Применить».
+            if new[p] and new[p] != old.get(p):
+                pub[p] = _now()
+            elif not new[p]:
+                pub.pop(p, None)
+        c["latest_version"] = new
+        c["latest_published_at"] = pub
+    if "nag_after_days" in data:
+        try:
+            c["nag_after_days"] = max(0, min(int(data.get("nag_after_days", 7)), 90))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="nag_after_days: число дней")
     if "store" in data:
         st = data.get("store") or {}
         c["store"] = {p: str(st.get(p) or "").strip()[:300] for p in PLATFORMS

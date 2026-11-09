@@ -47,13 +47,24 @@ def _key_pem() -> str | None:
         return None
 
 
+_warned = False
+
+
 def is_configured() -> bool:
-    return bool(
+    global _warned
+    ok = bool(
         os.getenv("APNS_KEY_ID")
         and os.getenv("APNS_TEAM_ID")
         and os.getenv("APNS_BUNDLE_ID")
         and _key_pem()
     )
+    # Ключ положили, а bundle id забыли — iOS-звонки молча не будят айфоны.
+    # Скажем об этом в логе один раз, чтобы не искать вслепую.
+    if not ok and not _warned and os.getenv("APNS_KEY_ID") and _key_pem():
+        _warned = True
+        missing = [k for k in ("APNS_TEAM_ID", "APNS_BUNDLE_ID") if not os.getenv(k)]
+        print(f"[apns] ✗ VoIP-пуши выключены: не задано {', '.join(missing)} — айфоны не узнают о звонках")
+    return ok
 
 
 def _auth_token() -> str | None:

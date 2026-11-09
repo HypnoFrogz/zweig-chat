@@ -5158,7 +5158,9 @@ async function joinLivekitRoom(tk, roomName, url) {
     // to location.host keeps single-server deployments working if the field is
     // missing (older backend, cached client).
     const livekitUrl = url || `wss://${location.host}/livekit/`;
-    const room = new LivekitClient.Room();
+    const room = new LivekitClient.Room({
+        audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
     livekitRoom = room;
     livekitRoom.name = roomName;
 
@@ -5237,10 +5239,8 @@ async function joinLivekitRoom(tk, roomName, url) {
                 if (pub.track) attachTrack(pub.track, p);
             });
         });
-        // Attach own audio tracks (hidden)
-        room.localParticipant.audioTrackPublications.forEach(pub => {
-            if (pub.track) attachTrack(pub.track, room.localParticipant);
-        });
+        // Свой микрофон не подключаем к динамикам: иначе человек слышит
+        // сам себя с задержкой.
 
         renderCallParticipants();
     } catch (err) {
@@ -5252,6 +5252,7 @@ async function joinLivekitRoom(tk, roomName, url) {
 
 function attachTrack(track, participant) {
     if (track.kind === 'audio') {
+        if (participant && livekitRoom && participant === livekitRoom.localParticipant) return;
         // Attach audio to body (hidden)
         const el = track.attach();
         el.dataset.trackSid = track.sid;

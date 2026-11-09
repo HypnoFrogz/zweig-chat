@@ -168,13 +168,23 @@ async def notify_app_update(data: dict, admin: str = Depends(get_current_user)):
     # сотруднику: пуш смахнули или он не дошёл — текст всё равно под рукой,
     # на всех устройствах. Пуш о новой версии туда не кладём: он нужен один
     # раз, в момент выхода сборки.
+    news = None
     if kind == "announce":
         result["inbox"] = await _announce_to_inbox(title, body)
+        # Карточкой — чтобы точно увидели: выезжает в приложении при запуске
+        # или сразу, если оно открыто (см. routes/app_config.py).
+        if data.get("card"):
+            from routes.app_config import set_news
+            news = set_news(title, data.get("card_body") or body, data)
+            result["card"] = True
 
     if "web" in platforms:
         users = list((getattr(manager, "active_connections", {}) or {}).keys())
         await manager.broadcast_all({"event": "app_update", "kind": kind, "title": title, "text": body, "version": version})
         result["web"] = len(users)
+    if news:
+        # Открытым мобильным приложениям — карточку сразу, не дожидаясь запуска.
+        await manager.broadcast_all({"event": "app_news", "news": news})
 
     print(f"[app-update] {kind} by {admin}: {result}")
     return result

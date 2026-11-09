@@ -9,6 +9,10 @@
   карточку при каждом запуске. Не блокирует.
 * **«Что нового»** для конкретной версии: карточка после обновления (до трёх
   пунктов), одна подсказка у новой кнопки и метки «новое» на кнопках.
+* **Новость карточкой** — объявление из adm с галочкой «карточкой»: после
+  запуска (или сразу, если приложение открыто) выезжает карточка с текстом,
+  по желанию — картинкой и кнопкой-ссылкой. Один раз; старше двух недель
+  не показываем — устарела.
 * **Отметки «уже видел»** у каждого человека — чтобы карточка и метки не
   появлялись снова на другом его телефоне.
 
@@ -121,6 +125,7 @@ def snapshot() -> dict:
         "nag_after_days": int(c.get("nag_after_days", 7)),
         "store": {p: (c.get("store") or {}).get(p) or STORE[p] for p in PLATFORMS},
         "whats_new": wn,
+        "news": c.get("news"),
         "updated_at": c.get("updated_at", ""),
     }
 
@@ -178,6 +183,34 @@ def save(data: dict) -> dict:
     return snapshot()
 
 
+def _https(v) -> str:
+    v = str(v or "").strip()[:500]
+    return v if v.startswith("https://") else ""
+
+
+def set_news(title: str, body: str, data: dict) -> dict:
+    """Новость карточкой (зовёт рассылка объявлений, см. app_update.py)."""
+    news = {
+        "id": f"news-{int(datetime.now().timestamp())}",
+        "title": _text(title, 80),
+        "body": str(body or "").strip()[:600],
+        "image": _https(data.get("image_url")),
+        "button_text": _text(data.get("button_text"), 30),
+        "button_url": _https(data.get("button_url")),
+        "published_at": _now(),
+    }
+    if not news["button_url"]:
+        news["button_text"] = ""
+    c = dict(_load())
+    c["news"] = news
+    tmp = _PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(c, ensure_ascii=False, indent=1), "utf-8")
+    tmp.replace(_PATH)
+    global _cache
+    _cache = c
+    return news
+
+
 @router.get("/app/config")
 async def get_app_config():
     return snapshot()
@@ -229,7 +262,9 @@ async def get_seen(username: str = Depends(get_current_user)):
         row = await cur.fetchone()
         created = (row["created_at"] if row else "") or ""
         fresh = bool(created) and created > wn["published_at"]
-    return {"keys": keys, "fresh": fresh}
+    cur = await db.execute("SELECT created_at FROM users WHERE username = ?", (username,))
+    row = await cur.fetchone()
+    return {"keys": keys, "fresh": fresh, "created_at": (row["created_at"] if row else "") or ""}
 
 
 @router.post("/app/seen")

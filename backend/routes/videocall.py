@@ -12,6 +12,23 @@ from helpers import get_current_user, get_display_name, now_iso
 from database import get_db
 from ws_manager import manager
 
+# Пуши о звонке — в фоне. Раньше обработчик ждал, пока уйдут уведомления
+# на все телефоны собеседника, и только потом отвечал звонящему: звонок
+# начинался через несколько секунд после нажатия.
+_BG_TASKS: set = set()
+
+
+def _bg(coro):
+    async def run():
+        try:
+            await coro
+        except Exception as e:  # noqa: BLE001
+            print(f"[call] фоновая отправка пуша не удалась: {e}")
+    t = asyncio.create_task(run())
+    _BG_TASKS.add(t)
+    t.add_done_callback(_BG_TASKS.discard)
+
+
 router = APIRouter(prefix="/api", tags=["videocall"])
 
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
@@ -261,13 +278,13 @@ async def record_missed_call(db, call: dict) -> None:
                 channel_name=caller_name,
             )
         if not delivered and not manager.is_online(callee):
-            await send_push_to_user(callee, {
+            _bg(send_push_to_user(callee, {
                 "type": "message",
                 "title": caller_name,
                 "body": "Пропущенный звонок",
                 "conv_id": call["channel_slug"],
                 "badge": 1,
-            })
+            }))
     except Exception as e:
         print(f"[calls] missed-call note failed: {e}")
 
@@ -738,7 +755,7 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
     should_push = CALL_PUSH_ALWAYS or (not manager.is_online(callee_username))
     if should_push:
         from fcm_sender import send_call_notification
-        await send_call_notification(
+        _bg(send_call_notification(
             recipient=callee_username,
             caller_name=caller_name,
             channel_slug=ch["slug"],
@@ -748,11 +765,11 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
             call_id=call_id,
             mode=mode,
             expires_at=expires_at,
-        )
+        ))
 
     # Web push wake-up path for background PWA clients.
     from routes.push import send_push_to_user
-    await send_push_to_user(callee_username, {
+    _bg(send_push_to_user(callee_username, {
         "type": "call_invite",
         "title": "Входящий звонок",
         "body": f"{caller_name} звонит вам",
@@ -762,7 +779,7 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
         "mode": mode,
         "expires_at": expires_at,
         "badge": 0,
-    })
+    }))
 
     return {
         "ok": True,
@@ -1065,24 +1082,24 @@ async def start_call(data: dict, username: str = Depends(get_current_user)):
         await manager.send_to_user(p, payload)
         # Send push to offline members (calls are critical)
         if p != username and not manager.is_online(p):
-            await send_call_notification(
+            _bg(send_call_notification(
                 recipient=p,
                 caller_name=display_name,
                 channel_slug=ch["slug"],
                 room_name=room_name,
                 livekit_token=p_token,
                 livekit_url=LIVEKIT_PUBLIC_URL,
-            )
+            ))
         # Web Push for PWA (always send for calls, even if online — important!)
         if p != username:
             from routes.push import send_push_to_user
-            await send_push_to_user(p, {
+            _bg(send_push_to_user(p, {
                 "type": "call",
                 "title": "Входящий звонок",
                 "body": f"{display_name} вызывает вас",
                 "conv_id": ch["slug"],
                 "badge": 0,
-            })
+            }))
 
 
     return {"token": token, "url": LIVEKIT_PUBLIC_URL, "room_name": room_name}
@@ -1501,13 +1518,13 @@ async def register_incoming_federated_call(
 
     if CALL_PUSH_ALWAYS or not manager.is_online(callee):
         from fcm_sender import send_call_notification
-        await send_call_notification(
+        _bg(send_call_notification(
             recipient=callee, caller_name=caller_name, channel_slug=channel_slug,
             room_name=room_name, livekit_token=livekit_token, livekit_url=livekit_url,
             call_id=call_id, mode=mode, expires_at=expires_at,
-        )
+        ))
     from routes.push import send_push_to_user
-    await send_push_to_user(callee, {
+    _bg(send_push_to_user(callee, {
         "type": "call_invite",
         "title": "Входящий звонок",
         "body": f"{caller_name} звонит вам",
@@ -1517,7 +1534,7 @@ async def register_incoming_federated_call(
         "mode": mode,
         "expires_at": expires_at,
         "badge": 0,
-    })
+    }))
     return {"ok": True}
 
 

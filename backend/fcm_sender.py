@@ -1,5 +1,6 @@
 """Zweig Messenger — Firebase Cloud Messaging sender."""
 
+import asyncio
 import os
 import time
 from datetime import datetime, timezone, timedelta
@@ -51,11 +52,21 @@ def _week_ago() -> str:
 
 
 async def get_user_voip_tokens(username: str) -> list[str]:
-    """PushKit tokens for the user's iOS devices (used for call invites)."""
+    """PushKit tokens for the user's iOS devices (used for call invites).
+
+    Те же правила, что у обычных токенов: устройство с живым входом или
+    недавно обновлённое. Раньше брались все записи подряд — у тестовых
+    учёток копились десятки токенов от старых сборок, и звонок ждал, пока
+    Apple откажет по каждому.
+    """
     db = await get_db()
     cursor = await db.execute(
-        "SELECT voip_token FROM user_voip_devices WHERE username = ?",
-        (username,),
+        """SELECT v.voip_token FROM user_voip_devices v
+           LEFT JOIN user_sessions s ON s.id = v.session_id
+           WHERE v.username = ?
+             AND ((v.session_id IS NOT NULL AND s.revoked_at IS NULL AND s.id IS NOT NULL)
+                  OR (v.session_id IS NULL AND v.updated_at > ?))""",
+        (username, _week_ago()),
     )
     return [r["voip_token"] for r in await cursor.fetchall()]
 
@@ -271,9 +282,14 @@ async def _ring_ios_devices(
         },
     }
 
+    # Все устройства — одновременно, а не по очереди: иначе каждое мёртвое
+    # устройство добавляло к началу звонка по запросу-два в Apple.
+    results = await asyncio.gather(
+        *(apns_sender.send_voip_push(t, payload, ttl_seconds) for t in tokens),
+        return_exceptions=True,
+    )
     delivered = False
-    for token in tokens:
-        result = await apns_sender.send_voip_push(token, payload, ttl_seconds)
+    for token, result in zip(tokens, results):
         if result == "ok":
             delivered = True
         elif result == "stale":
@@ -334,6 +350,7 @@ async def send_call_notification(
     if not _firebase_app:
         return
 
+    sends = []
     for device in devices:
         # Skip a device we already rang through CallKit, or it gets a second,
         # redundant wake-up for the same call.
@@ -383,13 +400,24 @@ async def send_call_notification(
                     ),
                 ),
             )
-            result = messaging.send(msg)
+            sends.append((device, msg))
+        except Exception as e:
+            print(f"[fcm] ✗ error building call push for {recipient}: {e}")
+
+    # messaging.send — синхронный запрос в Firebase. В потоке и все сразу:
+    # раньше он стоял прямо в обработчике и на время отправки замораживал
+    # весь сервер — и звонок, и чужие сообщения.
+    async def _one(device, msg):
+        try:
+            result = await asyncio.to_thread(messaging.send, msg)
             print(f"[fcm] ✓ call push sent: {result}")
         except messaging.UnregisteredError:
             print(f"[fcm] ✗ unregistered token: {device['token'][:30]}")
             await _remove_token(device["token"])
         except Exception as e:
             print(f"[fcm] ✗ error sending call to {recipient}: {e}")
+
+    await asyncio.gather(*(_one(d, m) for d, m in sends))
 
 
 async def _remove_token(token: str):

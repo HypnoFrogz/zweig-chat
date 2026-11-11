@@ -5463,13 +5463,26 @@ async function toggleScreenShare() {
             await lp.setScreenShareEnabled(false);
         } else {
             const pub = await lp.setScreenShareEnabled(true, {
-                // Звук берётся, если источник его отдаёт: вкладка браузера или
-                // системный звук на Windows. Нет звука — демонстрация идёт без него.
+                // Звук — только вкладки браузера. Системный звук не берём: в нём
+                // голоса собеседников из колонок и наушников, и они слышали бы
+                // сами себя с задержкой. (В приложении для ПК звук экрана —
+                // отдельная галочка в окне выбора, по умолчанию выключена.)
                 audio: true,
-                systemAudio: 'include',
+                systemAudio: 'exclude',
                 selfBrowserSurface: 'exclude',
                 surfaceSwitching: 'include',
                 contentHint: 'detail',
+                resolution: { width: 1920, height: 1080, frameRate: 15 },
+            }, {
+                // Экран — это текст и таблицы: держим чёткость, а не плавность.
+                // При нехватке канала браузер снижает частоту кадров, а не
+                // разрешение — иначе на картинке «плывут» и пересвечиваются
+                // светлые области.
+                screenShareEncoding: { maxBitrate: 3000000, maxFramerate: 15, priority: 'high' },
+                screenShareSimulcastLayers: [],
+                degradationPreference: 'maintain-resolution',
+                videoCodec: 'vp9',
+                backupCodec: { codec: 'vp8' },
             });
             if (pub && pub.track) attachTrack(pub.track, lp);
         }

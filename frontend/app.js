@@ -2270,6 +2270,18 @@ function renderMsgFile(msg) {
     if (f.type === 'image') {
         return `<img class="msg-file-image" src="${fileUrl}" alt="${escAttr(f.name || '')}" data-mid="${msg.id}" onclick="openMsgMedia(this.dataset.mid, 0)">`;
     }
+    // Видео — обложкой с кнопкой ▶, как в Telegram, а не строкой с именем
+    // файла. По нажатию открывается тот же просмотр, что у фото, и ролик
+    // играет прямо в нём, не уводя из переписки. Обложку снимает сервер;
+    // нет её (старое сообщение, чужой сервер) — показываем первый кадр.
+    if (isVideoFile(f)) {
+        const poster = f.thumbnail ? srv(f.thumbnail) : '';
+        const cover = poster
+            ? `<img src="${poster}" alt="${escAttr(f.name || '')}" loading="lazy">`
+            : `<video src="${fileUrl}#t=0.1" preload="metadata" muted playsinline></video>`;
+        const size = f.size ? `<span class="msg-video-size">${formatFileSize(f.size)}</span>` : '';
+        return `<div class="msg-file-video" data-mid="${msg.id}" onclick="openMsgMedia(this.dataset.mid, 0)">${cover}<span class="msg-album-play material-icons-round">play_arrow</span>${size}</div>`;
+    }
     // Голосовое — проигрыватель, а не строка со скрепкой. Признак ставит тот,
     // кто записывал: по расширению голосовое не отличить от присланной музыки.
     if (f.kind === 'voice') {

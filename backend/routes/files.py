@@ -482,7 +482,7 @@ async def share_to_chat(data: dict, username: str = Depends(get_current_user)):
 def _detect_type(ext: str) -> str:
     if ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"):
         return "image"
-    if ext in (".mp4", ".webm", ".mov", ".avi", ".mkv"):
+    if ext in (".mp4", ".webm", ".mov", ".m4v", ".3gp", ".avi", ".mkv"):
         return "video"
     if ext in (".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".opus", ".oga", ".weba"):
         return "audio"

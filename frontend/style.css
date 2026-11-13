@@ -687,6 +687,19 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     display: flex; align-items: center; justify-content: center; font-size: 26px; pointer-events: none;
 }
 .msg-file-image { cursor: zoom-in; }
+/* Видео в переписке: обложка с ▶ и размером, по нажатию — просмотр. */
+.msg-file-video {
+    position: relative; display: inline-block; margin-top: 4px;
+    border-radius: var(--radius-sm); overflow: hidden; cursor: pointer; background: #000;
+}
+.msg-file-video img, .msg-file-video video {
+    display: block; width: 320px; max-width: 100%; height: 200px; object-fit: cover;
+}
+.msg-file-video .msg-album-play { width: 52px; height: 52px; font-size: 34px; }
+.msg-video-size {
+    position: absolute; left: 8px; bottom: 8px; padding: 2px 6px; border-radius: 6px;
+    background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 12px; pointer-events: none;
+}
 .msg-album-more {
     position: absolute;
     inset: 0;
@@ -2290,6 +2303,7 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     .msg-text { font-size: 15px; line-height: 1.5; }
     .msg-time { font-size: 11px; }
     .msg-file-image { max-width: 280px; max-height: 300px; }
+    .msg-file-video img, .msg-file-video video { width: 260px; height: 170px; }
     .msg-file-attach { max-width: 100%; padding: 10px 12px; font-size: 14px; }
     .msg-actions { gap: 2px; }
     .msg-action-btn { padding: 6px; }

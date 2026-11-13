@@ -733,7 +733,7 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
         await db.commit()
         cur = await db.execute("SELECT remote_username FROM users WHERE username = ?", (callee_username,))
         row = await cur.fetchone()
-        delivered = await push_call_event(callee_domain, "/api/federation/call/invite", {
+        invite = {
             "call_id": call_id,
             "caller": username,
             "caller_name": caller_name,
@@ -743,14 +743,36 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
             "expires_at": expires_at,
             "livekit_token": callee_token,
             "livekit_url": LIVEKIT_PUBLIC_URL,
-        })
-        if not delivered:
-            await db.execute(
-                "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = 'peer_unreachable' WHERE id = ?",
+        }
+
+        # Приглашение на чужой сервер — в фоне. Раньше звонящий ждал его ответа
+        # (до 10 секунд) и всё это время не видел даже экрана вызова. Не
+        # дошло — гасим звонок у звонящего событием, как при сбросе.
+        async def _deliver_invite() -> None:
+            db2 = await get_db()
+            if await push_call_event(callee_domain, "/api/federation/call/invite", invite):
+                # Звонящий мог сбросить, пока приглашение было в пути: тогда
+                # отбой ушёл раньше приглашения, и у собеседника зазвонило бы
+                # после сброса. Повторяем отбой вслед.
+                c2 = await db2.execute("SELECT status FROM calls WHERE id = ?", (call_id,))
+                r2 = await c2.fetchone()
+                if r2 and r2["status"] == "ended":
+                    await push_call_event(callee_domain, "/api/federation/call/state", {
+                        "call_id": call_id, "state": "ended", "reason": "ended",
+                    })
+                return
+            await db2.execute(
+                "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = 'peer_unreachable' "
+                "WHERE id = ? AND status = 'ringing'",
                 (now_iso(), call_id),
             )
-            await db.commit()
-            raise HTTPException(status_code=502, detail=f"Сервер {callee_domain} недоступен")
+            await db2.commit()
+            await manager.send_to_user(username, {
+                "event": "call_ended", "call_id": call_id, "channel_slug": ch["slug"],
+                "reason": "peer_unreachable",
+            })
+
+        _bg(_deliver_invite())
         await manager.send_to_user(username, {"event": "call_ringing", "call_id": call_id, "channel_slug": ch["slug"]})
         return {
             "ok": True,

@@ -189,7 +189,9 @@ async def upload_files(
             while dest.exists():
                 dest = base / f"{stem}_{counter}{suffix}"
                 counter += 1
-        _save_upload(f.file, dest)
+        # Запись на диск — в отдельном потоке: большой файл, записанный прямо
+        # в обработчике, останавливал весь сервер у всех пользователей.
+        await asyncio.to_thread(_save_upload, f.file, dest)
         rel = str(dest.relative_to(user_root(username))).replace("\\", "/")
         set_item_date(username, rel)
         uploaded.append(rel)
@@ -214,7 +216,7 @@ async def upload_to_chat(
             dest = chat_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
-    _save_upload(file.file, dest)
+    await asyncio.to_thread(_save_upload, file.file, dest)
 
     rel = str(dest.relative_to(user_root(username))).replace("\\", "/")
     set_item_date(username, rel)
@@ -234,7 +236,9 @@ async def upload_to_chat(
     # видеть все — второй мобильный клиент, веб и тот, кто откроет переписку
     # с чужого сервера. Клиент, снявший кадр у себя, поделиться им не может.
     if file_type == "video":
-        thumb_rel = _make_video_thumbnail(dest, user_root(username))
+        # ffmpeg — в отдельном потоке: пока он снимал кадр, бэкенд не отвечал
+        # никому — вставали сообщения, звонки и WebSocket у всех.
+        thumb_rel = await asyncio.to_thread(_make_video_thumbnail, dest, user_root(username))
         if thumb_rel:
             info["thumbnail"] = upload_url(username, thumb_rel)
 
@@ -445,9 +449,9 @@ async def copy_item(data: dict, username: str = Depends(get_current_user)):
                 dest = target_dir / f"{stem}_{counter}{suffix}"
             counter += 1
     if source.is_dir():
-        shutil.copytree(source, dest)
+        await asyncio.to_thread(shutil.copytree, source, dest)
     else:
-        shutil.copy2(source, dest)
+        await asyncio.to_thread(shutil.copy2, source, dest)
     rel = str(dest.relative_to(user_root(username))).replace("\\", "/")
     set_item_date(username, rel)
     return {"ok": True, "new_path": rel}

@@ -1,5 +1,6 @@
 """ChaosHelper Messenger — Channel management (CRUD, members, slug routing)."""
 
+import asyncio
 import uuid
 import os
 import shutil
@@ -789,8 +790,10 @@ async def upload_channel_avatar(slug: str, file: UploadFile = File(...), usernam
     ext = file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else "png"
     filename = f"{ch['id']}.{ext}"
     filepath = UPLOAD_DIR / filename
-    with open(filepath, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    def _write() -> None:
+        with open(filepath, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    await asyncio.to_thread(_write)
 
     avatar_path = f"/uploads/channel_avatars/{filename}"
     await db.execute("UPDATE channels SET avatar_path = ? WHERE id = ?", (avatar_path, ch["id"]))

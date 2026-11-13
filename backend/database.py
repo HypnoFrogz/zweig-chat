@@ -498,6 +498,8 @@ INDEXES = [
     # blocker lookup indexed.
     "CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker ON user_blocks(blocker)",
     "CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports(status, created_at)",
+    # «Мои чаты» ищутся по username; ключ таблицы начинается с channel_id.
+    "CREATE INDEX IF NOT EXISTS idx_channel_members_user ON channel_members(username)",
     "CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel_id, timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_messages_sender_ts ON messages(sender, timestamp)",
     "CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp)",

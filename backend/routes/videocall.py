@@ -659,6 +659,20 @@ async def start_addressed_call(data: dict, username: str = Depends(get_current_u
     # Self-heal stale call states before checking busy.
     await run_calls_cleanup_once()
 
+    # Перезвон. Прошлый вызов того же человека мог повиснуть: его сбросили,
+    # пока он ещё соединялся, или приложение закрылось на полпути. Такой вызов
+    # не должен делать собеседника «занятым» для того же, кто звонит снова, —
+    # а свой незавершённый исходящий звонящий тем более бросил.
+    c = await db.execute(
+        "SELECT * FROM calls WHERE status IN ('ringing', 'active') AND ("
+        " (caller_username = ? AND status = 'ringing')"
+        " OR (caller_username = ? AND callee_username = ?)"
+        " OR (caller_username = ? AND callee_username = ?))",
+        (username, username, callee_username, callee_username, username),
+    )
+    for stale in await c.fetchall():
+        await _finish_call(db, dict(stale), username)
+
     # Ensure target user is not already ringing/active on another call.
     c = await db.execute(
         "SELECT id FROM calls WHERE callee_username = ? AND status IN ('ringing', 'active') LIMIT 1",
@@ -896,25 +910,31 @@ async def end_addressed_call(data: dict, username: str = Depends(get_current_use
         raise HTTPException(status_code=403, detail="Not a call participant")
 
     if call["status"] in ("ringing", "active"):
-        ended = now_iso()
-        await db.execute(
-            "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?",
-            (ended, "ended_by_user", call_id),
-        )
-        await _log_call_end(
-            db, call_id, call["channel_id"],
-            "ended" if call["status"] == "active" else "cancelled", ended,
-        )
-        await db.commit()
-        # Отменённый до ответа звонок для вызываемого — тоже пропущенный: он о
-        # нём не узнает иначе никак, телефон мог даже не успеть зазвонить.
-        if call["status"] == "ringing" and username == call["caller_username"]:
-            await record_missed_call(db, dict(call))
-        await _relay_call_state(db, call, "ended", "ended")
-        end_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "ended"}
-        await manager.send_to_user(call["caller_username"], end_event)
-        await manager.send_to_user(call["callee_username"], end_event)
+        await _finish_call(db, dict(call), username)
     return {"ok": True}
+
+
+async def _finish_call(db, call: dict, username: str) -> None:
+    """Завершить звонок у обоих: в базе, на сервере собеседника и в клиентах."""
+    call_id = call["id"]
+    ended = now_iso()
+    await db.execute(
+        "UPDATE calls SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?",
+        (ended, "ended_by_user", call_id),
+    )
+    await _log_call_end(
+        db, call_id, call["channel_id"],
+        "ended" if call["status"] == "active" else "cancelled", ended,
+    )
+    await db.commit()
+    # Отменённый до ответа звонок для вызываемого — тоже пропущенный: он о
+    # нём не узнает иначе никак, телефон мог даже не успеть зазвонить.
+    if call["status"] == "ringing" and username == call["caller_username"]:
+        await record_missed_call(db, call)
+    await _relay_call_state(db, call, "ended", "ended")
+    end_event = {"event": "call_ended", "call_id": call_id, "channel_slug": call["channel_slug"], "reason": "ended"}
+    await manager.send_to_user(call["caller_username"], end_event)
+    await manager.send_to_user(call["callee_username"], end_event)
 
 
 @router.post("/calls/update-media")
@@ -1476,10 +1496,16 @@ async def register_incoming_federated_call(
     """
     await run_calls_cleanup_once()
     c = await db.execute(
-        "SELECT id FROM calls WHERE callee_username = ? AND status IN ('ringing', 'active') LIMIT 1",
+        "SELECT * FROM calls WHERE callee_username = ? AND status IN ('ringing', 'active') LIMIT 1",
         (callee,),
     )
-    if await c.fetchone():
+    busy = await c.fetchone()
+    # Тот же человек перезванивает: его прошлый вызов к нам повис (сброс до
+    # соединения не дошёл). Закрываем старый, а не отвечаем «занято».
+    if busy and busy["caller_username"] == caller_uid:
+        await _finish_call(db, dict(busy), callee)
+        busy = None
+    if busy:
         raise HTTPException(status_code=409, detail="Callee is busy")
 
     c = await db.execute("SELECT slug FROM channels WHERE id = ?", (channel_id,))

@@ -4944,15 +4944,39 @@ async function startVideoCall() {
         showToast('Для звонка нужен конкретный абонент', 'error');
         return;
     }
-    const res = await apiFetch('/calls/start', {
-        method: 'POST',
-        body: { channel_slug: currentChannel.slug, callee_username: callee, mode: 'audio' },
-    });
+    // Панель звонка с кнопкой «Завершить» — сразу, ещё до ответа сервера.
+    // Раньше она появлялась только после /calls/start, и в эти секунды сбросить
+    // вызов было нечем: он доходил до собеседника, и тот потом был «занят».
+    const pending = { cancelled: false };
+    pendingOutgoingCall = pending;
+    showCallPanelPending();
+    let res;
+    try {
+        res = await apiFetch('/calls/start', {
+            method: 'POST',
+            body: { channel_slug: currentChannel.slug, callee_username: callee, mode: 'audio' },
+        });
+    } finally {
+        if (pendingOutgoingCall === pending) pendingOutgoingCall = null;
+    }
+    if (pending.cancelled) {
+        // Сбросили, пока сервер заводил звонок: теперь у него есть id —
+        // завершаем, чтобы у собеседника он тоже не звонил.
+        if (res && res.ok) {
+            try {
+                const d = await res.json();
+                if (d.call_id) await apiFetch('/calls/end', { method: 'POST', body: { call_id: d.call_id } });
+            } catch (_) {}
+        }
+        return;
+    }
     if (!res) {
+        closeCall();
         showToast('Ошибка сети при старте звонка', 'error');
         return;
     }
     if (!res.ok) {
+        closeCall();
         try {
             const err = await res.json();
             showToast(err?.detail || `Ошибка начала звонка (${res.status})`, 'error');
@@ -4970,6 +4994,19 @@ async function startVideoCall() {
     if (!livekitRoom) stopRingback();
     else if (livekitRoom.remoteParticipants && livekitRoom.remoteParticipants.size > 0) stopRingback();
 }
+// Исходящий вызов, на который сервер ещё не ответил. Сброс в это время
+// помечает его отменённым, и startVideoCall завершает звонок, как только
+// узнает его id.
+let pendingOutgoingCall = null;
+
+function showCallPanelPending() {
+    document.getElementById('right-panel').style.display = 'none';
+    document.getElementById('call-panel').style.display = 'flex';
+    document.getElementById('call-banner').style.display = 'none';
+    document.getElementById('call-participants').innerHTML =
+        '<div class="call-participant" style="opacity:.7">Вызов…</div>';
+}
+
 // Общий звонок в канале. Комната одна на канал, сервер сам рассылает всем
 // участникам приглашение с их личными токенами.
 async function startGroupCall() {
@@ -5231,6 +5268,8 @@ async function joinLivekitRoom(tk, roomName, url) {
 
     try {
         await room.connect(livekitUrl, tk);
+        // Звонок сбросили, пока шло подключение: комната уже не наша.
+        if (livekitRoom !== room) { room.disconnect(); return; }
         await room.localParticipant.setMicrophoneEnabled(true);
 
         // Attach existing tracks from remote participants
@@ -5244,6 +5283,8 @@ async function joinLivekitRoom(tk, roomName, url) {
 
         renderCallParticipants();
     } catch (err) {
+        // Сброшен во время подключения — это не ошибка.
+        if (livekitRoom !== room) return;
         console.error('LiveKit connect error:', err);
         showToast(t('call.connectionFailed'), 'error');
         closeCall();
@@ -5612,6 +5653,7 @@ function showScreenPicker(data) {
 async function endCall() {
     // Не требуем livekitRoom: звонок должен отменяться и пока он только звонит,
     // то есть ровно тогда, когда комнаты ещё нет.
+    if (pendingOutgoingCall) pendingOutgoingCall.cancelled = true;
     await hangUpOnServer();
     closeCall();
 }

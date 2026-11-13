@@ -658,6 +658,15 @@ async def init_db():
         await db.execute("ALTER TABLE channel_members ADD COLUMN pinned_at TEXT NOT NULL DEFAULT ''")
         await db.commit()
 
+    # ---------- Migration: channel_members.read_upto ----------
+    # Метка «прочитано всё до этого момента». Человек всегда читает беседу
+    # целиком (открыл — отмечено всё), поэтому непрочитанные — только то, что
+    # новее метки. Без неё счётчик перебирал всю историю беседы при каждом
+    # открытии списка чатов, и чем дольше жила переписка, тем медленнее.
+    if "read_upto" not in pin_cols:
+        await db.execute("ALTER TABLE channel_members ADD COLUMN read_upto TEXT NOT NULL DEFAULT ''")
+        await db.commit()
+
     # ---------- Migration: federated call columns ----------
     # A call room lives on exactly one server, because its LiveKit token is
     # signed with that server's secret. The other side cannot mint a token, so

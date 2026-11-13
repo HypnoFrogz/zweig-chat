@@ -106,36 +106,100 @@ async def is_muted(db, channel_id: str, username: str) -> bool:
     return until > now_iso()
 
 
-async def _count_unread(db, channel_id: str, username: str) -> int:
-    since = await visible_from(db, channel_id, username)
+# Непрочитанные — сообщения новее всех трёх меток участника: удалил беседу
+# у себя (cleared_at), добавлен без истории (history_from), прочитал всё до
+# (read_upto). Последняя и делает счёт дешёвым: смотрим только хвост беседы.
+_UNREAD_SQL = """
+    SELECT m.channel_id AS channel_id, COUNT(*) AS n
+    FROM channel_members cm
+    JOIN messages m ON m.channel_id = cm.channel_id
+     AND m.timestamp > MAX(cm.cleared_at, cm.history_from, cm.read_upto)
+    WHERE cm.username = ? {only}
+      AND m.sender != ? AND m.type != 'call'
+      AND NOT EXISTS (
+          SELECT 1 FROM message_reads mr
+          WHERE mr.message_id = m.id AND mr.username = ?
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM message_hidden mh
+          WHERE mh.message_id = m.id AND mh.username = ?
+      )
+    GROUP BY m.channel_id"""
+
+
+async def unread_counts(db, username: str) -> dict[str, int]:
+    """Непрочитанные по всем беседам человека — одним запросом."""
     cursor = await db.execute(
-        """SELECT COUNT(*) FROM messages m
-           WHERE m.channel_id = ? AND m.sender != ?
-           AND m.timestamp > ? AND m.type != 'call'
-           AND NOT EXISTS (
-               SELECT 1 FROM message_reads mr
-               WHERE mr.message_id = m.id AND mr.username = ?
-           )
-           AND NOT EXISTS (
-               SELECT 1 FROM message_hidden mh
-               WHERE mh.message_id = m.id AND mh.username = ?
-           )""",
-        (channel_id, username, since, username, username),
+        _UNREAD_SQL.format(only=""), (username, username, username, username)
+    )
+    return {r["channel_id"]: r["n"] for r in await cursor.fetchall()}
+
+
+async def _count_unread(db, channel_id: str, username: str) -> int:
+    cursor = await db.execute(
+        _UNREAD_SQL.format(only="AND cm.channel_id = ?"),
+        (username, channel_id, username, username, username),
     )
     row = await cursor.fetchone()
-    return row[0]
+    return row["n"] if row else 0
 
 
-async def _build_channel(db, row, username: str) -> dict:
+async def mark_channel_read(db, channel_id: str, username: str) -> list[str]:
+    """Отметить прочитанным всё в беседе; вернуть id отмеченных сообщений.
+
+    Смотрим только сообщения новее прошлой метки и сдвигаем её на последнее
+    сообщение беседы: дальше и счётчик, и следующая отметка работают с одним
+    хвостом, а не со всей историей.
+    """
+    cursor = await db.execute(
+        "SELECT read_upto FROM channel_members WHERE channel_id = ? AND username = ?",
+        (channel_id, username),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return []
+    old = row["read_upto"] or ""
+    cursor = await db.execute(
+        "SELECT MAX(timestamp) AS ts FROM messages WHERE channel_id = ?", (channel_id,)
+    )
+    upto = (await cursor.fetchone())["ts"] or ""
+    if not upto or upto <= old:
+        return []
+    cursor = await db.execute(
+        """SELECT m.id FROM messages m
+           WHERE m.channel_id = ? AND m.sender != ?
+             AND m.timestamp > ? AND m.timestamp <= ?
+             AND NOT EXISTS (
+                 SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.username = ?
+             )
+           ORDER BY m.timestamp""",
+        (channel_id, username, old, upto, username),
+    )
+    ids = [r["id"] for r in await cursor.fetchall()]
+    now = now_iso()
+    for msg_id in ids:
+        await db.execute(
+            "INSERT OR IGNORE INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
+            (msg_id, username, now),
+        )
+    await db.execute(
+        "UPDATE channel_members SET read_upto = ? WHERE channel_id = ? AND username = ?",
+        (upto, channel_id, username),
+    )
+    await db.commit()
+    return ids
+
+
+def _assemble_channel(row, members, details, unread, muted, pinned) -> dict:
     c = dict(row)
-    c["members"] = await _get_members(db, c["id"])
+    c["members"] = members
     # Include member details so clients can resolve display names (nicknames)
     # for direct-chat titles in the channel list — without them the UI falls
     # back to showing the raw login.
-    c["member_details"] = await _get_member_details(db, c["id"])
-    c["unread_count"] = await _count_unread(db, c["id"], username)
-    c["muted_until"] = await muted_until(db, c["id"], username)
-    c["pinned_at"] = await pinned_at(db, c["id"], username)
+    c["member_details"] = details
+    c["unread_count"] = unread
+    c["muted_until"] = muted or ""
+    c["pinned_at"] = pinned or ""
     if c.get("last_msg_text") is not None:
         c["last_message"] = {
             "text": c["last_msg_text"],
@@ -148,6 +212,18 @@ async def _build_channel(db, row, username: str) -> dict:
     for k in ("last_msg_text", "last_msg_sender", "last_msg_sender_name", "last_msg_timestamp"):
         c.pop(k, None)
     return c
+
+
+async def _build_channel(db, row, username: str) -> dict:
+    cid = row["id"]
+    return _assemble_channel(
+        row,
+        await _get_members(db, cid),
+        await _get_member_details(db, cid),
+        await _count_unread(db, cid, username),
+        await muted_until(db, cid, username),
+        await pinned_at(db, cid, username),
+    )
 
 
 async def _ensure_unique_slug(db, slug: str, exclude_id: str | None = None) -> str:
@@ -236,7 +312,50 @@ async def list_channels(username: str = Depends(get_current_user)):
         (username,),
     )
     rows = await cursor.fetchall()
-    return [await _build_channel(db, r, username) for r in rows]
+    if not rows:
+        return []
+
+    # Всё, что раньше спрашивалось по каждой беседе отдельно (около пяти
+    # запросов на чат), — несколькими запросами сразу на весь список.
+    mine = "SELECT channel_id FROM channel_members WHERE username = ?"
+    cursor = await db.execute(
+        f"SELECT channel_id, username FROM channel_members WHERE channel_id IN ({mine})",
+        (username,),
+    )
+    members: dict[str, list[str]] = {}
+    for r in await cursor.fetchall():
+        members.setdefault(r["channel_id"], []).append(r["username"])
+
+    cursor = await db.execute(
+        f"""SELECT cm.channel_id, cm.username, cm.role, cm.joined_at,
+                  u.display_name, u.nickname, u.avatar_path, u.status_text, u.home_server
+           FROM channel_members cm
+           JOIN users u ON u.username = cm.username
+           WHERE cm.channel_id IN ({mine})
+           ORDER BY cm.channel_id, cm.role DESC, u.display_name""",
+        (username,),
+    )
+    details: dict[str, list[dict]] = {}
+    for r in await cursor.fetchall():
+        d = dict(r)
+        details.setdefault(d.pop("channel_id"), []).append(d)
+
+    cursor = await db.execute(
+        "SELECT channel_id, muted_until, pinned_at FROM channel_members WHERE username = ?",
+        (username,),
+    )
+    own = {r["channel_id"]: r for r in await cursor.fetchall()}
+    unread = await unread_counts(db, username)
+
+    out = []
+    for r in rows:
+        cid = r["id"]
+        o = own.get(cid)
+        out.append(_assemble_channel(
+            r, members.get(cid, []), details.get(cid, []), unread.get(cid, 0),
+            o["muted_until"] if o else "", o["pinned_at"] if o else "",
+        ))
+    return out
 
 
 @router.get("/channels/public")

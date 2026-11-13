@@ -660,25 +660,10 @@ async def mark_read(slug: str, username: str = Depends(get_current_user)):
     db = await get_db()
     ch = await _get_channel_by_slug(db, slug, username)
 
-    cursor = await db.execute(
-        """SELECT m.id FROM messages m
-           WHERE m.channel_id = ? AND m.sender != ?
-           AND NOT EXISTS (
-               SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.username = ?
-           )
-           ORDER BY m.timestamp""",
-        (ch["id"], username, username),
-    )
-    unread_ids = [r["id"] for r in await cursor.fetchall()]
+    from routes.channels import mark_channel_read
+    unread_ids = await mark_channel_read(db, ch["id"], username)
 
     if unread_ids:
-        for msg_id in unread_ids:
-            await db.execute(
-                "INSERT OR IGNORE INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
-                (msg_id, username, now_iso()),
-            )
-        await db.commit()
-
         members = await _get_members(db, ch["id"])
         await manager.send_to_channel(
             members,
@@ -697,15 +682,11 @@ async def get_unread_count(slug: str, username: str = Depends(get_current_user))
 
 
 async def _count_unread(db, channel_id: str, username: str) -> int:
-    cursor = await db.execute(
-        """SELECT COUNT(*) FROM messages m
-           WHERE m.channel_id = ? AND m.sender != ?
-           AND NOT EXISTS (
-               SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.username = ?
-           )""",
-        (channel_id, username, username),
-    )
-    return (await cursor.fetchone())[0]
+    # Тот же счёт, что и в списке чатов. Раньше здесь считалось иначе — со
+    # звонками, удалёнными у себя и скрытыми сообщениями, — и общий значок
+    # расходился с цифрами у бесед.
+    from routes.channels import _count_unread as count
+    return await count(db, channel_id, username)
 
 
 @router.get("/channels/{slug}/attachments")
@@ -846,18 +827,9 @@ async def search_messages(
 async def get_all_unread(username: str = Depends(get_current_user)):
     """Get unread counts for all channels."""
     db = await get_db()
-    cursor = await db.execute(
-        "SELECT channel_id FROM channel_members WHERE username = ?", (username,)
-    )
-    channel_ids = [r["channel_id"] for r in await cursor.fetchall()]
-
-    total = 0
-    by_channel = {}
-    for ch_id in channel_ids:
-        unread = await _count_unread(db, ch_id, username)
-        if unread > 0:
-            by_channel[ch_id] = unread
-            total += unread
+    from routes.channels import unread_counts
+    by_channel = {k: v for k, v in (await unread_counts(db, username)).items() if v > 0}
+    total = sum(by_channel.values())
 
     return {"total_unread": total, "by_channel": by_channel}
 
@@ -1162,23 +1134,9 @@ async def _ws_mark_read(channel_id: str, username: str):
     if not await cursor.fetchone():
         return
 
-    cursor2 = await db.execute(
-        """SELECT m.id FROM messages m
-           WHERE m.channel_id = ? AND m.sender != ?
-           AND NOT EXISTS (
-               SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.username = ?
-           )""",
-        (channel_id, username, username),
-    )
-    unread_ids = [r["id"] for r in await cursor2.fetchall()]
+    from routes.channels import mark_channel_read
+    unread_ids = await mark_channel_read(db, channel_id, username)
     if unread_ids:
-        for msg_id in unread_ids:
-            await db.execute(
-                "INSERT OR IGNORE INTO message_reads (message_id, username) VALUES (?, ?)",
-                (msg_id, username),
-            )
-        await db.commit()
-
         members = await _get_members(db, channel_id)
         await manager.send_to_channel(
             members,

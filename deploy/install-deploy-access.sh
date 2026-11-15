@@ -33,6 +33,8 @@ chmod 600 "$HOME_DIR/.ssh/authorized_keys"
 chown "$USER_NAME:$USER_NAME" "$HOME_DIR/.ssh/authorized_keys"
 
 install -m 755 "$SRC_DIR/zweig-update.sh" /usr/local/bin/zweig-update.sh
+# Вторые установки на той же машине (песочницы): по файлу на каждую.
+install -d -m 755 /etc/zweig-update.d
 [ -f /etc/zweig-update.conf ] || {
   install -m 644 "$SRC_DIR/zweig-update.conf.example" /etc/zweig-update.conf
   echo "положил /etc/zweig-update.conf — ЗАПОЛНИТЕ его под этот сервер"
@@ -40,7 +42,7 @@ install -m 755 "$SRC_DIR/zweig-update.sh" /usr/local/bin/zweig-update.sh
 
 # Право ровно на один файл. Без NOPASSWD запуск по ключу повиснет на пароле.
 cat > /etc/sudoers.d/zweig-deploy <<SUDO
-$USER_NAME ALL=(root) NOPASSWD: /usr/local/bin/zweig-update.sh, /usr/local/bin/zweig-update.sh --check
+$USER_NAME ALL=(root) NOPASSWD: /usr/local/bin/zweig-update.sh, /usr/local/bin/zweig-update.sh --check, /usr/local/bin/zweig-update.sh --instance *
 SUDO
 chmod 440 /etc/sudoers.d/zweig-deploy
 visudo -cf /etc/sudoers.d/zweig-deploy >/dev/null

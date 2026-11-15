@@ -4,6 +4,9 @@
 #
 #   zweig-update.sh            # обновить: git pull, пересборка, проверка, откат при неудаче
 #   zweig-update.sh --check    # ничего не менять, показать текущее состояние
+#   zweig-update.sh --instance sandbox1 [--check]
+#                              # то же для второй установки на этой машине:
+#                              # настройки — /etc/zweig-update.d/sandbox1.conf
 #
 # Что и как обновлять, знает сервер, а не тот, кто нажал кнопку: у каждой
 # установки свой каталог, свой набор compose-файлов и свои службы, которые надо
@@ -15,6 +18,26 @@ set -uo pipefail
 
 CONF="${ZWEIG_UPDATE_CONF:-/etc/zweig-update.conf}"
 LOCK="${ZWEIG_UPDATE_LOCK:-/var/lock/zweig-update.lock}"
+
+# Аргументы разбираем строго: через sudoers сюда может прийти что угодно после
+# --instance, а запускается скрипт от root. Имя установки — только буквы,
+# цифры и дефис; файл её настроек — только в /etc/zweig-update.d.
+INSTANCE=""
+CHECK=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CHECK=1 ;;
+    --instance) shift; INSTANCE="${1:-}" ;;
+    *) printf 'неизвестный аргумент: %s\n' "$1"; exit 2 ;;
+  esac
+  shift
+done
+if [ -n "$INSTANCE" ]; then
+  printf '%s' "$INSTANCE" | grep -qE '^[a-z0-9][a-z0-9-]{0,31}$' \
+    || { printf 'недопустимое имя установки: %s\n' "$INSTANCE"; exit 2; }
+  CONF="/etc/zweig-update.d/$INSTANCE.conf"
+  LOCK="/var/lock/zweig-update-$INSTANCE.lock"
+fi
 
 log() { printf '%s  %s\n' "$(date '+%H:%M:%S')" "$*"; }
 die() { log "ОШИБКА: $*"; exit 1; }
@@ -157,7 +180,7 @@ rebuild() {
   return 0
 }
 
-if [ "${1:-}" = "--check" ]; then
+if [ -n "$CHECK" ]; then
   show_state
   exit 0
 fi

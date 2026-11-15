@@ -112,6 +112,12 @@ async def close() -> None:
     _client = None
 
 
+# Какой шлюз принял токен в прошлый раз. Сборка из Xcode живёт на sandbox, из
+# App Store — на production; без памяти каждый звонок на «не тот» айфон сначала
+# получал отказ от другого шлюза, и звонок начинал звенеть на 1–2 секунды позже.
+_token_host: dict[str, str] = {}
+
+
 async def send_voip_push(token: str, payload: dict, ttl_seconds: int) -> str:
     """Ring one device, on whichever APNs environment its token belongs to.
 
@@ -140,16 +146,23 @@ async def send_voip_push(token: str, payload: dict, ttl_seconds: int) -> str:
         if os.getenv("APNS_SANDBOX") == "1"
         else [_PROD_HOST, _SANDBOX_HOST]
     )
+    known = _token_host.get(token)
+    if known in hosts:
+        hosts = [known] + [h for h in hosts if h != known]
 
     for host in hosts:
         result = await _post_to_gateway(host, token, payload, ttl_seconds, auth)
         if result == "ok":
+            if len(_token_host) > 5000:
+                _token_host.clear()
+            _token_host[token] = host
             return "ok"
         # Transient failures say nothing about the environment; retrying the
         # other gateway would only double the damage of an APNs outage.
         if result == "error":
             return "error"
 
+    _token_host.pop(token, None)
     print(f"[apns] ✗ token rejected by both gateways: {token[:16]}...")
     return "stale"
 

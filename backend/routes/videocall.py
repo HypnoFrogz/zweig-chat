@@ -352,6 +352,11 @@ async def _log_call_end(db, call_id: str, channel_id: str, status: str, ended: s
     ноль. Строки, записанные до появления call_id, закрываем по-старому, по
     каналу.
     """
+    await db.execute(
+        """UPDATE call_log SET answered_at = (SELECT c.answered_at FROM calls c WHERE c.id = call_log.call_id)
+           WHERE call_id = ? AND answered_at IS NULL""",
+        (call_id,),
+    )
     cur = await db.execute(
         """UPDATE call_log SET status = ?, ended_at = ?,
                duration_sec = CASE WHEN answered_at IS NOT NULL
@@ -395,6 +400,14 @@ async def _sync_call_log(db) -> None:
         """UPDATE call_log SET status = 'cancelled', ended_at = started_at, duration_sec = 0
            WHERE status = 'active' AND call_id IS NOT NULL
              AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.id = call_log.call_id)"""
+    )
+    await db.execute(
+        """UPDATE call_log SET
+               answered_at = (SELECT c.answered_at FROM calls c WHERE c.id = call_log.call_id),
+               status = CASE WHEN status = 'cancelled' THEN 'ended' ELSE status END,
+               duration_sec = NULL
+           WHERE answered_at IS NULL AND call_id IS NOT NULL AND status != 'active'
+             AND EXISTS (SELECT 1 FROM calls c WHERE c.id = call_log.call_id AND c.answered_at IS NOT NULL)"""
     )
     await db.execute(
         """UPDATE call_log SET duration_sec = CASE
@@ -461,7 +474,7 @@ async def call_history(
     if names:
         marks = ",".join("?" * len(names))
         c3 = await db.execute(
-            f"SELECT username, display_name, avatar_path FROM users WHERE username IN ({marks})", tuple(names)
+            f"SELECT username, display_name, avatar_path, home_server FROM users WHERE username IN ({marks})", tuple(names)
         )
         users = {r["username"]: dict(r) for r in await c3.fetchall()}
 
@@ -498,6 +511,8 @@ async def call_history(
             "peer": peer,
             "peer_name": u.get("display_name") or peer,
             "avatar": u.get("avatar_path") or "",
+            # Собеседник с другого сервера — его домен, чтобы было видно, откуда он.
+            "server": "" if is_group else (u.get("home_server") or ""),
         })
     return {"items": items}
 
@@ -1697,9 +1712,17 @@ async def apply_federated_call_state(db, call: dict, state: str, reason: str = "
     call_id = call["id"]
     if state == "answered":
         if call["status"] == "ringing":
+            answered = now_iso()
             await db.execute(
                 "UPDATE calls SET status = 'active', answered_at = ? WHERE id = ?",
-                (now_iso(), call_id),
+                (answered, call_id),
+            )
+            # И в журнал: по нему строится история звонков. Без этого звонок,
+            # принятый на соседнем сервере, у звонящего числился неотвеченным
+            # с нулевой длительностью.
+            await db.execute(
+                "UPDATE call_log SET answered_at = ? WHERE call_id = ? AND answered_at IS NULL",
+                (answered, call_id),
             )
             await db.commit()
         event = {

@@ -3478,3 +3478,4 @@ body.call-popout .call-panel { position: fixed; inset: 0; display: flex !importa
 .inb-callback .material-icons-round { font-size: 20px; }
 .inb-miss b { color: #e5674f; }
 .inb-more { display: block; width: calc(100% - 28px); margin: 8px 14px 12px; padding: 8px; border: none; border-radius: 8px; background: rgba(127,127,127,.12); color: inherit; cursor: pointer; }
+.inb-srv { font-size: 11.5px; font-weight: 500; opacity: .6; white-space: nowrap; }

@@ -187,7 +187,7 @@
       ? `<button type="button" class="inb-callback" data-call-back="${escH(c.id)}" title="${escH(tr('callBack'))}">${icon('call')}</button>` : '';
     return `<div class="inb-row inb-call-row"><button type="button" class="inb-item" data-call="${escH(c.id)}">
       <span class="inb-ic ${k.cls}">${icon(k.ic)}</span>
-      <span class="inb-txt"><span class="inb-t${c.result === 'missed' ? ' inb-miss' : ''}"><b>${escH(title)}</b></span><span class="inb-sub">${escH(parts.join(' · '))}</span><span class="inb-time">${escH(ago(c.started_at))}</span></span>
+      <span class="inb-txt"><span class="inb-t${c.result === 'missed' ? ' inb-miss' : ''}"><b>${escH(title)}</b>${c.server ? ` <span class="inb-srv">${escH(c.server)}</span>` : ''}</span><span class="inb-sub">${escH(parts.join(' · '))}</span><span class="inb-time">${escH(ago(c.started_at))}</span></span>
     </button>${back}</div>`;
   }
 

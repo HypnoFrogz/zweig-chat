@@ -3466,3 +3466,15 @@ body.call-popout .call-panel { position: fixed; inset: 0; display: flex !importa
     display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: clamp(18px, 3vw, 44px);
 }
 .call-video-item:has(video) .call-avatar { display: none; }
+
+/* Вкладка «Звонки» в колокольчике */
+.inb-chips { display: flex; gap: 6px; padding: 0 14px 8px; }
+.inb-chip { border: 1px solid var(--border, rgba(127,127,127,.25)); background: transparent; color: inherit; border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.inb-chip.on { background: var(--accent, #3ecf8e); border-color: transparent; color: #fff; }
+.inb-call-row { display: flex; align-items: center; }
+.inb-call-row .inb-item { flex: 1; min-width: 0; }
+.inb-callback { flex: none; width: 34px; height: 34px; margin-right: 10px; border: none; border-radius: 50%; background: transparent; color: var(--accent, #3ecf8e); cursor: pointer; display: grid; place-items: center; }
+.inb-callback:hover { background: rgba(127,127,127,.15); }
+.inb-callback .material-icons-round { font-size: 20px; }
+.inb-miss b { color: #e5674f; }
+.inb-more { display: block; width: calc(100% - 28px); margin: 8px 14px 12px; padding: 8px; border: none; border-radius: 8px; background: rgba(127,127,127,.12); color: inherit; cursor: pointer; }

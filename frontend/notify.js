@@ -16,6 +16,9 @@
       title: 'Важное', readAll: 'Прочитать все', all: 'Все', tasks: 'Задачи', notices: 'Уведомления',
       empty: 'Здесь будут задачи, сроки и упоминания — всё, что касается лично вас.',
       emptyTasks: 'Событий по задачам пока нет.', emptyNotices: 'Здесь будут упоминания, пропущенные звонки и объявления.', missed: 'Пропущенный звонок', callBack: 'Перезвонить',
+      calls: 'Звонки', callsAll: 'Все', callsMissed: 'Пропущенные', emptyCalls: 'Звонков пока не было.', emptyMissed: 'Пропущенных звонков нет.',
+      cOut: 'Исходящий', cIn: 'Входящий', cMissed: 'Пропущенный', cNoAnswer: 'Не ответили', cRejected: 'Отклонён', cActive: 'Идёт сейчас', cGroup: 'Групповой',
+      lessMin: 'меньше минуты', hShort: 'ч', video: 'видео', more: 'Показать ещё',
       assigned: 'назначил(а) вам задачу', comment: 'Новый комментарий в задаче', done: 'Задача закрыта',
       due: 'Срок сегодня', overdue: 'Срок прошёл', mention: 'упомянул(а) вас', inDm: 'в личных сообщениях',
       review: 'ждёт вашего решения:', returned: 'вернул(а) на доработку', approved: 'принял(а) задачу',
@@ -28,6 +31,9 @@
       title: 'Inbox', readAll: 'Mark all read', all: 'All', tasks: 'Tasks', notices: 'Notifications',
       empty: 'Tasks, deadlines and mentions that concern you will show up here.',
       emptyTasks: 'No task events yet.', emptyNotices: 'Mentions, missed calls and announcements will show up here.', missed: 'Missed call', callBack: 'Call back',
+      calls: 'Calls', callsAll: 'All', callsMissed: 'Missed', emptyCalls: 'No calls yet.', emptyMissed: 'No missed calls.',
+      cOut: 'Outgoing', cIn: 'Incoming', cMissed: 'Missed', cNoAnswer: 'No answer', cRejected: 'Declined', cActive: 'In progress', cGroup: 'Group',
+      lessMin: 'under a minute', hShort: 'h', video: 'video', more: 'Show more',
       assigned: 'assigned you a task', comment: 'New comment on', done: 'Task closed',
       due: 'Due today', overdue: 'Overdue', mention: 'mentioned you', inDm: 'in a direct message',
       review: 'is waiting for your decision:', returned: 'sent back', approved: 'approved',
@@ -47,6 +53,9 @@
   let filter = 'all';
   let panel = null;
   let loading = false;
+  let calls = [];
+  let callsKind = 'all';
+  let callsMore = false;
 
   // ── Модули ────────────────────────────────────────────────────
   window.zwFeatures = { tracker: { enabled: true } };
@@ -133,7 +142,57 @@
     } catch (e) { /* сервер без ленты — колокольчик просто без цифры */ }
   }
 
+  async function loadCalls(more) {
+    loading = true;
+    if (!more) renderPanel();
+    try {
+      const before = more && calls.length ? `&before=${encodeURIComponent(calls[calls.length - 1].started_at)}` : '';
+      const res = await apiFetch(`/calls/history?kind=${callsKind}&limit=50${before}`);
+      if (res && res.ok) {
+        const d = await res.json();
+        const got = d.items || [];
+        calls = more ? calls.concat(got) : got;
+        callsMore = got.length >= 50;
+      }
+    } catch (e) { /* сервер без истории звонков — просто пусто */ }
+    finally { loading = false; }
+    renderPanel();
+  }
+
+  function durText(sec) {
+    const m = Math.round((sec || 0) / 60);
+    if (sec > 0 && m < 1) return tr('lessMin');
+    if (m < 60) return `${m} ${tr('min')}`;
+    return `${Math.floor(m / 60)} ${tr('hShort')} ${m % 60} ${tr('min')}`;
+  }
+
+  const CALL = {
+    answered_out: { ic: 'call_made', cls: 'mint', t: 'cOut' },
+    answered_in: { ic: 'call_received', cls: 'blue', t: 'cIn' },
+    missed: { ic: 'phone_missed', cls: 'coral', t: 'cMissed' },
+    no_answer: { ic: 'call_made', cls: 'gray', t: 'cNoAnswer' },
+    rejected: { ic: 'call_end', cls: 'coral', t: 'cRejected' },
+    active: { ic: 'call', cls: 'mint', t: 'cActive' },
+    group: { ic: 'groups', cls: 'mint', t: 'cGroup' },
+  };
+
+  function callHtml(c) {
+    const key = c.result === 'answered' ? `answered_${c.direction === 'outgoing' ? 'out' : 'in'}` : c.result;
+    const k = CALL[key] || CALL.no_answer;
+    const parts = [tr(k.t)];
+    if (c.mode === 'video') parts.push(tr('video'));
+    if (c.result === 'answered' || (c.result === 'group' && c.duration_sec)) parts.push(durText(c.duration_sec));
+    const title = c.is_group ? `# ${c.title || ''}` : (c.title || c.peer || '');
+    const back = !c.is_group && c.result !== 'active'
+      ? `<button type="button" class="inb-callback" data-call-back="${escH(c.id)}" title="${escH(tr('callBack'))}">${icon('call')}</button>` : '';
+    return `<div class="inb-row inb-call-row"><button type="button" class="inb-item" data-call="${escH(c.id)}">
+      <span class="inb-ic ${k.cls}">${icon(k.ic)}</span>
+      <span class="inb-txt"><span class="inb-t${c.result === 'missed' ? ' inb-miss' : ''}"><b>${escH(title)}</b></span><span class="inb-sub">${escH(parts.join(' · '))}</span><span class="inb-time">${escH(ago(c.started_at))}</span></span>
+    </button>${back}</div>`;
+  }
+
   async function loadItems() {
+    if (filter === 'calls') return loadCalls(false);
     loading = true;
     try {
       const res = await apiFetch(`/notifications?kind=${filter}&limit=60`);
@@ -224,13 +283,23 @@
 
   function renderPanel() {
     if (!panel) return;
-    const tabs = [['all', tr('all')], ...(trackerOn() ? [['tasks', tr('tasks')]] : []), ['notices', tr('notices')]];
+    const tabs = [['all', tr('all')], ...(trackerOn() ? [['tasks', tr('tasks')]] : []), ['notices', tr('notices')], ['calls', tr('calls')]];
     if (!trackerOn() && filter === 'tasks') filter = 'all';
     const emptyText = filter === 'tasks' ? tr('emptyTasks') : filter === 'notices' ? tr('emptyNotices') : tr('empty');
     panel.innerHTML = `<div class="inb-head"><h3>${escH(tr('title'))}</h3>
         <button type="button" class="inb-readall" data-act="readall"${unread ? '' : ' disabled'}>${escH(tr('readAll'))}</button></div>
       <div class="inb-tabs">${tabs.map(([id, n]) => `<button type="button" class="inb-tab${filter === id ? ' on' : ''}" data-tab="${id}">${escH(n)}${id === 'all' && unread ? ` · ${unread}` : ''}</button>`).join('')}</div>
-      <div class="inb-list">${items.length ? items.map(itemHtml).join('') : `<div class="inb-empty">${icon('notifications_none')}<p>${escH(loading ? tr('loading') : emptyText)}</p></div>`}</div>`;
+      ${filter === 'calls' ? callsListHtml() : `<div class="inb-list">${items.length ? items.map(itemHtml).join('') : `<div class="inb-empty">${icon('notifications_none')}<p>${escH(loading ? tr('loading') : emptyText)}</p></div>`}</div>`}`;
+  }
+
+  function callsListHtml() {
+    const chips = [['all', tr('callsAll')], ['missed', tr('callsMissed')]]
+      .map(([id, n]) => `<button type="button" class="inb-chip${callsKind === id ? ' on' : ''}" data-calls-kind="${id}">${escH(n)}</button>`).join('');
+    const empty = callsKind === 'missed' ? tr('emptyMissed') : tr('emptyCalls');
+    const list = calls.length
+      ? calls.map(callHtml).join('') + (callsMore ? `<button type="button" class="inb-more" data-calls-more="1">${escH(loading ? tr('loading') : tr('more'))}</button>` : '')
+      : `<div class="inb-empty">${icon('call')}<p>${escH(loading ? tr('loading') : empty)}</p></div>`;
+    return `<div class="inb-chips">${chips}</div><div class="inb-list">${list}</div>`;
   }
 
   function placePanel() {
@@ -267,7 +336,20 @@
 
   async function onPanelClick(e) {
     const tab = e.target.closest('[data-tab]');
-    if (tab) { filter = tab.dataset.tab; items = []; renderPanel(); loadItems(); return; }
+    if (tab) { filter = tab.dataset.tab; items = []; calls = []; renderPanel(); loadItems(); return; }
+    const ck = e.target.closest('[data-calls-kind]');
+    if (ck) { callsKind = ck.dataset.callsKind; calls = []; loadCalls(false); return; }
+    if (e.target.closest('[data-calls-more]')) { if (!loading) loadCalls(true); return; }
+    const cb = e.target.closest('[data-call-back]') || e.target.closest('[data-call]');
+    if (cb) {
+      const id = cb.dataset.callBack || cb.dataset.call;
+      const c = calls.find((x) => String(x.id) === id);
+      if (!c || !c.channel_slug) return;
+      closePanel();
+      await openChannel(c.channel_slug);
+      if (cb.dataset.callBack && typeof startVideoCall === 'function') startVideoCall();
+      return;
+    }
     if (e.target.closest('[data-act="readall"]')) {
       items.forEach((n) => { n.read = true; });
       renderPanel();
@@ -336,6 +418,7 @@
         const k = data.item && data.item.kind;
         const fits = filter === 'all' || (filter === 'notices' && (k === 'mention' || k === 'missed_call' || k === 'announce')) || (filter === 'tasks' && k && k.startsWith('task_'));
         if (fits) { items.unshift(data.item); renderPanel(); }
+        if (k === 'missed_call' && filter === 'calls') loadCalls(false);
       }
     } else if (data.event === 'notifications_read') {
       setUnread(data.unread);

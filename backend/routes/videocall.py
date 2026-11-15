@@ -405,6 +405,103 @@ async def _sync_call_log(db) -> None:
     )
 
 
+@router.get("/calls/history")
+async def call_history(
+    kind: str = "all",
+    limit: int = 50,
+    before: str = "",
+    username: str = Depends(get_current_user),
+):
+    """История звонков человека: входящие, исходящие, пропущенные, групповые.
+
+    `kind=missed` — только пропущенные. Страницы — по `before` (started_at
+    последней строки). Длительность — от ответа, в секундах.
+    """
+    limit = max(1, min(int(limit or 50), 200))
+    db = await get_db()
+    # Подтянуть статусы только что закончившихся звонков.
+    await _sync_call_log(db)
+    await db.commit()
+
+    where = ["cm.username = ?", "(cl.started_by = ? OR cl.callee = ? OR cl.call_id IS NULL)"]
+    params: list = [username, username, username]
+    if kind == "missed":
+        where.append("cl.callee = ? AND cl.answered_at IS NULL AND cl.status NOT IN ('active', 'rejected')")
+        params.append(username)
+    if before:
+        where.append("cl.started_at < ?")
+        params.append(before)
+    params.append(limit)
+    cur = await db.execute(
+        f"""SELECT cl.id, cl.call_id, cl.started_by, cl.callee, cl.mode, cl.status,
+                   cl.started_at, cl.answered_at, cl.ended_at, cl.duration_sec,
+                   c.id AS channel_id, c.slug AS channel_slug, c.name AS channel_name, c.type AS channel_type
+            FROM call_log cl
+            JOIN channels c ON c.id = cl.channel_id
+            JOIN channel_members cm ON cm.channel_id = cl.channel_id
+            WHERE {' AND '.join(where)}
+            ORDER BY cl.started_at DESC LIMIT ?""",
+        params,
+    )
+    rows = [dict(r) for r in await cur.fetchall()]
+
+    # Собеседник в личном звонке — второй участник беседы.
+    direct = list({r["channel_id"] for r in rows if r["channel_type"] == "direct"})
+    other: dict[str, str] = {}
+    if direct:
+        marks = ",".join("?" * len(direct))
+        c2 = await db.execute(
+            f"SELECT channel_id, username FROM channel_members WHERE channel_id IN ({marks}) AND username != ?",
+            (*direct, username),
+        )
+        for r in await c2.fetchall():
+            other.setdefault(r["channel_id"], r["username"])
+    names = {r["started_by"] for r in rows} | set(other.values())
+    users: dict[str, dict] = {}
+    if names:
+        marks = ",".join("?" * len(names))
+        c3 = await db.execute(
+            f"SELECT username, display_name, avatar_path FROM users WHERE username IN ({marks})", tuple(names)
+        )
+        users = {r["username"]: dict(r) for r in await c3.fetchall()}
+
+    items = []
+    for r in rows:
+        is_group = r["channel_type"] != "direct"
+        outgoing = r["started_by"] == username
+        answered = bool(r["answered_at"]) or (r["duration_sec"] or 0) > 0
+        if r["status"] == "active":
+            result = "active"
+        elif is_group and not r["call_id"]:
+            result = "group"
+        elif answered:
+            result = "answered"
+        elif r["status"] == "rejected":
+            result = "rejected"
+        else:
+            result = "no_answer" if outgoing else "missed"
+        peer = r["started_by"] if (is_group or not outgoing) else (r["callee"] or other.get(r["channel_id"], ""))
+        if not is_group and not peer:
+            peer = other.get(r["channel_id"], "")
+        u = users.get(peer) or {}
+        items.append({
+            "id": r["id"],
+            "call_id": r["call_id"],
+            "direction": "outgoing" if outgoing else "incoming",
+            "result": result,
+            "mode": r["mode"] or "audio",
+            "duration_sec": int(r["duration_sec"] or 0) if result in ("answered", "group") else 0,
+            "started_at": r["started_at"],
+            "channel_slug": r["channel_slug"],
+            "is_group": is_group,
+            "title": (r["channel_name"] or "Групповой звонок") if is_group else (u.get("display_name") or peer),
+            "peer": peer,
+            "peer_name": u.get("display_name") or peer,
+            "avatar": u.get("avatar_path") or "",
+        })
+    return {"items": items}
+
+
 def call_ended_text(seconds: int) -> str:
     """«Видеозвонок завершён · 1 ч 5 мин» — для строки в переписке.
 
@@ -1544,6 +1641,15 @@ async def register_incoming_federated_call(
         (call_id, channel_id, channel_slug, room_name, caller_uid, callee, mode,
          expires_at, now_iso(), domain, livekit_url, livekit_token),
     )
+    # Журнал звонков и у вызываемого: иначе входящие с другого сервера не
+    # попадали в его историю звонков.
+    c = await db.execute("SELECT 1 FROM call_log WHERE call_id = ?", (call_id,))
+    if not await c.fetchone():
+        await db.execute(
+            "INSERT INTO call_log (channel_id, started_by, started_at, status, call_id, callee, mode) "
+            "VALUES (?, ?, ?, 'active', ?, ?, ?)",
+            (channel_id, caller_uid, now_iso(), call_id, callee, mode),
+        )
     await db.commit()
     schedule_ring_timeout(expires_at)
 

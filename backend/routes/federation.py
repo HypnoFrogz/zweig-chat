@@ -1376,6 +1376,11 @@ async def queue_message_for_peers(db, channel_id: str, msg: dict, sender: str) -
                 "text": msg.get("text", ""),
                 "timestamp": msg.get("timestamp") or now.isoformat(),
             }
+            # Ответ на сообщение. Id сообщений общие на всех серверах, так что
+            # сосед найдёт исходное у себя по тому же id. Раньше ответ уезжал
+            # без этой ссылки, и у собеседника цитата над ним пропадала.
+            if msg.get("reply_to"):
+                payload["reply_to"] = msg["reply_to"]
             # Куда именно легло сообщение. У группового канала id общий на всех
             # серверах — только он и говорит, о каком разговоре речь. У личного
             # диалога общего id нет: каждая сторона завела свой при погашении
@@ -1779,10 +1784,25 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
     else:
         att = None
 
+    # Ответ: ссылку берём, только если исходное сообщение есть в этом же
+    # разговоре — чужой id из другого чата сюда не протащить.
+    reply_to = None
+    reply_preview = None
+    rt = data.get("reply_to")
+    if isinstance(rt, str) and 0 < len(rt) <= 100:
+        rc = await db.execute(
+            "SELECT id, sender_name, text FROM messages WHERE id = ? AND channel_id = ?",
+            (rt, channel_id),
+        )
+        rr = await rc.fetchone()
+        if rr:
+            reply_to = rr["id"]
+            reply_preview = {"id": rr["id"], "sender_name": rr["sender_name"], "text": (rr["text"] or "")[:120]}
+
     cur = await db.execute(
-        "INSERT OR IGNORE INTO messages (id, channel_id, sender, sender_name, type, text, file_data, timestamp) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (msg_id, channel_id, uid, display, msg_type, text, file_data, now),
+        "INSERT OR IGNORE INTO messages (id, channel_id, sender, sender_name, type, text, file_data, reply_to, timestamp) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (msg_id, channel_id, uid, display, msg_type, text, file_data, reply_to, now),
     )
     if cur.rowcount == 0:
         return {"ok": True, "duplicate": True}
@@ -1814,6 +1834,10 @@ async def federation_message(data: dict, peer: str = Depends(require_peer)):
         "reply_count": 0,
         "remote_domain": peer,
     }
+    if reply_to:
+        msg["reply_to"] = reply_to
+        if reply_preview:
+            msg["reply_to_preview"] = reply_preview
     members = await _get_members(db, channel_id)
     await manager.send_to_channel(members, {"event": "new_message", "channel_slug": slug, "message": msg})
 

@@ -958,6 +958,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── API helper ─────────────────────────────────────────────────
 let _refreshInFlight = null;
 
+// true — обновили; false — сервер отказал (сеанс кончился); null — сервер
+// сейчас недоступен (перезапуск, обновление, нет сети). Выходить из аккаунта
+// можно только по false: раньше любой сбой во время перезапуска сервера
+// выкидывал человека на экран входа.
 async function refreshAccessToken() {
     if (!refreshToken) return false;
     if (_refreshInFlight) return _refreshInFlight;
@@ -969,7 +973,8 @@ async function refreshAccessToken() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refresh_token: refreshToken }),
             });
-            if (!res.ok) return false;
+            if (res.status === 401 || res.status === 403) return false;
+            if (!res.ok) return null;
             const data = await res.json();
             const newAccess = data.access_token || data.token;
             const newRefresh = data.refresh_token;
@@ -981,7 +986,7 @@ async function refreshAccessToken() {
             localStorage.removeItem('ch_token'); // legacy cleanup
             return true;
         } catch (_) {
-            return false;
+            return null;
         } finally {
             _refreshInFlight = null;
         }
@@ -998,7 +1003,13 @@ async function apiFetch(url, opts = {}) {
         headers['Content-Type'] = 'application/json';
         requestOpts.body = JSON.stringify(requestOpts.body);
     }
-    const res = await fetch(API + url, { ...requestOpts, headers });
+    let res;
+    try {
+        res = await fetch(API + url, { ...requestOpts, headers });
+    } catch (e) {
+        // Сервер недоступен — это не повод выходить из аккаунта.
+        return null;
+    }
     if (res.status === 401) {
         // Сеанс завершили с другого устройства или из админки — скажем об этом.
         let revoked = false;
@@ -1010,6 +1021,7 @@ async function apiFetch(url, opts = {}) {
             if (refreshed) {
                 return apiFetch(url, { ...opts, _retry: true });
             }
+            if (refreshed === null) return null;  // сервер недоступен — сеанс жив
         }
         logout();
         return null;
@@ -1126,9 +1138,17 @@ async function showApp() {
     }
 }
 
-async function checkAuth() {
+async function checkAuth(attempt = 0) {
     const res = await apiFetch('/me');
-    if (!res || !res.ok) { logout(); return; }
+    // Сервер перезапускается или нет сети — не выкидываем на вход, а ждём:
+    // сеанс от этого не кончился. Выход — только когда сервер сам отказал
+    // (это сделает apiFetch по 401).
+    if (!res || res.status >= 500) {
+        if (!token) return;  // apiFetch уже вышел из аккаунта
+        setTimeout(() => checkAuth(attempt + 1), Math.min(10000, 1500 * (attempt + 1)));
+        return;
+    }
+    if (!res.ok) { logout(); return; }
     const data = await res.json();
     currentUser = data.username;
     displayName = data.display_name;

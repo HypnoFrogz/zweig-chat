@@ -5033,9 +5033,9 @@ let pendingOutgoingCall = null;
 
 function showCallPanelPending() {
     document.getElementById('right-panel').style.display = 'none';
-    document.getElementById('call-panel').style.display = 'flex';
+    callEl('call-panel').style.display = 'flex';
     document.getElementById('call-banner').style.display = 'none';
-    document.getElementById('call-participants').innerHTML =
+    callEl('call-participants').innerHTML =
         '<div class="call-participant" style="opacity:.7">Вызов…</div>';
 }
 
@@ -5119,7 +5119,7 @@ function onCallMediaUpdated(data) {
     // button on the other participant's screen.
     if (typeof data.speaker_enabled === 'boolean' && data.updated_by === currentUser) {
         speakerEnabled = data.speaker_enabled;
-        const speakerBtn = document.getElementById('btn-toggle-speaker');
+        const speakerBtn = callEl('btn-toggle-speaker');
         if (speakerBtn) {
             speakerBtn.querySelector('.material-icons-round').textContent = speakerEnabled ? 'volume_up' : 'hearing';
             speakerBtn.classList.toggle('muted', !speakerEnabled);
@@ -5235,20 +5235,20 @@ async function joinLivekitRoom(tk, roomName, url) {
 
     // Show call panel, hide members panel
     document.getElementById('right-panel').style.display = 'none';
-    document.getElementById('call-panel').style.display = 'flex';
+    callEl('call-panel').style.display = 'flex';
     document.getElementById('call-banner').style.display = 'none';
-    document.getElementById('call-participants').innerHTML = '';
+    callEl('call-participants').innerHTML = '';
     callParticipants.clear();
     startCallTimer();
 
     // Set initial button states: mic ON, camera OFF
-    const camBtn = document.getElementById('btn-toggle-cam');
+    const camBtn = callEl('btn-toggle-cam');
     camBtn.querySelector('.material-icons-round').textContent = 'videocam_off';
     camBtn.classList.add('muted');
-    const micBtn = document.getElementById('btn-toggle-mic');
+    const micBtn = callEl('btn-toggle-mic');
     micBtn.querySelector('.material-icons-round').textContent = 'mic';
     micBtn.classList.remove('muted');
-    const speakerBtn = document.getElementById('btn-toggle-speaker');
+    const speakerBtn = callEl('btn-toggle-speaker');
     if (speakerBtn) {
         speakerEnabled = false;
         speakerBtn.querySelector('.material-icons-round').textContent = 'hearing';
@@ -5261,9 +5261,9 @@ async function joinLivekitRoom(tk, roomName, url) {
         renderCallParticipants();
     });
     room.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track) => {
-        document.querySelectorAll(`[data-track-sid="${track.sid}"]`).forEach(el => el.remove());
+        callDocs().forEach(d => d.querySelectorAll(`[data-track-sid="${track.sid}"]`).forEach(el => el.remove()));
         // Clean up empty video containers
-        document.querySelectorAll('.call-video-item').forEach(item => {
+        callDoc().querySelectorAll('.call-video-item').forEach(item => {
             if (!item.querySelector('video')) item.remove();
         });
         updateVideoGrid();
@@ -5273,11 +5273,13 @@ async function joinLivekitRoom(tk, roomName, url) {
         stopRingback();
         renderCallParticipants();
     });
+    // Кто говорит: подсветка плиток и выбор, кого показать крупно.
+    room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => onActiveSpeakers(room, speakers));
     room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
         // Remove video elements for this participant
-        const container = document.getElementById(`video-${participant.identity}`);
+        const container = callEl(`video-${participant.identity}`);
         if (container) container.remove();
-        const screenBox = document.getElementById(`video-${participant.identity}-screen`);
+        const screenBox = callEl(`video-${participant.identity}-screen`);
         if (screenBox) screenBox.remove();
         updateVideoGrid();
         renderCallParticipants();
@@ -5333,7 +5335,7 @@ function attachTrack(track, participant) {
         document.body.appendChild(el);
     } else if (track.kind === 'video') {
         // Add video to call panel grid
-        const grid = document.getElementById('call-video-grid');
+        const grid = callEl('call-video-grid');
         // Экран — отдельная плитка: у человека могут идти одновременно и
         // камера, и демонстрация, и в одном окне они бы наложились.
         const isScreen = track.source === LivekitClient.Track.Source.ScreenShare;
@@ -5362,13 +5364,16 @@ function attachTrack(track, participant) {
         const el = track.attach();
         el.dataset.trackSid = track.sid;
         container.appendChild(el);
+        // В отдельном окне видео, перенесённое из основной страницы, само не играет.
+        if (CALL_WIN) el.play?.().catch(() => {});
         updateVideoGrid();
     }
 }
 
 function renderCallParticipants() {
     if (!livekitRoom) return;
-    const container = document.getElementById('call-participants');
+    layoutStage();
+    const container = callEl('call-participants');
     container.innerHTML = '';
 
     const participants = [];
@@ -5415,8 +5420,8 @@ function renderCallParticipants() {
 }
 
 function updateVideoGrid() {
-    const grid = document.getElementById('call-video-grid');
-    const panel = document.getElementById('call-panel');
+    const grid = callEl('call-video-grid');
+    const panel = callEl('call-panel');
     const count = grid.children.length;
     if (count === 0) {
         grid.classList.remove('active', 'two-videos');
@@ -5434,6 +5439,7 @@ function updateVideoGrid() {
     // плиток под ним. Раньше камеры 4:3 в две колонки не помещались в высоту
     // сетки и наезжали на показываемый экран.
     grid.classList.toggle('has-screen', !!grid.querySelector('.call-video-item.is-screen'));
+    layoutStage();
 }
 
 // Keep backward compat aliases
@@ -5444,7 +5450,7 @@ function toggleMic() {
     if (!livekitRoom) return;
     const enabled = livekitRoom.localParticipant.isMicrophoneEnabled;
     livekitRoom.localParticipant.setMicrophoneEnabled(!enabled);
-    const btn = document.getElementById('btn-toggle-mic');
+    const btn = callEl('btn-toggle-mic');
     btn.querySelector('.material-icons-round').textContent = enabled ? 'mic_off' : 'mic';
     btn.classList.toggle('muted', enabled);
     renderCallParticipants();
@@ -5452,7 +5458,7 @@ function toggleMic() {
 async function toggleSpeaker() {
     if (!livekitRoom) return;
     speakerEnabled = !speakerEnabled;
-    const btn = document.getElementById('btn-toggle-speaker');
+    const btn = callEl('btn-toggle-speaker');
     if (btn) {
         btn.querySelector('.material-icons-round').textContent = speakerEnabled ? 'volume_up' : 'hearing';
         btn.classList.toggle('muted', !speakerEnabled);
@@ -5476,7 +5482,7 @@ async function toggleCamera() {
     if (!livekitRoom) return;
     const enabled = livekitRoom.localParticipant.isCameraEnabled;
     await livekitRoom.localParticipant.setCameraEnabled(!enabled);
-    const btn = document.getElementById('btn-toggle-cam');
+    const btn = callEl('btn-toggle-cam');
     btn.querySelector('.material-icons-round').textContent = enabled ? 'videocam_off' : 'videocam';
     btn.classList.toggle('muted', enabled);
 
@@ -5488,7 +5494,7 @@ async function toggleCamera() {
         });
     } else {
         // Camera was just turned OFF — remove local video from grid
-        const container = document.getElementById(`video-${livekitRoom.localParticipant.identity}`);
+        const container = callEl(`video-${livekitRoom.localParticipant.identity}`);
         if (container) container.remove();
         updateVideoGrid();
     }
@@ -5517,7 +5523,7 @@ function screenShareSupported() {
 }
 
 function updateScreenShareButton() {
-    const btn = document.getElementById('btn-toggle-screen');
+    const btn = callEl('btn-toggle-screen');
     if (!btn) return;
     btn.style.display = screenShareSupported() ? '' : 'none';
     const on = !!(livekitRoom && livekitRoom.localParticipant && livekitRoom.localParticipant.isScreenShareEnabled);
@@ -5574,7 +5580,7 @@ async function toggleScreenShare() {
 
 function removeLocalScreenTile() {
     if (!livekitRoom) return;
-    const box = document.getElementById(`video-${livekitRoom.localParticipant.identity}-screen`);
+    const box = callEl(`video-${livekitRoom.localParticipant.identity}-screen`);
     if (box) box.remove();
     updateVideoGrid();
 }
@@ -5712,24 +5718,27 @@ let callTimerInterval = null;
 let callStartTime = null;
 
 function closeCall() {
+    if (CALL_WIN) returnCallFromPopout(true);
+    if (callStage) toggleCallStage(false);
+    mainSpeaker = null;
     stopRingback();
     // Звук «трубку положили» — только если звонок был на экране.
-    const wasOpen = document.getElementById('call-panel')?.style.display !== 'none';
+    const wasOpen = callEl('call-panel')?.style.display !== 'none';
     if (wasOpen) playHangupTone();
     activeCallId = null;
     groupCallSlug = '';
     if (livekitRoom) { livekitRoom.disconnect(); livekitRoom = null; }
     // Hide call panel and banner
-    const panel = document.getElementById('call-panel');
+    const panel = callEl('call-panel');
     panel.style.display = 'none';
     panel.classList.remove('has-video');
     document.getElementById('call-banner').style.display = 'none';
-    document.getElementById('call-participants').innerHTML = '';
+    callEl('call-participants').innerHTML = '';
     // Stop call timer
     if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
     callStartTime = null;
     // Clear video grid
-    const videoGrid = document.getElementById('call-video-grid');
+    const videoGrid = callEl('call-video-grid');
     videoGrid.innerHTML = '';
     videoGrid.classList.remove('active', 'two-videos');
     // Clear old overlay (backward compat)
@@ -5739,28 +5748,213 @@ function closeCall() {
     // Reset join button
     document.getElementById('btn-call-join').style.display = 'none';
     // Reset control buttons
-    const micBtn = document.getElementById('btn-toggle-mic');
+    const micBtn = callEl('btn-toggle-mic');
     micBtn.querySelector('.material-icons-round').textContent = 'mic';
     micBtn.classList.remove('muted');
-    const camBtn = document.getElementById('btn-toggle-cam');
+    const camBtn = callEl('btn-toggle-cam');
     camBtn.querySelector('.material-icons-round').textContent = 'videocam_off';
     camBtn.classList.remove('muted');
     updateScreenShareButton();
     callParticipants.clear();
     // Reset timer display
-    const timerEl = document.getElementById('call-panel-timer');
+    const timerEl = callEl('call-panel-timer');
     if (timerEl) timerEl.textContent = '0:00';
 }
 
+// ── Звонок на весь экран и в отдельном окне ─────────────────────────
+// Панель справа от чата узкая: на группу и демонстрацию в ней тесно. Звонок
+// можно развернуть поверх всего приложения или вынести в отдельное окно
+// (например, на второй монитор), а чат оставить рядом. Раскладки две:
+// «спикер» — крупно демонстрация экрана, а без неё тот, кто говорит, остальные
+// лентой; «все» — все участники равными окошками, как в Teams.
+var CALL_WIN = null;          // отдельное окно звонка
+var CALL_HOME = null;         // где панель стояла в основной странице
+var callStage = false;
+var callLayout = (() => { try { return localStorage.getItem('zw_call_layout') || 'speaker'; } catch (_) { return 'speaker'; } })();
+var mainSpeaker = null;
+var mainSpeakerAt = 0;
+
+function callDoc() { return CALL_WIN && !CALL_WIN.closed ? CALL_WIN.document : document; }
+function callDocs() { return CALL_WIN && !CALL_WIN.closed ? [document, CALL_WIN.document] : [document]; }
+function callEl(id) { return callDoc().getElementById(id) || document.getElementById(id); }
+
+function toggleCallStage(on) {
+    const panel = callEl('call-panel'); if (!panel) return;
+    callStage = on === undefined ? !callStage : !!on;
+    panel.classList.toggle('stage', callStage);
+    if (!callStage) {
+        // Обратно в панель: заглушки без видео там не нужны.
+        callDoc().querySelectorAll('.call-video-item.avatar-tile').forEach(t => { if (!t.querySelector('video')) t.remove(); });
+        callDoc().querySelectorAll('.call-video-item').forEach(t => { t.classList.remove('is-main', 'no-video'); t.style.order = ''; });
+        const grid = callEl('call-video-grid');
+        if (grid) grid.classList.remove('stage-speaker', 'stage-gallery');
+        updateVideoGrid();
+    }
+    layoutStage();
+}
+function exitCallStage() {
+    if (CALL_WIN) returnCallFromPopout();
+    else toggleCallStage(false);
+}
+function setCallLayout(kind) {
+    callLayout = kind === 'gallery' ? 'gallery' : 'speaker';
+    try { localStorage.setItem('zw_call_layout', callLayout); } catch (_) {}
+    layoutStage();
+}
+
+// Плитка на каждого участника, даже без камеры: в раскладке «все» видно всех.
+function ensureParticipantTiles(grid) {
+    if (!livekitRoom) return;
+    const people = [];
+    const lp = livekitRoom.localParticipant;
+    if (lp) people.push({ id: lp.identity, name: (lp.name || lp.identity) + ` (${t('call.you')})` });
+    livekitRoom.remoteParticipants.forEach(p => people.push({ id: p.identity, name: p.name || p.identity }));
+    const keep = new Set(people.map(p => `video-${p.id}`));
+    people.forEach(p => {
+        if (callEl(`video-${p.id}`)) return;
+        const tile = grid.ownerDocument.createElement('div');
+        tile.className = 'call-video-item avatar-tile';
+        tile.id = `video-${p.id}`;
+        tile.innerHTML = `<div class="call-avatar">${esc((p.name || '?').charAt(0).toUpperCase())}</div><div class="call-video-item-name">${esc(p.name)}</div>`;
+        grid.appendChild(tile);
+    });
+    grid.querySelectorAll('.call-video-item.avatar-tile').forEach(t => {
+        if (!keep.has(t.id) && !t.querySelector('video')) t.remove();
+    });
+}
+
+function layoutStage() {
+    const grid = callEl('call-video-grid');
+    if (!grid || !callStage || !livekitRoom) return;
+    ensureParticipantTiles(grid);
+    grid.classList.add('active');
+    grid.classList.toggle('stage-speaker', callLayout === 'speaker');
+    grid.classList.toggle('stage-gallery', callLayout === 'gallery');
+    const tiles = [...grid.querySelectorAll('.call-video-item')];
+    tiles.forEach(tl => tl.classList.toggle('no-video', !tl.querySelector('video')));
+    const cols = Math.ceil(Math.sqrt(tiles.length || 1));
+    grid.style.setProperty('--cols', cols);
+    grid.style.setProperty('--rows', Math.ceil((tiles.length || 1) / cols));
+    const localId = `video-${livekitRoom.localParticipant?.identity}`;
+    let main = null;
+    if (callLayout === 'speaker') {
+        // Приоритет: демонстрация экрана → тот, кто говорит → собеседник с
+        // камерой → любой собеседник → я сам.
+        main = grid.querySelector('.call-video-item.is-screen')
+            || (mainSpeaker && callEl(`video-${mainSpeaker}`))
+            || tiles.find(tl => tl.id !== localId && !tl.classList.contains('no-video') && !tl.classList.contains('is-screen'))
+            || tiles.find(tl => tl.id !== localId)
+            || tiles[0] || null;
+    }
+    // Порядок — через CSS order: перестановка в DOM останавливала бы видео.
+    tiles.forEach(tl => { tl.classList.toggle('is-main', tl === main); tl.style.order = tl === main ? '-1' : ''; });
+    callDocs().forEach(d => {
+        d.getElementById('call-layout-speaker')?.classList.toggle('on', callLayout === 'speaker');
+        d.getElementById('call-layout-gallery')?.classList.toggle('on', callLayout === 'gallery');
+    });
+}
+
+function onActiveSpeakers(room, speakers) {
+    if (room !== livekitRoom) return;
+    const local = room.localParticipant?.identity;
+    callDoc().querySelectorAll('.call-video-item.speaking').forEach(e => e.classList.remove('speaking'));
+    speakers.forEach(p => callEl(`video-${p.identity}`)?.classList.add('speaking'));
+    // Крупный план меняем не чаще раза в две секунды: иначе от каждого
+    // «угу» картинка прыгает между людьми.
+    const remote = speakers.find(p => p.identity !== local);
+    const now = Date.now();
+    if (remote && remote.identity !== mainSpeaker && now - mainSpeakerAt > 2000) {
+        mainSpeaker = remote.identity;
+        mainSpeakerAt = now;
+        layoutStage();
+    }
+}
+
+// Кнопки панели размечены onclick="…" — в чужом окне такие обработчики ищут
+// функции в его собственном глобальном объекте и не находят. Переводим их в
+// обработчики этой страницы один раз, до переноса.
+function bindCallHandlers(root) {
+    root.querySelectorAll('[onclick]').forEach(el => {
+        const code = el.getAttribute('onclick');
+        el.removeAttribute('onclick');
+        const fn = new Function('event', code);
+        el.addEventListener('click', function (event) { return fn.call(this, event); });
+    });
+}
+
+function popOutCall() {
+    if (CALL_WIN) { try { CALL_WIN.focus(); } catch (_) {} return; }
+    const panel = document.getElementById('call-panel');
+    if (!panel || !livekitRoom) return;
+    const w = window.open('', 'zweig-call', 'width=1100,height=720');
+    // Окно не открылось (запрет всплывающих окон, десктопное приложение) —
+    // разворачиваем звонок здесь же, на всё приложение.
+    if (!w || !w.document) { toggleCallStage(true); return; }
+    CALL_WIN = w;
+    const d = w.document;
+    d.open();
+    d.write('<!doctype html><html><head><meta charset="utf-8"><title>Zweig — звонок</title>'
+        + [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => `<link rel="stylesheet" href="${l.href}">`).join('')
+        + '</head><body></body></html>');
+    d.close();
+    d.documentElement.className = document.documentElement.className;
+    [...document.documentElement.attributes].forEach(a => { if (a.name.startsWith('data-')) d.documentElement.setAttribute(a.name, a.value); });
+    d.body.className = document.body.className + ' call-popout';
+    _callPanelRef = panel;
+    CALL_HOME = { parent: panel.parentNode, next: panel.nextSibling };
+    bindCallHandlers(panel);
+    d.body.appendChild(panel);
+    panel.style.display = 'flex';
+    callStage = true;
+    panel.classList.add('stage');
+    panel.querySelectorAll('video').forEach(v => v.play?.().catch(() => {}));
+    layoutStage();
+    // Основная страница: чат снова на всю ширину, звонок — плашкой сверху.
+    document.getElementById('right-panel').style.display = '';
+    document.getElementById('call-banner').style.display = 'flex';
+    w.addEventListener('pagehide', () => setTimeout(() => { if (CALL_WIN === w) returnCallFromPopout(); }, 0));
+    const watch = setInterval(() => {
+        if (CALL_WIN !== w) { clearInterval(watch); return; }
+        if (w.closed) { clearInterval(watch); returnCallFromPopout(); }
+    }, 1000);
+}
+
+function returnCallFromPopout(closing) {
+    const w = CALL_WIN;
+    if (!w) return;
+    const panel = (!w.closed && w.document.getElementById('call-panel')) || CALL_PANEL_REF();
+    CALL_WIN = null;
+    if (panel && CALL_HOME) {
+        CALL_HOME.parent.insertBefore(panel, CALL_HOME.next);
+        panel.querySelectorAll('video').forEach(v => v.play?.().catch(() => {}));
+    }
+    CALL_HOME = null;
+    try { if (!w.closed) w.close(); } catch (_) {}
+    toggleCallStage(false);
+    if (!closing && livekitRoom && panel) {
+        document.getElementById('right-panel').style.display = 'none';
+        panel.style.display = 'flex';
+        document.getElementById('call-banner').style.display = 'none';
+    }
+}
+// Ссылка на панель на случай, если окно уже закрыто и найти её там нельзя.
+var _callPanelRef = null;
+function CALL_PANEL_REF() { return _callPanelRef; }
+document.addEventListener('DOMContentLoaded', () => { _callPanelRef = document.getElementById('call-panel'); });
+
 function minimizeCallPanel() {
-    document.getElementById('call-panel').style.display = 'none';
+    if (CALL_WIN) returnCallFromPopout();
+    if (callStage) toggleCallStage(false);
+    callEl('call-panel').style.display = 'none';
     if (livekitRoom) {
         document.getElementById('call-banner').style.display = 'flex';
     }
 }
 
 function toggleCallPanel() {
-    const panel = document.getElementById('call-panel');
+    // Звонок в отдельном окне — плашка возвращает к нему.
+    if (CALL_WIN) { try { CALL_WIN.focus(); } catch (_) {} return; }
+    const panel = callEl('call-panel');
     if (panel.style.display === 'none') {
         panel.style.display = 'flex';
         document.getElementById('call-banner').style.display = 'none';
@@ -5784,7 +5978,7 @@ function startCallTimer() {
         const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
         const timeStr = formatCallClock(elapsed);
         document.getElementById('call-banner-time').textContent = timeStr;
-        const panelTimer = document.getElementById('call-panel-timer');
+        const panelTimer = callEl('call-panel-timer');
         if (panelTimer) panelTimer.textContent = timeStr;
     }, 1000);
 }

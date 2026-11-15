@@ -3410,3 +3410,59 @@ input, textarea, select, button { font-family: inherit; font-size: inherit; }
     .mv-btn-text { font-size: 0; gap: 0; }
     .mv-btn-text .material-icons-round { font-size: 22px; }
 }
+
+/* ── Звонок на весь экран и в отдельном окне ─────────────────────────── */
+.call-stage-only { display: none !important; }
+.call-panel.stage .call-stage-only { display: inline-flex !important; }
+.call-panel.stage .call-panel-only { display: none !important; }
+.call-popout .call-popout-btn { display: none !important; }
+.call-layout-switch { gap: 2px; background: var(--bg3); border-radius: 10px; padding: 2px; }
+.call-layout-switch button {
+    border: none; background: transparent; color: var(--text2); width: 32px; height: 28px;
+    border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.call-layout-switch button.on { background: var(--surface); color: var(--text); }
+.call-layout-switch .material-icons-round { font-size: 18px; }
+
+.call-panel.stage {
+    position: fixed; inset: 0; z-index: 900; width: auto; min-width: 0;
+    border-left: none; background: #0a0a0a;
+}
+body.call-popout { margin: 0; height: 100vh; overflow: hidden; background: #0a0a0a; }
+body.call-popout .call-panel { position: fixed; inset: 0; display: flex !important; }
+.call-panel.stage .call-panel-header { background: var(--bg2); }
+.call-panel.stage .call-panel-participants { display: none; }
+.call-panel.stage .call-panel-controls { order: 3; border-bottom: none; border-top: 1px solid var(--border); background: var(--bg2); }
+.call-panel.stage .call-video-grid {
+    display: grid; flex: 1; min-height: 0; max-height: none; padding: 10px; gap: 8px; overflow-y: auto;
+}
+.call-panel.stage .call-video-grid .call-video-item,
+.call-panel.stage .call-video-grid.has-screen .call-video-item:not(.is-screen),
+.call-panel.stage .call-video-grid.has-screen .call-video-item.is-screen {
+    aspect-ratio: auto; height: 100%; min-height: 0; max-height: none; grid-column: auto; grid-row: auto;
+}
+.call-panel.stage .call-video-item video { object-fit: cover; }
+.call-panel.stage .call-video-item.is-screen video,
+.call-panel.stage .call-video-item.is-main video { object-fit: contain; background: #000; }
+
+/* «Все»: равные окошки, сколько поместится. */
+.call-panel.stage .call-video-grid.stage-gallery {
+    grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+}
+/* «Спикер»: крупно главный, остальные лентой снизу. */
+.call-panel.stage .call-video-grid.stage-speaker {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    grid-auto-rows: 120px;
+}
+.call-panel.stage .call-video-grid.stage-speaker .call-video-item.is-main { grid-column: 1 / -1; grid-row: 1; }
+
+.call-video-item.speaking { box-shadow: 0 0 0 3px var(--online); }
+.call-video-item.no-video { display: flex; align-items: center; justify-content: center; background: #16191b; }
+.call-avatar {
+    width: min(30%, 120px); aspect-ratio: 1; border-radius: 50%; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: clamp(18px, 3vw, 44px);
+}
+.call-video-item:has(video) .call-avatar { display: none; }

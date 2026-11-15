@@ -13,7 +13,7 @@
     <meta name="theme-color" content="#0C0F0E">
     <script>try{var t=localStorage.getItem('ch_theme');if(t&&t!=='dark'){document.documentElement.setAttribute('data-theme',t);document.querySelector('meta[name=theme-color]').content='#EEEBE4';}}catch(e){}</script>
     <link rel="stylesheet" href="/fonts.css?v=1">
-    <link rel="stylesheet" href="/style.css?v=62">
+    <link rel="stylesheet" href="/style.css?v=63">
     <link rel="stylesheet" href="/theme-c.css?v=11">
     <link rel="stylesheet" href="/tracker.css?v=1">
 </head>
@@ -441,6 +441,19 @@
             <div class="call-panel-header">
                 <span class="call-panel-title" data-i18n="call.title">In Call</span>
                 <span class="call-panel-timer" id="call-panel-timer">0:00</span>
+                <span class="call-layout-switch call-stage-only">
+                    <button id="call-layout-speaker" onclick="setCallLayout('speaker')" title="Крупно — демонстрация или тот, кто говорит"><span class="material-icons-round">view_sidebar</span></button>
+                    <button id="call-layout-gallery" onclick="setCallLayout('gallery')" title="Все участники"><span class="material-icons-round">grid_view</span></button>
+                </span>
+                <button class="btn-icon call-panel-only" onclick="toggleCallStage(true)" title="Развернуть звонок">
+                    <span class="material-icons-round">open_in_full</span>
+                </button>
+                <button class="btn-icon call-popout-btn" onclick="popOutCall()" title="В отдельном окне">
+                    <span class="material-icons-round">open_in_new</span>
+                </button>
+                <button class="btn-icon call-stage-only" onclick="exitCallStage()" title="Вернуть в панель справа">
+                    <span class="material-icons-round">close_fullscreen</span>
+                </button>
                 <button class="btn-icon" onclick="minimizeCallPanel()" title="Свернуть" data-i18n-title="tip.minimize">
                     <span class="material-icons-round">remove</span>
                 </button>
@@ -1142,7 +1155,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
 <script src="/emoji-index.js?v=1"></script>
-<script src="/app.js?v=80"></script>
+<script src="/app.js?v=81"></script>
 <script src="/sections.js?v=3"></script>
 <script src="/folders.js?v=1"></script>
 <script src="/newchat.js?v=1"></script>

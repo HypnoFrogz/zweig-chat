@@ -1212,6 +1212,87 @@ async def federation_message_delete(data: dict, peer: str = Depends(require_peer
     return {"ok": True}
 
 
+async def queue_read_for_peers(db, channel_id: str, reader: str, message_ids: list[str]) -> None:
+    """Сказать соседям, что наш человек прочитал сообщения. Не бросает исключений.
+
+    Без этого у собеседника с другого сервера сообщения так и висели с одной
+    галочкой: отметка «прочитано» оставалась на нашем сервере. Идёт через ту же
+    очередь, что и сообщения, — сосед может быть ненадолго недоступен.
+    """
+    if not SERVER_DOMAIN or not message_ids:
+        return
+    try:
+        cur = await db.execute(
+            "SELECT DISTINCT u.home_server AS domain FROM channel_members cm "
+            "JOIN users u ON u.username = cm.username "
+            "WHERE cm.channel_id = ? AND u.home_server != ''",
+            (channel_id,),
+        )
+        domains = [r["domain"] for r in await cur.fetchall()]
+        if not domains:
+            return
+        ids = list(message_ids)[-500:]
+        payload = json.dumps({"reader": reader, "message_ids": ids}, ensure_ascii=False)
+        now = datetime.now(timezone.utc).isoformat()
+        for domain in domains:
+            await db.execute(
+                "INSERT OR IGNORE INTO federation_outbox "
+                "(id, domain, path, channel_id, payload, attempts, next_attempt, created_at) "
+                "VALUES (?,?,?,?,?,0,?,?)",
+                (f"read:{channel_id}:{reader}:{ids[-1]}:{domain}", domain,
+                 "/api/federation/message/read", channel_id, payload, now, now),
+            )
+        await db.commit()
+        asyncio.create_task(_flush_soon())
+    except Exception as e:
+        print(f"[federation] queueing read receipts for {channel_id} failed: {e}")
+
+
+@router.post("/federation/message/read")
+async def federation_message_read(data: dict, peer: str = Depends(require_peer)):
+    """Человек с соседнего сервера прочитал сообщения.
+
+    Отмечаем только сообщения из разговоров, где он действительно участвует:
+    id сообщений секретом не являются. Своего стаба не создаём и не трогаем —
+    его имя и аватар обновляет профиль, а не отметка о прочтении.
+    """
+    reader = (data.get("reader") or "").strip().lower()
+    ids = [str(i) for i in (data.get("message_ids") or []) if i][:500]
+    if not reader or not ids:
+        raise HTTPException(status_code=400, detail="reader и message_ids обязательны")
+
+    db = await get_db()
+    uid = remote_id(peer, reader)
+    marks = ",".join("?" * len(ids))
+    cur = await db.execute(
+        f"""SELECT m.id, m.channel_id FROM messages m
+            JOIN channel_members cm ON cm.channel_id = m.channel_id AND cm.username = ?
+            WHERE m.id IN ({marks})
+            ORDER BY m.timestamp""",
+        (uid, *ids),
+    )
+    rows = await cur.fetchall()
+    now = now_iso()
+    last_by_channel: dict[str, str] = {}
+    for r in rows:
+        await db.execute(
+            "INSERT OR IGNORE INTO message_reads (message_id, username, read_at) VALUES (?, ?, ?)",
+            (r["id"], uid, now),
+        )
+        last_by_channel[r["channel_id"]] = r["id"]
+    await db.commit()
+
+    from routes.messages import _get_members
+
+    for channel_id, last_id in last_by_channel.items():
+        members = await _get_members(db, channel_id)
+        await manager.send_to_channel(members, {
+            "event": "messages_read", "channel_id": channel_id,
+            "username": uid, "up_to_message_id": last_id,
+        })
+    return {"ok": True, "marked": len(rows)}
+
+
 async def _rearm_channel_outbox(db, domain: str, channel_id: str) -> None:
     """Вернуть в очередь сообщения, отвергнутые до появления зеркала канала.
 

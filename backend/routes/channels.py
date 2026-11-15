@@ -187,6 +187,9 @@ async def mark_channel_read(db, channel_id: str, username: str) -> list[str]:
         (upto, channel_id, username),
     )
     await db.commit()
+    # Собеседникам на других серверах — тоже: иначе у них одна галочка навсегда.
+    from routes.federation import queue_read_for_peers
+    await queue_read_for_peers(db, channel_id, username, ids)
     return ids
 
 
